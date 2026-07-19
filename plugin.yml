@@ -1,0 +1,6 @@
+name: ProjectS
+version: '${version}'
+main: io.github.gyai.projects.ProjectSPlugin
+api-version: '26.1'
+author: gyai
+description: ProjectS MMO Plugin
