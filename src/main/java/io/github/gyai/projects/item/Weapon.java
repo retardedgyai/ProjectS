@@ -1,6 +1,9 @@
 package io.github.gyai.projects.item;
 
 import org.bukkit.Material;
+import org.bukkit.inventory.meta.ItemMeta;
+
+import java.util.function.BiConsumer;
 
 public class Weapon extends CustomItem {
 
@@ -10,9 +13,10 @@ public class Weapon extends CustomItem {
             String id,
             String displayName,
             Material material,
-            int attackDamage
+            int attackDamage,
+            BiConsumer<ItemMeta, String> idWriter
     ) {
-        super(id, displayName, material);
+        super(id, displayName, material, idWriter);
         this.attackDamage = attackDamage;
     }
 

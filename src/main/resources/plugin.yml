@@ -1,11 +1,16 @@
 name: ProjectS
 version: '0.1.0'
 main: io.github.gyai.projects.ProjectSPlugin
-api-version: '26.1'
+api-version: '1.21'
 author: gyai
 description: ProjectS MMO Plugin
 
 commands:
   projects:
     description: ProjectSの動作確認コマンド
-    usage: /projects
+    usage: /projects [enhance|materials|bow|dummy [remove|removeall|reset]|dev|devmenu]
+
+permissions:
+  projects.dev:
+    description: Allows access to the ProjectS developer menu
+    default: op

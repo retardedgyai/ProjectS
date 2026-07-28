@@ -1,0 +1,167 @@
+debug:
+  enabled: false
+  allow-creative-skill-test: true
+  painter-skills: false
+classes:
+  painter-mage:
+    maximum-mana: 400
+    mana-regeneration-per-second: 8.0
+skills:
+  painter:
+    effects:
+      default-quality: HIGH
+      max-distance: 64.0
+      reduce-distant-particles: true
+    passive:
+      record-window: 4.0
+      explosion-delay: 0.6
+      radius: 2.5
+      base-damage: 6.0
+    devastating-fire:
+      enabled: true
+      mana-cost: 80
+      cooldown: 10.0
+      range: 16.0
+      radius: 3.0
+      base-damage: 8.0
+      scaling: 0.0
+      duration: 0.0
+      tick-interval: 0.0
+      slow-strength: 0
+      cc-duration: 0.0
+      projectile-speed: 1.5
+      particle-density: 1.0
+    severing-bolt:
+      enabled: true
+      mana-cost: 80
+      cooldown: 10.0
+      range: 28.0
+      radius: 2.5
+      base-damage: 10.0
+      scaling: 0.0
+      duration: 0.7
+      tick-interval: 0.0
+      slow-strength: 0
+      cc-duration: 0.0
+      projectile-speed: 0.0
+      particle-density: 1.0
+      telegraph-delay: 0.7
+      lightning-height: 14.0
+      isolated-multiplier: 1.5
+      controlled-multiplier: 1.5
+      missing-health-scaling: 0.5
+      warning-ring-density: 1.5
+      lightning-particle-density: 2.0
+      use-lightning-effect: true
+    molten-fissure:
+      enabled: true
+      mana-cost: 80
+      cooldown: 10.0
+      range: 14.0
+      radius: 2.5
+      base-damage: 3.0
+      scaling: 0.0
+      duration: 5.0
+      tick-interval: 1.0
+      slow-strength: 1
+      cc-duration: 1.5
+      projectile-speed: 0.0
+      particle-density: 1.0
+    fleeting-current:
+      enabled: true
+      mana-cost: 90
+      cooldown: 12.0
+      range: 12.0
+      radius: 2.0
+      base-damage: 0.0
+      scaling: 0.0
+      duration: 4.0
+      tick-interval: 0.2
+      slow-strength: 0
+      cc-duration: 0.0
+      projectile-speed: 0.0
+      particle-density: 1.0
+    pool-of-reflection:
+      enabled: true
+      mana-cost: 90
+      cooldown: 12.0
+      range: 14.0
+      radius: 4.0
+      base-damage: 0.0
+      scaling: 0.0
+      duration: 5.0
+      tick-interval: 0.25
+      slow-strength: 0
+      cc-duration: 0.0
+      projectile-speed: 0.0
+      particle-density: 1.0
+    stirring-lights:
+      enabled: true
+      mana-cost: 90
+      cooldown: 12.0
+      range: 0.0
+      radius: 0.0
+      base-damage: 3.0
+      scaling: 0.0
+      duration: 9.0
+      tick-interval: 0.1
+      slow-strength: 0
+      cc-duration: 0.0
+      projectile-speed: 0.0
+      particle-density: 1.0
+    grim-visage:
+      enabled: true
+      mana-cost: 50
+      cooldown: 12.0
+      range: 16.0
+      radius: 1.0
+      base-damage: 6.0
+      scaling: 0.0
+      duration: 0.0
+      tick-interval: 0.0
+      slow-strength: 2
+      cc-duration: 1.5
+      projectile-speed: 1.3
+      particle-density: 1.0
+    gaze-of-the-abyss:
+      enabled: true
+      mana-cost: 50
+      cooldown: 12.0
+      range: 18.0
+      radius: 5.0
+      base-damage: 5.0
+      scaling: 0.0
+      duration: 6.0
+      tick-interval: 0.2
+      slow-strength: 0
+      cc-duration: 1.5
+      projectile-speed: 1.0
+      particle-density: 1.0
+    crushing-maw:
+      enabled: true
+      mana-cost: 50
+      cooldown: 12.0
+      range: 14.0
+      radius: 4.0
+      base-damage: 7.0
+      scaling: 0.0
+      duration: 0.5
+      tick-interval: 0.1
+      slow-strength: 1
+      cc-duration: 1.5
+      projectile-speed: 0.0
+      particle-density: 1.0
+    spiraling-despair:
+      enabled: true
+      mana-cost: 100
+      cooldown: 100.0
+      range: 18.0
+      radius: 5.0
+      base-damage: 12.0
+      scaling: 0.0
+      duration: 5.0
+      tick-interval: 1.0
+      slow-strength: 4
+      cc-duration: 1.0
+      projectile-speed: 1.2
+      particle-density: 1.0
