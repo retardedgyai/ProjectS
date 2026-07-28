@@ -5,6 +5,8 @@ $pluginDirectory = Join-Path $serverDirectory 'plugins'
 $artifact = Join-Path $PSScriptRoot '..\build\libs\ProjectS-0.1.0.jar'
 $destination = Join-Path $pluginDirectory 'ProjectS-0.1.0.jar'
 $startScript = Join-Path $serverDirectory 'start.bat'
+$consoleOutput = Join-Path $serverDirectory 'logs\server-console.log'
+$consoleError = Join-Path $serverDirectory 'logs\server-console-error.log'
 $propertiesPath = Join-Path $serverDirectory 'server.properties'
 $serverPort = 25565
 $rconPort = 25575
@@ -213,5 +215,8 @@ if ($serverIsRunning) {
 
 Start-Process -FilePath 'cmd.exe' `
     -ArgumentList '/c', 'start.bat' `
-    -WorkingDirectory $serverDirectory
+    -WorkingDirectory $serverDirectory `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput $consoleOutput `
+    -RedirectStandardError $consoleError
 Write-Host 'Started the ProjectS test server.'

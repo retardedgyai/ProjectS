@@ -22,7 +22,7 @@ public class ItemManager {
         itemIdKey = new NamespacedKey(plugin, "item_id");
     }
 
-    public void initialize() {
+    public void initialize(boolean painterMageEnabled) {
         items.clear();
 
         register(new Weapon(
@@ -32,13 +32,15 @@ public class ItemManager {
                 10,
                 this::writeItemId
         ));
-        register(new Weapon(
-                "painter_staff",
-                "§d画術師の杖",
-                Material.BLAZE_ROD,
-                7,
-                this::writeItemId
-        ));
+        if (painterMageEnabled) {
+            register(new Weapon(
+                    "painter_staff",
+                    "§d画術師の杖",
+                    Material.BLAZE_ROD,
+                    7,
+                    this::writeItemId
+            ));
+        }
         register(new Weapon(
                 "starter_bow",
                 "§a風追いの弓",

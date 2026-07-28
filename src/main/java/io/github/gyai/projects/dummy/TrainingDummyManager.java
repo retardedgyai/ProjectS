@@ -1,6 +1,5 @@
 package io.github.gyai.projects.dummy;
 
-import io.github.gyai.projects.manager.PlayerManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -28,7 +27,6 @@ public class TrainingDummyManager {
     public static final long SESSION_TIMEOUT_MILLIS = 5_000L;
 
     private final JavaPlugin plugin;
-    private final PlayerManager playerManager;
     private final NamespacedKey dummyKey;
     private final Set<UUID> dummyIds = new HashSet<>();
     private final Map<SessionKey, TrainingDummySession> sessions = new HashMap<>();
@@ -38,9 +36,8 @@ public class TrainingDummyManager {
     private BukkitTask sessionTask;
     private final Map<String, DummyType> dummyTypes = new HashMap<>();
 
-    public TrainingDummyManager(JavaPlugin plugin, PlayerManager playerManager) {
+    public TrainingDummyManager(JavaPlugin plugin) {
         this.plugin = plugin;
-        this.playerManager = playerManager;
         this.dummyKey = new NamespacedKey(plugin, "training_dummy");
         this.damageNumberDisplay = new DamageNumberDisplay(plugin);
         registerDummyType(new DummyType("training_dummy", "訓練ダミー", org.bukkit.Material.ARMOR_STAND,
@@ -187,12 +184,10 @@ public class TrainingDummyManager {
         session.recordHit(damage, now, skillId);
         latestSessionByPlayer.put(player.getUniqueId(), key);
 
-        int combo = playerManager.getPlayerData(player).getCombo();
         boolean skillDamage = skillId != null;
-        NamedTextColor color = skillDamage ? NamedTextColor.AQUA
-                : combo == 4 ? NamedTextColor.GOLD : NamedTextColor.WHITE;
-        damageNumberDisplay.show(dummy.getLocation(), damage, color, combo == 4 && !skillDamage);
-        playHitReaction(dummy, combo == 4 || skillDamage);
+        NamedTextColor color = skillDamage ? NamedTextColor.AQUA : NamedTextColor.WHITE;
+        damageNumberDisplay.show(dummy.getLocation(), damage, color, false);
+        playHitReaction(dummy, skillDamage);
     }
 
     public void markSkillDamage(Player player, Entity dummy, String skillId) {

@@ -42,11 +42,11 @@ public class PlayerListener implements Listener {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
-        playerManager.removePlayer(event.getPlayer());
+        classManager.removePlayer(event.getPlayer());
         skillManager.removePlayer(event.getPlayer());
         hudManager.removePlayer(event.getPlayer());
         dummyManager.removePlayer(event.getPlayer());
-        classManager.removePlayer(event.getPlayer());
         resourceManager.removePlayer(event.getPlayer());
+        playerManager.removePlayer(event.getPlayer());
     }
 }

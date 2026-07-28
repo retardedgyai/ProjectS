@@ -3,7 +3,13 @@ debug:
   allow-creative-skill-test: true
   painter-skills: false
 classes:
+  warrior:
+    fighting-spirit-retention-seconds: 10.0
+    fighting-spirit-decay-per-second: 5
+    damage-percent-per-fighting-spirit: 0.1
+    maximum-spirit-healing-per-hit: 1.0
   painter-mage:
+    enabled: false
     maximum-mana: 400
     mana-regeneration-per-second: 8.0
 skills:

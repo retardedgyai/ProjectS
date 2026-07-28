@@ -4,7 +4,6 @@ import io.github.gyai.projects.command.ProjectCommand;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.manager.PlayerManager;
 import io.github.gyai.projects.manager.CombatHudManager;
-import io.github.gyai.projects.manager.ComboEffectPlayer;
 import io.github.gyai.projects.listener.CombatListener;
 import io.github.gyai.projects.listener.PlayerListener;
 import io.github.gyai.projects.skill.SkillManager;
@@ -20,6 +19,8 @@ import io.github.gyai.projects.combat.classsystem.ClassManager;
 import io.github.gyai.projects.combat.classsystem.ClassRegistry;
 import io.github.gyai.projects.combat.classsystem.PainterMageController;
 import io.github.gyai.projects.combat.classsystem.ScoutController;
+import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
+import io.github.gyai.projects.combat.classsystem.WarriorController;
 import io.github.gyai.projects.combat.resource.ResourceDefinition;
 import io.github.gyai.projects.combat.resource.ResourceManager;
 import io.github.gyai.projects.combat.resource.ResourceType;
@@ -50,6 +51,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private PainterSkillExecutor painterSkillExecutor;
     private PainterPassiveManager painterPassiveManager;
     private CrowdControlManager crowdControlManager;
+    private WarriorCombatManager warriorCombatManager;
 
     @Override
     public void onEnable() {
@@ -58,40 +60,68 @@ public final class ProjectSPlugin extends JavaPlugin {
                 "debug.enabled", getConfig().getBoolean("debug", false));
         boolean allowCreativeSkillTest = getConfig().getBoolean(
                 "debug.allow-creative-skill-test", false);
+        boolean painterMageEnabled = getConfig().getBoolean(
+                "classes.painter-mage.enabled", false);
         ItemManager itemManager = new ItemManager(this);
-        itemManager.initialize();
+        itemManager.initialize(painterMageEnabled);
         playerManager = new PlayerManager();
         EnhancementManager enhancementManager = new EnhancementManager(this, itemManager);
         EnhancementListener enhancementListener = new EnhancementListener(
                 this, itemManager, enhancementManager);
         skillManager = new SkillManager(playerManager);
-        trainingDummyManager = new TrainingDummyManager(this, playerManager);
-        skillManager.register(new SpinSlashSkill(trainingDummyManager, enhancementManager));
+        trainingDummyManager = new TrainingDummyManager(this);
         resourceManager = new ResourceManager(playerManager);
+        warriorCombatManager = new WarriorCombatManager(
+                this,
+                itemManager,
+                resourceManager,
+                trainingDummyManager,
+                getConfig().getDouble(
+                        "classes.warrior.fighting-spirit-retention-seconds", 10.0),
+                getConfig().getInt(
+                        "classes.warrior.fighting-spirit-decay-per-second", 5),
+                getConfig().getDouble(
+                        "classes.warrior.damage-percent-per-fighting-spirit", 0.1),
+                getConfig().getDouble(
+                        "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
+        skillManager.register(new SpinSlashSkill(
+                trainingDummyManager, enhancementManager, warriorCombatManager));
         ClassRegistry classRegistry = new ClassRegistry();
-        ResourceDefinition painterMana = new ResourceDefinition(
-                ResourceType.MANA,
-                getConfig().getInt("classes.painter-mage.maximum-mana", 400),
-                getConfig().getDouble("classes.painter-mage.mana-regeneration-per-second", 8.0));
-        TargetingService targetingService = new TargetingService(trainingDummyManager);
-        SkillEffectRenderer effectRenderer = new SkillEffectRenderer(getConfig());
-        painterPassiveManager = new PainterPassiveManager(
-                this, targetingService, effectRenderer, getConfig().getBoolean("debug.painter-skills", false));
-        painterPassiveManager.configure(
-                getConfig().getDouble("skills.painter.passive.record-window", 4),
-                getConfig().getDouble("skills.painter.passive.explosion-delay", .6),
-                getConfig().getDouble("skills.painter.passive.radius", 2.5),
-                getConfig().getDouble("skills.painter.passive.base-damage", 6));
-        SkillDamageService damageService = new SkillDamageService(this, trainingDummyManager, painterPassiveManager);
-        painterPassiveManager.setDamageService(damageService);
-        crowdControlManager = new CrowdControlManager(this);
-        painterSkillExecutor = new PainterSkillExecutor(this, resourceManager, painterMana, skillManager,
-                targetingService, damageService, crowdControlManager, effectRenderer);
-        damageService.setExecutor(painterSkillExecutor);
         classRegistry.register(new ClassDefinition(
-                        "painter_mage", "画術師", "painter_staff", painterMana,
-                        Material.BLAZE_ROD, "画題を選び、二段階入力で術を描く魔法職"),
-                new PainterMageController(painterSkillExecutor, painterPassiveManager, skillManager));
+                        "warrior", "ウォーリアー", WarriorCombatManager.WARRIOR_WEAPON_ID,
+                        ResourceDefinition.FIGHTING_SPIRIT,
+                        Material.IRON_SWORD, "闘気を高めて戦う近接クラス"),
+                new WarriorController(skillManager, warriorCombatManager));
+        SkillDamageService painterDamageService = null;
+        if (painterMageEnabled) {
+            ResourceDefinition painterMana = new ResourceDefinition(
+                    ResourceType.MANA,
+                    getConfig().getInt("classes.painter-mage.maximum-mana", 400),
+                    getConfig().getDouble("classes.painter-mage.mana-regeneration-per-second", 8.0));
+            TargetingService targetingService = new TargetingService(trainingDummyManager);
+            SkillEffectRenderer effectRenderer = new SkillEffectRenderer(getConfig());
+            painterPassiveManager = new PainterPassiveManager(
+                    this, targetingService, effectRenderer,
+                    getConfig().getBoolean("debug.painter-skills", false));
+            painterPassiveManager.configure(
+                    getConfig().getDouble("skills.painter.passive.record-window", 4),
+                    getConfig().getDouble("skills.painter.passive.explosion-delay", .6),
+                    getConfig().getDouble("skills.painter.passive.radius", 2.5),
+                    getConfig().getDouble("skills.painter.passive.base-damage", 6));
+            painterDamageService = new SkillDamageService(
+                    this, trainingDummyManager, painterPassiveManager);
+            painterPassiveManager.setDamageService(painterDamageService);
+            crowdControlManager = new CrowdControlManager(this);
+            painterSkillExecutor = new PainterSkillExecutor(
+                    this, resourceManager, painterMana, skillManager,
+                    targetingService, painterDamageService, crowdControlManager, effectRenderer);
+            painterDamageService.setExecutor(painterSkillExecutor);
+            classRegistry.register(new ClassDefinition(
+                            "painter_mage", "画術師", "painter_staff", painterMana,
+                            Material.BLAZE_ROD, "画題を選び、二段階入力で術を描く魔法職"),
+                    new PainterMageController(
+                            painterSkillExecutor, painterPassiveManager, skillManager));
+        }
         ScoutController scoutController = new ScoutController(
                 this, itemManager, enhancementManager, skillManager, trainingDummyManager);
         classRegistry.register(new ClassDefinition(
@@ -124,24 +154,30 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, HudStatePacket.CHANNEL);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
+        getServer().getPluginManager().registerEvents(warriorCombatManager, this);
         getServer().getPluginManager().registerEvents(
                 new CombatListener(
-                        itemManager, playerManager, combatInputManager, combatHudManager,
-                        new ComboEffectPlayer(), trainingDummyManager, enhancementManager), this);
+                        itemManager, combatInputManager, combatHudManager,
+                        trainingDummyManager, enhancementManager), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager), this);
         getServer().getPluginManager().registerEvents(
-                new TrainingDummyListener(trainingDummyManager), this);
+                new TrainingDummyListener(
+                        trainingDummyManager, warriorCombatManager), this);
         getServer().getPluginManager().registerEvents(devMenuManager, this);
         getServer().getPluginManager().registerEvents(
                 new ClassEquipmentListener(this, classManager, resourceManager), this);
-        getServer().getPluginManager().registerEvents(
-                new PainterCombatListener(itemManager, painterSkillExecutor, damageService), this);
+        if (painterSkillExecutor != null && painterDamageService != null) {
+            getServer().getPluginManager().registerEvents(
+                    new PainterCombatListener(
+                            itemManager, painterSkillExecutor, painterDamageService), this);
+        }
         getServer().getPluginManager().registerEvents(enhancementListener, this);
         getServer().getPluginManager().registerEvents(rangedWeaponListener, this);
         getServer().getPluginManager().registerEvents(scoutController, this);
         trainingDummyManager.start();
+        warriorCombatManager.start();
         combatHudManager.start();
 
         if (getCommand("projects") != null) {
@@ -162,6 +198,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (combatHudManager != null) {
             combatHudManager.stop();
+        }
+        if (warriorCombatManager != null) {
+            warriorCombatManager.stop();
         }
         if (trainingDummyManager != null) {
             trainingDummyManager.stop();

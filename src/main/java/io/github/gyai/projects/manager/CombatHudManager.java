@@ -17,6 +17,7 @@ import io.github.gyai.projects.combat.classsystem.ClassManager;
 import io.github.gyai.projects.combat.classsystem.ClassRegistry;
 import io.github.gyai.projects.combat.resource.ResourceManager;
 import io.github.gyai.projects.combat.classsystem.ScoutController;
+import io.github.gyai.projects.combat.classsystem.WarriorController;
 import io.github.gyai.projects.network.HudStatePacket;
 import io.github.gyai.projects.network.HudStatePacket.SkillSlotState;
 
@@ -129,6 +130,17 @@ public class CombatHudManager {
                             0, 0, true, false),
                     SkillSlotState.locked("F", "未実装")
             );
+        } else if (activeClass.controller() instanceof WarriorController) {
+            slots = List.of(
+                    new SkillSlotState(
+                            "Q", "回転斬り",
+                            (float) skillManager.getRemainingCooldownSeconds(
+                                    player, SPIN_SLASH_ID),
+                            0, 0, true, false),
+                    SkillSlotState.locked("E", "未実装"),
+                    SkillSlotState.locked("R", "未実装"),
+                    SkillSlotState.locked("F", "未実装")
+            );
         } else {
             slots = List.of(
                     new SkillSlotState("Q", "Skill 1", 0, 0, 0, true, false),
@@ -145,7 +157,6 @@ public class CombatHudManager {
 
     private Component buildHud(Player player, long now, ClassRegistry.RegisteredClass activeClass) {
         PlayerData data = playerManager.getPlayerData(player);
-        data.expireCombo(now);
 
         Component hud = Component.empty();
         TemporaryMessage temporary = temporaryMessages.get(player.getUniqueId());
@@ -155,10 +166,6 @@ public class CombatHudManager {
             } else {
                 temporaryMessages.remove(player.getUniqueId());
             }
-        }
-
-        if (data.isComboActive(now)) {
-            hud = hud.append(buildCombo(data.getCombo())).append(Component.text(" | ", NamedTextColor.DARK_GRAY));
         }
 
         if (activeClass != null) {
@@ -199,11 +206,6 @@ public class CombatHudManager {
         return Component.text("闘気 [", NamedTextColor.GOLD)
                 .append(Component.text(gauge, NamedTextColor.YELLOW))
                 .append(Component.text("] %d/%d".formatted(value, PlayerData.MAX_FIGHTING_SPIRIT), NamedTextColor.GOLD));
-    }
-
-    private Component buildCombo(int combo) {
-        String progress = "●".repeat(combo) + "○".repeat(4 - combo);
-        return Component.text("コンボ " + progress, NamedTextColor.GREEN);
     }
 
     private Component buildSkillStatus(Player player, String skillId, boolean resourceMissing) {

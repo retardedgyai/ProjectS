@@ -296,8 +296,6 @@ public final class DevMenuManager implements Listener {
                 (player, click) -> data(player).setFightingSpirit(PlayerData.MAX_FIGHTING_SPIRIT));
         button(holder, inventory, 10, Material.CLOCK, "全スキルCD解除", List.of(),
                 (player, click) -> skillManager.clearCooldowns(player));
-        button(holder, inventory, 11, Material.CHAINMAIL_CHESTPLATE, "コンボをリセット", List.of(),
-                (player, click) -> data(player).resetCombo());
         button(holder, inventory, 18, Material.TARGET, "DPS計測開始", List.of("既存セッションをリセット", "次のダミー攻撃から自動開始"),
                 (player, click) -> dummyManager.resetPlayer(player));
         button(holder, inventory, 19, Material.REDSTONE, "DPS計測停止・結果表示", List.of(),
@@ -392,7 +390,7 @@ public final class DevMenuManager implements Listener {
                 "ゲームモード: " + player.getGameMode(), "武器ID: " + (itemId == null ? "なし" : itemId),
                 "メインハンドItem ID: " + (itemId == null ? "なし" : itemId),
                 "闘気: " + data.getFightingSpirit() + "/" + PlayerData.MAX_FIGHTING_SPIRIT,
-                "コンボ: " + data.getCombo(), "DPS計測中: " + yesNo(session != null),
+                "DPS計測中: " + yesNo(session != null),
                 "周囲のダミー: " + dummyManager.countNearby(player, 16),
                 "プラグイン: " + plugin.getPluginMeta().getVersion(), "サーバー: " + Bukkit.getVersion()));
         details.add("職業: " + (activeClass == null ? "未選択" : activeClass.definition().displayName()));
