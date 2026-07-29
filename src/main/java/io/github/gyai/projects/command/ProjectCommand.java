@@ -5,8 +5,10 @@ import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.dev.DevMenuManager;
 import io.github.gyai.projects.listener.EnhancementListener;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.MonsterManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,17 +20,20 @@ public class ProjectCommand implements CommandExecutor {
     private final TrainingDummyManager dummyManager;
     private final DevMenuManager devMenuManager;
     private final EnhancementListener enhancementListener;
+    private final MonsterManager monsterManager;
 
     public ProjectCommand(
             ItemManager itemManager,
             TrainingDummyManager dummyManager,
             DevMenuManager devMenuManager,
-            EnhancementListener enhancementListener
+            EnhancementListener enhancementListener,
+            MonsterManager monsterManager
     ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
         this.devMenuManager = devMenuManager;
         this.enhancementListener = enhancementListener;
+        this.monsterManager = monsterManager;
     }
 
     @Override
@@ -45,6 +50,9 @@ public class ProjectCommand implements CommandExecutor {
 
         if (args.length > 0 && args[0].equalsIgnoreCase("dummy")) {
             return handleDummyCommand(player, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("boss")) {
+            return handleBossCommand(player, args);
         }
         if (args.length > 0 && (args[0].equalsIgnoreCase("dev")
                 || args[0].equalsIgnoreCase("devmenu"))) {
@@ -83,6 +91,45 @@ public class ProjectCommand implements CommandExecutor {
         player.getInventory().addItem(sword);
         player.sendMessage("§aProjectSの剣を受け取りました！");
 
+        return true;
+    }
+
+    private boolean handleBossCommand(Player player, String[] args) {
+        if (!player.hasPermission("projects.dev")) {
+            player.sendMessage("§cこのコマンドを実行する権限がありません。");
+            return true;
+        }
+        if (args.length < 2) {
+            player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+            return true;
+        }
+
+        switch (args[1].toLowerCase(java.util.Locale.ROOT)) {
+            case "spawn" -> {
+                if (monsterManager.hasActiveHarborDevourer()) {
+                    player.sendMessage("§cグロームはすでに生成されています。");
+                    return true;
+                }
+                Location location = monsterManager.findSafeSpawnLocation(player);
+                if (location == null) {
+                    player.sendMessage("§c安全な生成位置が見つかりません。");
+                    return true;
+                }
+                if (monsterManager.spawnHarborDevourer(location) == null) {
+                    player.sendMessage("§cグロームの生成に失敗しました。");
+                    return true;
+                }
+                player.sendMessage("§a港喰らいの巨獣 グロームを生成しました。");
+            }
+            case "remove" -> {
+                if (monsterManager.removeHarborDevourer()) {
+                    player.sendMessage("§aグロームを削除しました。");
+                } else {
+                    player.sendMessage("§c稼働中のグロームはいません。");
+                }
+            }
+            default -> player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+        }
         return true;
     }
 

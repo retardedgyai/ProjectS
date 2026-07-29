@@ -35,8 +35,10 @@ import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.PainterSkillExecutor;
 import io.github.gyai.projects.listener.PainterCombatListener;
 import io.github.gyai.projects.listener.EnhancementListener;
+import io.github.gyai.projects.listener.MonsterListener;
 import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.MonsterManager;
 import io.github.gyai.projects.combat.skill.SkillEffectRenderer;
 import io.github.gyai.projects.network.HudStatePacket;
 import io.github.gyai.projects.network.WarriorLoadoutChannel;
@@ -66,10 +68,13 @@ public final class ProjectSPlugin extends JavaPlugin {
     private WarriorEffectManager warriorEffectManager;
     private WarriorLoadoutManager warriorLoadoutManager;
     private WarriorLoadoutChannel warriorLoadoutChannel;
+    private MonsterManager monsterManager;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        monsterManager = new MonsterManager(this);
+        monsterManager.initialize();
         boolean debugEnabled = getConfig().getBoolean(
                 "debug.enabled", getConfig().getBoolean("debug", false));
         boolean allowCreativeSkillTest = getConfig().getBoolean(
@@ -225,14 +230,18 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(enhancementListener, this);
         getServer().getPluginManager().registerEvents(rangedWeaponListener, this);
         getServer().getPluginManager().registerEvents(scoutController, this);
+        getServer().getPluginManager().registerEvents(
+                new MonsterListener(monsterManager), this);
         trainingDummyManager.start();
         warriorCombatManager.start();
         warriorEffectManager.start();
         combatHudManager.start();
+        monsterManager.start();
 
         if (getCommand("projects") != null) {
             getCommand("projects").setExecutor(new ProjectCommand(
-                    itemManager, trainingDummyManager, devMenuManager, enhancementListener));
+                    itemManager, trainingDummyManager, devMenuManager,
+                    enhancementListener, monsterManager));
         }
 
         getLogger().info("ProjectS has started!");
@@ -240,6 +249,9 @@ public final class ProjectSPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (monsterManager != null) {
+            monsterManager.stop();
+        }
         getServer().getMessenger().unregisterIncomingPluginChannel(this, ClientInputListener.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, ClientInputListener.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, HudStatePacket.CHANNEL);

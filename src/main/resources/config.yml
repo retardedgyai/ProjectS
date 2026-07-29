@@ -258,3 +258,26 @@ skills:
       cc-duration: 1.0
       projectile-speed: 1.2
       particle-density: 1.0
+monsters:
+  bosses:
+    harbor-devourer-grohm:
+      max-health: 1000.0
+      attack-damage: 14.0
+      movement-speed: 0.26
+      scale: 1.35
+      knockback-resistance: 1.0
+      follow-range: 32.0
+      leash-range: 36.0
+      boss-bar-range: 48.0
+      reset-after-seconds: 10.0
+      phase-two-health-ratio: 0.5
+      breakwater-slam:
+        cooldown-seconds: 7.0
+        warning-ticks: 24
+        radius: 5.0
+        damage: 18.0
+      hullbreaker-charge:
+        cooldown-seconds: 12.0
+        warning-ticks: 20
+        distance: 14.0
+        damage: 24.0
