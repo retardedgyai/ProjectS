@@ -1,26 +1,29 @@
 package io.github.gyai.projects.skill;
 
-import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
-import io.github.gyai.projects.dummy.TrainingDummyManager;
-import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
-public class SpinSlashSkill implements Skill {
-    private final TrainingDummyManager dummyManager;
-    private final EnhancementManager enhancementManager;
-    private final WarriorCombatManager warriorCombatManager;
+import java.util.Optional;
 
-    public SpinSlashSkill(
-            TrainingDummyManager dummyManager,
-            EnhancementManager enhancementManager,
-            WarriorCombatManager warriorCombatManager
-    ) {
-        this.dummyManager = dummyManager;
-        this.enhancementManager = enhancementManager;
-        this.warriorCombatManager = warriorCombatManager;
+public final class SpinSlashSkill implements Skill {
+    private final WarriorSkillSupport support;
+    private final boolean enabled;
+    private final double cooldown;
+    private final double radius;
+    private final double baseDamage;
+    private final double attackPowerScaling;
+
+    public SpinSlashSkill(WarriorSkillSupport support) {
+        this.support = support;
+        WarriorSkillSupport.SkillConfig config = support.config(getId());
+        enabled = config.enabled();
+        cooldown = config.number("cooldown", 8, 0, 300);
+        radius = config.number("radius", 3, .5, 16);
+        baseDamage = config.number("base-damage", 11, 0, 10_000);
+        attackPowerScaling = config.number(
+                "attack-power-scaling", 1.2, 0, 100);
     }
 
     @Override
@@ -35,7 +38,7 @@ public class SpinSlashSkill implements Skill {
 
     @Override
     public double getBaseCooldownSeconds() {
-        return 8.0;
+        return cooldown;
     }
 
     @Override
@@ -44,30 +47,24 @@ public class SpinSlashSkill implements Skill {
     }
 
     @Override
-    public void execute(Player player) {
-        double attackPower = enhancementManager.getAttackPower(
-                player, player.getInventory().getItemInMainHand());
-        double skillDamage = 11.0 + attackPower * 1.2;
-        player.getWorld().spawnParticle(Particle.SWEEP_ATTACK, player.getLocation().add(0, 1, 0), 12, 1.5, 0.35, 1.5, 0.0);
-        player.getWorld().playSound(player.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 0.8f);
+    public boolean isEnabled() {
+        return enabled;
+    }
 
-        try (WarriorCombatManager.SkillHitSession ignored =
-                     warriorCombatManager.beginSkillUse(player)) {
-            for (LivingEntity entity : player.getLocation().getNearbyLivingEntities(3.0)) {
-                if (!warriorCombatManager.isValidEnemy(player, entity)) {
-                    continue;
-                }
-                if (dummyManager.isTrainingDummy(entity)) {
-                    dummyManager.markSkillDamage(player, entity);
-                }
-                enhancementManager.beginSkillDamage(player.getUniqueId());
-                try {
-                    entity.damage(skillDamage, player);
-                } finally {
-                    enhancementManager.endSkillDamage(player.getUniqueId());
-                }
-                entity.getWorld().spawnParticle(Particle.CRIT, entity.getLocation().add(0, 1, 0), 8, 0.3, 0.4, 0.3, 0.1);
-            }
-        }
+    @Override
+    public Optional<PreparedUse> prepare(Player player) {
+        if (!support.validateCaster(player)) return Optional.empty();
+        double damage =
+                baseDamage + support.attackPower(player) * attackPowerScaling;
+        return Optional.of(new PreparedUse(0, () -> {
+            support.play(
+                    player,
+                    Particle.SWEEP_ATTACK,
+                    12,
+                    Sound.ENTITY_PLAYER_ATTACK_SWEEP,
+                    .8f);
+            support.damageTargets(
+                    player, support.nearby(player, radius), damage, getId());
+        }));
     }
 }

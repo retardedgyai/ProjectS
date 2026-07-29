@@ -13,6 +13,93 @@ classes:
     maximum-mana: 400
     mana-regeneration-per-second: 8.0
 skills:
+  warrior:
+    spin_slash:
+      enabled: true
+      cooldown: 8.0
+      radius: 3.0
+      base-damage: 11.0
+      attack-power-scaling: 1.2
+    sweeping_slash:
+      enabled: true
+      cooldown: 6.0
+      range: 4.5
+      angle: 100.0
+      base-damage: 14.0
+      attack-power-scaling: 1.4
+    warrior_charge:
+      enabled: true
+      cooldown: 10.0
+      range: 7.0
+      width: 1.5
+      dash-speed: 1.25
+      base-damage: 8.0
+      attack-power-scaling: 0.8
+    execution_leap:
+      enabled: true
+      cooldown: 9.0
+      range: 10.0
+      base-damage: 12.0
+      attack-power-scaling: 1.0
+    earth_shatter:
+      enabled: true
+      cooldown: 12.0
+      radius: 4.0
+      base-damage: 10.0
+      attack-power-scaling: 0.9
+      slow-duration: 2.0
+      launch-y: 0.45
+    indomitable_spirit:
+      enabled: true
+      cooldown: 20.0
+      duration: 5.0
+      damage-reduction: 0.25
+      attack-speed-bonus: 0.25
+    battlefield_aura:
+      enabled: true
+      cooldown: 18.0
+      radius: 5.0
+      slow-duration: 1.5
+      slow-amplifier: 0
+      absorption-per-enemy: 2.0
+      maximum-absorption: 12.0
+      absorption-duration: 6.0
+    endure:
+      enabled: true
+      cooldown: 24.0
+      duration: 5.0
+      deferred-damage-fraction: 0.4
+      outgoing-clears-fraction: 0.5
+    fighting_spirit_release:
+      enabled: true
+      minimum-spirit: 20
+      cooldown: 35.0
+      radius: 5.0
+      base-damage: 10.0
+      attack-power-scaling: 1.0
+      spirit-damage-scaling: 0.25
+    blood_battle:
+      enabled: true
+      minimum-spirit: 20
+      cooldown: 40.0
+      base-duration: 4.0
+      duration-per-spirit: 0.04
+      maximum-duration: 8.0
+      attack-speed-bonus: 0.25
+      splash-damage-fraction: 0.5
+      splash-radius: 2.5
+      e-cooldown-reduction-per-hit: 0.5
+    end_war_strike:
+      enabled: true
+      minimum-spirit: 20
+      cooldown: 45.0
+      cast-delay: 0.8
+      range: 6.0
+      angle: 120.0
+      base-damage: 20.0
+      attack-power-scaling: 2.0
+      spirit-damage-scaling: 0.35
+      maximum-missing-health-bonus: 0.5
   painter:
     effects:
       default-quality: HIGH

@@ -21,6 +21,8 @@ import io.github.gyai.projects.combat.classsystem.PainterMageController;
 import io.github.gyai.projects.combat.classsystem.ScoutController;
 import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.combat.classsystem.WarriorController;
+import io.github.gyai.projects.combat.classsystem.WarriorEffectManager;
+import io.github.gyai.projects.combat.classsystem.WarriorLoadoutManager;
 import io.github.gyai.projects.combat.resource.ResourceDefinition;
 import io.github.gyai.projects.combat.resource.ResourceManager;
 import io.github.gyai.projects.combat.resource.ResourceType;
@@ -37,6 +39,15 @@ import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.combat.skill.SkillEffectRenderer;
 import io.github.gyai.projects.network.HudStatePacket;
+import io.github.gyai.projects.network.WarriorLoadoutChannel;
+import io.github.gyai.projects.network.WarriorLoadoutRequestPacket;
+import io.github.gyai.projects.network.WarriorLoadoutSelectPacket;
+import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
+import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
+import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
+import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
+import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
+import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -52,6 +63,9 @@ public final class ProjectSPlugin extends JavaPlugin {
     private PainterPassiveManager painterPassiveManager;
     private CrowdControlManager crowdControlManager;
     private WarriorCombatManager warriorCombatManager;
+    private WarriorEffectManager warriorEffectManager;
+    private WarriorLoadoutManager warriorLoadoutManager;
+    private WarriorLoadoutChannel warriorLoadoutChannel;
 
     @Override
     public void onEnable() {
@@ -76,6 +90,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                 itemManager,
                 resourceManager,
                 trainingDummyManager,
+                enhancementManager,
                 getConfig().getDouble(
                         "classes.warrior.fighting-spirit-retention-seconds", 10.0),
                 getConfig().getInt(
@@ -84,14 +99,37 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "classes.warrior.damage-percent-per-fighting-spirit", 0.1),
                 getConfig().getDouble(
                         "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
-        skillManager.register(new SpinSlashSkill(
-                trainingDummyManager, enhancementManager, warriorCombatManager));
+        WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
+                this, trainingDummyManager, enhancementManager,
+                warriorCombatManager);
+        warriorEffectManager = new WarriorEffectManager(
+                this, warriorCombatManager, enhancementManager,
+                trainingDummyManager, skillManager);
+        warriorLoadoutManager = new WarriorLoadoutManager(
+                warriorCombatManager, skillManager);
+        warriorLoadoutChannel = new WarriorLoadoutChannel(
+                this, warriorLoadoutManager, warriorCombatManager);
+        warriorEffectManager.setLoadoutManager(warriorLoadoutManager);
+        warriorLoadoutManager.setEffectManager(warriorEffectManager);
+        warriorCombatManager.setEffectManager(warriorEffectManager);
+        skillManager.register(new SpinSlashSkill(warriorSkillSupport));
+        WarriorAttackSkills.register(skillManager, warriorSkillSupport);
+        WarriorMobilitySkills.register(
+                skillManager, warriorSkillSupport, warriorCombatManager,
+                warriorEffectManager);
+        WarriorDefenseSkills.register(
+                skillManager, warriorSkillSupport, warriorEffectManager);
+        WarriorUltimateSkills.register(
+                skillManager, warriorSkillSupport, warriorEffectManager,
+                playerManager);
         ClassRegistry classRegistry = new ClassRegistry();
         classRegistry.register(new ClassDefinition(
                         "warrior", "ウォーリアー", WarriorCombatManager.WARRIOR_WEAPON_ID,
                         ResourceDefinition.FIGHTING_SPIRIT,
                         Material.IRON_SWORD, "闘気を高めて戦う近接クラス"),
-                new WarriorController(skillManager, warriorCombatManager));
+                new WarriorController(
+                        skillManager, warriorCombatManager,
+                        warriorEffectManager, warriorLoadoutManager));
         SkillDamageService painterDamageService = null;
         if (painterMageEnabled) {
             ResourceDefinition painterMana = new ResourceDefinition(
@@ -129,6 +167,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                         Material.BOW, "機動力と連射に優れたレンジドクラス"),
                 scoutController);
         classManager = new ClassManager(itemManager, classRegistry);
+        warriorLoadoutChannel.setClassManager(classManager);
         combatHudManager = new CombatHudManager(
                 this, itemManager, playerManager, skillManager, trainingDummyManager,
                 classManager, resourceManager);
@@ -152,16 +191,26 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, ClientInputListener.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, HudStatePacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, WarriorLoadoutRequestPacket.CHANNEL,
+                warriorLoadoutChannel);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, WarriorLoadoutSelectPacket.CHANNEL,
+                warriorLoadoutChannel);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, WarriorLoadoutStatePacket.CHANNEL);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getPluginManager().registerEvents(warriorCombatManager, this);
+        getServer().getPluginManager().registerEvents(warriorEffectManager, this);
         getServer().getPluginManager().registerEvents(
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
-                        classManager, resourceManager), this);
+                        classManager, resourceManager,
+                        warriorLoadoutManager), this);
         getServer().getPluginManager().registerEvents(
                 new TrainingDummyListener(
                         trainingDummyManager, warriorCombatManager), this);
@@ -178,6 +227,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(scoutController, this);
         trainingDummyManager.start();
         warriorCombatManager.start();
+        warriorEffectManager.start();
         combatHudManager.start();
 
         if (getCommand("projects") != null) {
@@ -193,6 +243,14 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getMessenger().unregisterIncomingPluginChannel(this, ClientInputListener.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, ClientInputListener.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, HudStatePacket.CHANNEL);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, WarriorLoadoutRequestPacket.CHANNEL,
+                warriorLoadoutChannel);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, WarriorLoadoutSelectPacket.CHANNEL,
+                warriorLoadoutChannel);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(
+                this, WarriorLoadoutStatePacket.CHANNEL);
         if (combatInputManager != null) {
             combatInputManager.clear();
         }
@@ -201,6 +259,15 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (warriorCombatManager != null) {
             warriorCombatManager.stop();
+        }
+        if (warriorEffectManager != null) {
+            warriorEffectManager.stop();
+        }
+        if (warriorLoadoutManager != null) {
+            warriorLoadoutManager.clear();
+        }
+        if (warriorLoadoutChannel != null) {
+            warriorLoadoutChannel.clear();
         }
         if (trainingDummyManager != null) {
             trainingDummyManager.stop();

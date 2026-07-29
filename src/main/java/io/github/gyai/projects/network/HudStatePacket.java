@@ -8,14 +8,16 @@ import java.util.List;
 
 public record HudStatePacket(
         boolean visible,
+        boolean inCombat,
+        String classId,
         String className,
         String resourceName,
         float resourceCurrent,
         float resourceMaximum,
         List<SkillSlotState> slots
 ) {
-    public static final String CHANNEL = "projects:hud_state";
-    private static final int PROTOCOL_VERSION = 1;
+    public static final String CHANNEL = "projects:hud_state_v2";
+    private static final int PROTOCOL_VERSION = 2;
     private static final int SLOT_COUNT = 4;
 
     public byte[] encode() {
@@ -24,6 +26,8 @@ public record HudStatePacket(
             DataOutputStream output = new DataOutputStream(bytes);
             output.writeByte(PROTOCOL_VERSION);
             output.writeBoolean(visible);
+            output.writeBoolean(inCombat);
+            writeString(output, classId);
             writeString(output, className);
             writeString(output, resourceName);
             output.writeFloat(resourceCurrent);
@@ -33,6 +37,7 @@ public record HudStatePacket(
                         ? slots.get(index)
                         : SkillSlotState.locked("", "");
                 writeString(output, slot.key());
+                writeString(output, slot.skillId());
                 writeString(output, slot.name());
                 output.writeFloat(slot.cooldownSeconds());
                 output.writeByte(Math.clamp(slot.charges(), 0, 127));
@@ -57,6 +62,7 @@ public record HudStatePacket(
 
     public record SkillSlotState(
             String key,
+            String skillId,
             String name,
             float cooldownSeconds,
             int charges,
@@ -65,7 +71,8 @@ public record HudStatePacket(
             boolean active
     ) {
         public static SkillSlotState locked(String key, String name) {
-            return new SkillSlotState(key, name, 0.0f, 0, 0, false, false);
+            return new SkillSlotState(
+                    key, "", name, 0.0f, 0, 0, false, false);
         }
     }
 }

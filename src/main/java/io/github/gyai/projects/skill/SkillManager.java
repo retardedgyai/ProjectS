@@ -37,6 +37,10 @@ public class SkillManager {
         return skills.containsKey(skillId);
     }
 
+    public Skill getSkill(String skillId) {
+        return skills.get(skillId);
+    }
+
     public Collection<Skill> getSkills() {
         return java.util.List.copyOf(skills.values());
     }
@@ -62,7 +66,7 @@ public class SkillManager {
 
     public boolean useSkill(Player player, String skillId) {
         Skill skill = skills.get(skillId);
-        if (skill == null) {
+        if (skill == null || !skill.isEnabled()) {
             return false;
         }
 
@@ -75,18 +79,31 @@ public class SkillManager {
             return false;
         }
 
+        Skill.PreparedUse prepared = skill.prepare(player).orElse(null);
+        if (prepared == null) {
+            return false;
+        }
+
         PlayerData data = playerManager.getPlayerData(player);
-        if (data.getFightingSpirit() < skill.getResourceCost()) {
+        int resourceCost = prepared.resourceCost();
+        if (data.getFightingSpirit() < resourceCost) {
             showTemporary(player, Component.text(
-                    "闘気が足りません %d/%d".formatted(data.getFightingSpirit(), skill.getResourceCost()),
+                    "闘気が足りません %d/%d".formatted(
+                            data.getFightingSpirit(), resourceCost),
                     NamedTextColor.RED
             ));
             return false;
         }
 
-        data.consumeFightingSpirit(skill.getResourceCost());
-        skill.execute(player);
+        data.consumeFightingSpirit(resourceCost);
         startCooldown(player, skillId, skill.getBaseCooldownSeconds(), data.getCooldownReduction());
+        try {
+            prepared.execution().run();
+        } catch (RuntimeException exception) {
+            data.addFightingSpirit(resourceCost);
+            clearCooldown(player, skillId);
+            throw exception;
+        }
         showTemporary(player, Component.text(skill.getDisplayName() + "！", NamedTextColor.AQUA));
         return true;
     }
@@ -118,6 +135,28 @@ public class SkillManager {
             return 0.0;
         }
         return remainingMillis / 1_000.0;
+    }
+
+    public void clearCooldown(Player player, String id) {
+        Map<String, Long> playerCooldowns = cooldownEnds.get(player.getUniqueId());
+        if (playerCooldowns == null) return;
+        playerCooldowns.remove(id);
+        if (playerCooldowns.isEmpty()) cooldownEnds.remove(player.getUniqueId());
+    }
+
+    public void reduceCooldown(Player player, String id, double seconds) {
+        if (seconds <= 0.0) return;
+        Map<String, Long> playerCooldowns = cooldownEnds.get(player.getUniqueId());
+        if (playerCooldowns == null) return;
+        Long currentEnd = playerCooldowns.get(id);
+        if (currentEnd == null) return;
+        long newEnd = currentEnd - Math.round(seconds * 1_000.0);
+        if (newEnd <= System.currentTimeMillis()) {
+            playerCooldowns.remove(id);
+        } else {
+            playerCooldowns.put(id, newEnd);
+        }
+        if (playerCooldowns.isEmpty()) cooldownEnds.remove(player.getUniqueId());
     }
 
     public void removePlayer(Player player) {

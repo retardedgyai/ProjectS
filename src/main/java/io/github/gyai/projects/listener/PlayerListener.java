@@ -10,6 +10,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import io.github.gyai.projects.combat.classsystem.ClassManager;
 import io.github.gyai.projects.combat.resource.ResourceManager;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import io.github.gyai.projects.combat.classsystem.WarriorLoadoutManager;
 
 public class PlayerListener implements Listener {
     private final PlayerManager playerManager;
@@ -18,6 +20,7 @@ public class PlayerListener implements Listener {
     private final TrainingDummyManager dummyManager;
     private final ClassManager classManager;
     private final ResourceManager resourceManager;
+    private final WarriorLoadoutManager warriorLoadoutManager;
 
     public PlayerListener(
             PlayerManager playerManager,
@@ -25,7 +28,8 @@ public class PlayerListener implements Listener {
             CombatHudManager hudManager,
             TrainingDummyManager dummyManager,
             ClassManager classManager,
-            ResourceManager resourceManager
+            ResourceManager resourceManager,
+            WarriorLoadoutManager warriorLoadoutManager
     ) {
         this.playerManager = playerManager;
         this.skillManager = skillManager;
@@ -33,6 +37,7 @@ public class PlayerListener implements Listener {
         this.dummyManager = dummyManager;
         this.classManager = classManager;
         this.resourceManager = resourceManager;
+        this.warriorLoadoutManager = warriorLoadoutManager;
     }
 
     @EventHandler
@@ -47,6 +52,12 @@ public class PlayerListener implements Listener {
         hudManager.removePlayer(event.getPlayer());
         dummyManager.removePlayer(event.getPlayer());
         resourceManager.removePlayer(event.getPlayer());
+        warriorLoadoutManager.removePlayer(event.getPlayer());
         playerManager.removePlayer(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        classManager.removePlayer(event.getPlayer());
     }
 }

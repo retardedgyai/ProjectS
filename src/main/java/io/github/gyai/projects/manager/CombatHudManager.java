@@ -100,7 +100,8 @@ public class CombatHudManager {
     private void sendModHud(Player player, ClassRegistry.RegisteredClass activeClass) {
         if (activeClass == null) {
             player.sendPluginMessage(plugin, HudStatePacket.CHANNEL, new HudStatePacket(
-                    false, "", "", 0.0f, 0.0f, List.of()).encode());
+                    false, false, "", "", "", 0.0f, 0.0f,
+                    List.of()).encode());
             return;
         }
 
@@ -119,40 +120,63 @@ public class CombatHudManager {
         if (activeClass.controller() instanceof ScoutController scout) {
             slots = List.of(
                     new SkillSlotState(
-                            "Q", "Rapid",
+                            "Q", "scout_q", "Rapid",
                             (float) skillManager.getRemainingCooldownSeconds(player, "scout_q"),
                             0, scout.getPassiveHits(player), true,
                             scout.getRapidVolleyRemainingSeconds(player) > 0.0),
                     SkillSlotState.locked("E", "未実装"),
                     new SkillSlotState(
-                            "R", "Volley",
+                            "R", "scout_e", "Volley",
                             (float) skillManager.getRemainingCooldownSeconds(player, "scout_e"),
                             0, 0, true, false),
                     SkillSlotState.locked("F", "未実装")
             );
-        } else if (activeClass.controller() instanceof WarriorController) {
+        } else if (activeClass.controller()
+                instanceof WarriorController warrior) {
+            var loadout = warrior.getLoadoutManager().get(player);
             slots = List.of(
-                    new SkillSlotState(
-                            "Q", "回転斬り",
-                            (float) skillManager.getRemainingCooldownSeconds(
-                                    player, SPIN_SLASH_ID),
-                            0, 0, true, false),
-                    SkillSlotState.locked("E", "未実装"),
-                    SkillSlotState.locked("R", "未実装"),
-                    SkillSlotState.locked("F", "未実装")
-            );
+                    warriorSlot(player, warrior, "Q", loadout.q()),
+                    warriorSlot(player, warrior, "E", loadout.e()),
+                    warriorSlot(player, warrior, "R", loadout.r()),
+                    warriorSlot(player, warrior, "F", loadout.f()));
         } else {
             slots = List.of(
-                    new SkillSlotState("Q", "Skill 1", 0, 0, 0, true, false),
-                    new SkillSlotState("E", "Skill 2", 0, 0, 0, true, false),
-                    new SkillSlotState("R", "Skill 3", 0, 0, 0, true, false),
-                    new SkillSlotState("F", "Ultimate", 0, 0, 0, true, false)
+                    new SkillSlotState("Q", "", "Skill 1", 0, 0, 0, true, false),
+                    new SkillSlotState("E", "", "Skill 2", 0, 0, 0, true, false),
+                    new SkillSlotState("R", "", "Skill 3", 0, 0, 0, true, false),
+                    new SkillSlotState("F", "", "Ultimate", 0, 0, 0, true, false)
             );
         }
 
         player.sendPluginMessage(plugin, HudStatePacket.CHANNEL, new HudStatePacket(
-                true, definition.displayName(), resourceName,
+                true,
+                activeClass.controller() instanceof WarriorController warrior
+                        && warrior.getCombatManager().isInCombat(player),
+                definition.id(), definition.displayName(), resourceName,
                 resourceCurrent, resourceMaximum, slots).encode());
+    }
+
+    private SkillSlotState warriorSlot(
+            Player player,
+            WarriorController warrior,
+            String key,
+            String skillId
+    ) {
+        var skill = skillManager.getSkill(skillId);
+        if (skill == null) {
+            return SkillSlotState.locked(key, "未実装");
+        }
+        return new SkillSlotState(
+                key,
+                skillId,
+                skill.getDisplayName(),
+                (float) skillManager.getRemainingCooldownSeconds(
+                        player, skillId),
+                0,
+                0,
+                skill.isEnabled(),
+                warrior.getEffectManager().isSkillActive(
+                        player, skillId));
     }
 
     private Component buildHud(Player player, long now, ClassRegistry.RegisteredClass activeClass) {
