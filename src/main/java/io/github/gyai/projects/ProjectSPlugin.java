@@ -48,6 +48,8 @@ import io.github.gyai.projects.network.WarriorLoadoutSelectPacket;
 import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
 import io.github.gyai.projects.network.BalanceStatePacket;
 import io.github.gyai.projects.network.BalanceTuningChannel;
+import io.github.gyai.projects.network.MonsterUiPacket;
+import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
 import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
@@ -67,6 +69,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private PainterSkillExecutor painterSkillExecutor;
     private PainterPassiveManager painterPassiveManager;
     private CrowdControlManager crowdControlManager;
+    private StatusEffectManager statusEffectManager;
     private WarriorCombatManager warriorCombatManager;
     private WarriorEffectManager warriorEffectManager;
     private WarriorLoadoutManager warriorLoadoutManager;
@@ -78,7 +81,14 @@ public final class ProjectSPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        monsterManager = new MonsterManager(this);
+        playerManager = new PlayerManager();
+        crowdControlManager = new CrowdControlManager(this);
+        statusEffectManager = new StatusEffectManager(this);
+        monsterManager = new MonsterManager(
+                this,
+                crowdControlManager,
+                statusEffectManager,
+                playerManager);
         monsterManager.initialize();
         boolean debugEnabled = getConfig().getBoolean(
                 "debug.enabled", getConfig().getBoolean("debug", false));
@@ -89,7 +99,6 @@ public final class ProjectSPlugin extends JavaPlugin {
         ItemManager itemManager = new ItemManager(this);
         itemManager.initialize(painterMageEnabled);
         balanceTuningManager = new BalanceTuningManager(this, itemManager);
-        playerManager = new PlayerManager();
         EnhancementManager enhancementManager = new EnhancementManager(
                 this, itemManager, balanceTuningManager);
         balanceTuningManager.setEnhancementManager(enhancementManager);
@@ -166,10 +175,10 @@ public final class ProjectSPlugin extends JavaPlugin {
             painterDamageService = new SkillDamageService(
                     this, trainingDummyManager, painterPassiveManager);
             painterPassiveManager.setDamageService(painterDamageService);
-            crowdControlManager = new CrowdControlManager(this);
             painterSkillExecutor = new PainterSkillExecutor(
-                    this, resourceManager, painterMana, skillManager,
-                    targetingService, painterDamageService, crowdControlManager, effectRenderer);
+                this, resourceManager, painterMana, skillManager,
+                    targetingService, painterDamageService,
+                    crowdControlManager, statusEffectManager, effectRenderer);
             painterDamageService.setExecutor(painterSkillExecutor);
             classRegistry.register(new ClassDefinition(
                             "painter_mage", "画術師", "painter_staff", painterMana,
@@ -227,6 +236,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 balanceTuningChannel);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, BalanceStatePacket.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, MonsterUiPacket.CHANNEL);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
@@ -255,7 +266,10 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(rangedWeaponListener, this);
         getServer().getPluginManager().registerEvents(scoutController, this);
         getServer().getPluginManager().registerEvents(
-                new MonsterListener(monsterManager), this);
+                new MonsterListener(
+                        monsterManager,
+                        crowdControlManager,
+                        statusEffectManager), this);
         trainingDummyManager.start();
         warriorCombatManager.start();
         warriorEffectManager.start();
@@ -265,7 +279,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         if (getCommand("projects") != null) {
             getCommand("projects").setExecutor(new ProjectCommand(
                     itemManager, trainingDummyManager, devMenuManager,
-                    enhancementListener, monsterManager));
+                    enhancementListener, monsterManager,
+                    crowdControlManager, statusEffectManager,
+                    playerManager));
         }
 
         getLogger().info("ProjectS has started!");
@@ -298,6 +314,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 balanceTuningChannel);
         getServer().getMessenger().unregisterOutgoingPluginChannel(
                 this, BalanceStatePacket.CHANNEL);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(
+                this, MonsterUiPacket.CHANNEL);
         if (combatInputManager != null) {
             combatInputManager.clear();
         }
@@ -334,6 +352,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         if (painterSkillExecutor != null) painterSkillExecutor.clearAll();
         if (painterPassiveManager != null) painterPassiveManager.clear();
         if (crowdControlManager != null) crowdControlManager.clear();
+        if (statusEffectManager != null) statusEffectManager.clear();
         getLogger().info("ProjectS has stopped!");
     }
 }

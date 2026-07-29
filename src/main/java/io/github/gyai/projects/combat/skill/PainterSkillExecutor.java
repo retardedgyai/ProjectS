@@ -3,6 +3,7 @@ package io.github.gyai.projects.combat.skill;
 import io.github.gyai.projects.combat.resource.ResourceDefinition;
 import io.github.gyai.projects.combat.resource.ResourceManager;
 import io.github.gyai.projects.skill.SkillManager;
+import io.github.gyai.projects.status.StatusEffectManager;
 import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Particle;
@@ -34,6 +35,7 @@ public final class PainterSkillExecutor {
     private final TargetingService targeting;
     private final SkillDamageService damage;
     private final CrowdControlManager crowdControl;
+    private final StatusEffectManager statusEffects;
     private final Map<PainterSpell, PainterSpellSettings> settings = new EnumMap<>(PainterSpell.class);
     private final Map<UUID, Map<EffectKey, List<BukkitTask>>> tasks = new HashMap<>();
     private final Map<UUID, LightState> lights = new HashMap<>();
@@ -44,9 +46,11 @@ public final class PainterSkillExecutor {
     public PainterSkillExecutor(JavaPlugin plugin, ResourceManager resources, ResourceDefinition mana,
                                 SkillManager cooldowns, TargetingService targeting,
                                 SkillDamageService damage, CrowdControlManager crowdControl,
+                                StatusEffectManager statusEffects,
                                 SkillEffectRenderer effects) {
         this.plugin=plugin; this.resources=resources; this.mana=mana; this.cooldowns=cooldowns;
         this.targeting=targeting; this.damage=damage; this.crowdControl=crowdControl;
+        this.statusEffects=statusEffects;
         this.effects=effects;
         this.severingSettings=SeveringBoltSettings.load(plugin.getConfig());
         for (PainterSpell spell : PainterSpell.values()) settings.put(spell, PainterSpellSettings.load(plugin.getConfig(), spell));
@@ -194,7 +198,10 @@ public final class PainterSkillExecutor {
                         particle(point, Particle.FLAME, 3);effects.drawRing(point,s.radius(),Particle.ASH);
                         for (LivingEntity enemy : targeting.enemies(caster, point, s.radius())) if (hit.add(enemy.getUniqueId())) {
                             damage.damage(caster, enemy, spell.configKey, s.baseDamage(), true, true, cast);
-                            crowdControl.slow(enemy, seconds(s.tickInterval()+.5), s.slowStrength());
+                            statusEffects.slow(
+                                    enemy, caster,
+                                    seconds(s.tickInterval()+.5),
+                                    s.slowStrength());
                         }
                     }
                 } ticks++;
@@ -282,7 +289,11 @@ public final class PainterSkillExecutor {
         SkillDamageService.UUIDCast cast=SkillDamageService.UUIDCast.create();
         for(LivingEntity enemy:targeting.enemies(caster,center,s.radius())){
             damage.damage(caster,enemy,spell.configKey,s.baseDamage(),false,true,cast);
-            crowdControl.pull(enemy,center,.55); crowdControl.slow(enemy,seconds(s.ccDuration()),s.slowStrength());
+            crowdControl.pull(enemy,center,.55);
+            statusEffects.slow(
+                    enemy, caster,
+                    seconds(s.ccDuration()),
+                    s.slowStrength());
         }
     }
 
@@ -296,7 +307,10 @@ public final class PainterSkillExecutor {
                 ring(last,radius,Particle.DRAGON_BREATH);
                 if(ticks%Math.max(1,seconds(s.tickInterval()))==0) for(LivingEntity enemy:targeting.enemies(caster,last,radius)){
                     damage.damage(caster,enemy,spell.configKey,s.baseDamage()/4,true,true,cast);
-                    crowdControl.slow(enemy,seconds(s.tickInterval()+.5),Math.min(4,(int)(progress*4)));
+                    statusEffects.slow(
+                            enemy, caster,
+                            seconds(s.tickInterval()+.5),
+                            Math.min(4,(int)(progress*4)));
                 }
                 if(ticks++>=seconds(s.duration())){explode(caster,spell,last,s,cast,false);cancel();}
             }}; cancelEffect(caster,EffectKey.ULTIMATE);track(caster,EffectKey.ULTIMATE,ultimate.runTaskTimer(plugin,0,1));

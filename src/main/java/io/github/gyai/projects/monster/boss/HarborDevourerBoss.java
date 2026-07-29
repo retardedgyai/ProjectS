@@ -1,7 +1,12 @@
 package io.github.gyai.projects.monster.boss;
 
+import io.github.gyai.projects.combat.skill.CrowdControlManager;
+import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
+import io.github.gyai.projects.combat.skill.HardControlState;
+import io.github.gyai.projects.combat.skill.HardControlType;
 import io.github.gyai.projects.monster.CustomMonster;
 import io.github.gyai.projects.monster.MonsterData;
+import io.github.gyai.projects.status.StatusEffectManager;
 import org.bukkit.Color;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -16,7 +21,6 @@ import org.bukkit.entity.Ravager;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
@@ -40,6 +44,7 @@ public final class HarborDevourerBoss extends CustomMonster {
     private final Set<BukkitTask> actionTasks = new HashSet<>();
     private boolean phaseTwo;
     private boolean activeAction;
+    private ActionType activeActionType = ActionType.NONE;
     private int noTargetTicks;
     private long nextSlamTick;
     private long nextChargeTick;
@@ -50,9 +55,18 @@ public final class HarborDevourerBoss extends CustomMonster {
             Ravager entity,
             Location spawnLocation,
             BossBar bossBar,
-            Settings settings
+            Settings settings,
+            CrowdControlManager crowdControlManager,
+            StatusEffectManager statusEffectManager
     ) {
-        super(plugin, data, entity, spawnLocation, bossBar);
+        super(
+                plugin,
+                data,
+                entity,
+                spawnLocation,
+                bossBar,
+                crowdControlManager,
+                statusEffectManager);
         this.ravager = entity;
         this.settings = settings;
         initializeCooldowns();
@@ -69,6 +83,12 @@ public final class HarborDevourerBoss extends CustomMonster {
         updateBossBar();
         if (isOutsideLeash()) {
             resetBoss();
+            return;
+        }
+        HardControlType hardControl = getHardControlType();
+        if (hardControl == HardControlType.STUN
+                || hardControl == HardControlType.FEAR
+                || hardControl == HardControlType.CHARM) {
             return;
         }
 
@@ -91,7 +111,9 @@ public final class HarborDevourerBoss extends CustomMonster {
 
         long currentTick = plugin.getServer().getCurrentTick();
         double distanceSquared = target.getLocation().distanceSquared(ravager.getLocation());
-        if (currentTick >= nextChargeTick && distanceSquared >= 36.0) {
+        if (hardControl != HardControlType.ROOT
+                && currentTick >= nextChargeTick
+                && distanceSquared >= 36.0) {
             startHullbreakerCharge(target);
         } else if (currentTick >= nextSlamTick && distanceSquared <= 49.0) {
             startBreakwaterSlam();
@@ -111,6 +133,7 @@ public final class HarborDevourerBoss extends CustomMonster {
     public void handleDeath(EntityDeathEvent event) {
         cancelActionTasks();
         activeAction = false;
+        activeActionType = ActionType.NONE;
         super.handleDeath(event);
     }
 
@@ -118,11 +141,33 @@ public final class HarborDevourerBoss extends CustomMonster {
     public void remove() {
         cancelActionTasks();
         activeAction = false;
+        activeActionType = ActionType.NONE;
         if (ravager.isValid()) {
             ravager.setAI(true);
             ravager.setVelocity(new Vector());
         }
         super.remove();
+    }
+
+    @Override
+    public void handleHardControlChanged(
+            HardControlState previous,
+            HardControlState current
+    ) {
+        if (current == null) {
+            if (isValid() && !activeAction) {
+                ravager.setAI(true);
+            }
+            return;
+        }
+        HardControlType type = current.type();
+        if (type == HardControlType.STUN
+                || type == HardControlType.FEAR
+                || type == HardControlType.CHARM
+                || type == HardControlType.ROOT
+                && activeActionType == ActionType.CHARGE) {
+            interruptActionForControl(type);
+        }
     }
 
     @Override
@@ -180,19 +225,18 @@ public final class HarborDevourerBoss extends CustomMonster {
     private void resetBoss() {
         cancelActionTasks();
         activeAction = false;
+        activeActionType = ActionType.NONE;
         phaseTwo = false;
         currentPhase = 1;
         noTargetTicks = 0;
         bossBar.removeAll();
         bossBar.setColor(BarColor.RED);
+        clearManagedEffects(HardControlRemovalReason.BOSS_RESET);
 
         ravager.setAI(true);
         ravager.setTarget(null);
         ravager.setVelocity(new Vector());
         ravager.setFireTicks(0);
-        for (PotionEffect effect : ravager.getActivePotionEffects()) {
-            ravager.removePotionEffect(effect.getType());
-        }
         ravager.teleport(spawnLocation);
         setMovementSpeed(data.stats().movementSpeed());
         if (!ravager.isDead()) {
@@ -216,6 +260,7 @@ public final class HarborDevourerBoss extends CustomMonster {
         phaseTwo = true;
         currentPhase = 2;
         activeAction = true;
+        activeActionType = ActionType.PHASE_TRANSITION;
         bossBar.setColor(BarColor.PURPLE);
         setMovementSpeed(data.stats().movementSpeed() * 1.2);
         long currentTick = plugin.getServer().getCurrentTick();
@@ -244,14 +289,19 @@ public final class HarborDevourerBoss extends CustomMonster {
 
         track(plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (isValid()) {
-                ravager.setAI(true);
+                restoreAiForCurrentControl();
                 activeAction = false;
+                activeActionType = ActionType.NONE;
             }
         }, 30L));
     }
 
     private void startBreakwaterSlam() {
+        if (!canUseStationaryAttack()) {
+            return;
+        }
         activeAction = true;
+        activeActionType = ActionType.SLAM;
         ravager.setAI(false);
         ravager.setVelocity(new Vector());
         nextSlamTick = plugin.getServer().getCurrentTick()
@@ -262,7 +312,11 @@ public final class HarborDevourerBoss extends CustomMonster {
 
             @Override
             public void run() {
-                if (!isValid() || !activeAction || elapsed >= settings.slamWarningTicks()) {
+                if (!isValid()
+                        || !activeAction
+                        || activeActionType != ActionType.SLAM
+                        || !canUseStationaryAttack()
+                        || elapsed >= settings.slamWarningTicks()) {
                     cancel();
                     return;
                 }
@@ -281,7 +335,10 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void executeSlam() {
-        if (!isValid() || !activeAction) {
+        if (!isValid()
+                || !activeAction
+                || activeActionType != ActionType.SLAM
+                || !canUseStationaryAttack()) {
             finishAction();
             return;
         }
@@ -297,7 +354,10 @@ public final class HarborDevourerBoss extends CustomMonster {
 
         if (phaseTwo) {
             track(plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (isValid() && activeAction) {
+                if (isValid()
+                        && activeAction
+                        && activeActionType == ActionType.SLAM
+                        && canUseStationaryAttack()) {
                     Location secondCenter = ravager.getLocation();
                     drawWarningCircle(8.0);
                     damagePlayersInRing(secondCenter, 5.0, 8.0, 12.0, 0.8, 0.35);
@@ -315,7 +375,11 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void startHullbreakerCharge(Player target) {
+        if (!canUseMovementAttack()) {
+            return;
+        }
         activeAction = true;
+        activeActionType = ActionType.CHARGE;
         ravager.setAI(false);
         ravager.setVelocity(new Vector());
         nextChargeTick = plugin.getServer().getCurrentTick()
@@ -337,7 +401,11 @@ public final class HarborDevourerBoss extends CustomMonster {
 
             @Override
             public void run() {
-                if (!isValid() || !activeAction || elapsed >= settings.chargeWarningTicks()) {
+                if (!isValid()
+                        || !activeAction
+                        || activeActionType != ActionType.CHARGE
+                        || !canUseMovementAttack()
+                        || elapsed >= settings.chargeWarningTicks()) {
                     cancel();
                     return;
                 }
@@ -358,7 +426,10 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void beginChargeMovement(Location start, Vector direction) {
-        if (!isValid() || !activeAction) {
+        if (!isValid()
+                || !activeAction
+                || activeActionType != ActionType.CHARGE
+                || !canUseMovementAttack()) {
             finishAction();
             return;
         }
@@ -366,7 +437,10 @@ public final class HarborDevourerBoss extends CustomMonster {
         BukkitRunnable movement = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!isValid() || !activeAction) {
+                if (!isValid()
+                        || !activeAction
+                        || activeActionType != ActionType.CHARGE
+                        || !canUseMovementAttack()) {
                     cancel();
                     finishAction();
                     return;
@@ -474,8 +548,36 @@ public final class HarborDevourerBoss extends CustomMonster {
             return;
         }
         ravager.setVelocity(new Vector());
-        ravager.setAI(true);
+        restoreAiForCurrentControl();
         activeAction = false;
+        activeActionType = ActionType.NONE;
+    }
+
+    private void interruptActionForControl(HardControlType type) {
+        cancelActionTasks();
+        activeAction = false;
+        activeActionType = ActionType.NONE;
+        if (ravager.isValid()) {
+            ravager.setVelocity(new Vector());
+            if (type == HardControlType.STUN) {
+                ravager.setAI(false);
+            } else {
+                ravager.setAI(true);
+            }
+        }
+    }
+
+    private boolean canUseStationaryAttack() {
+        HardControlType type = getHardControlType();
+        return type == null || type == HardControlType.ROOT;
+    }
+
+    private boolean canUseMovementAttack() {
+        return getHardControlType() == null;
+    }
+
+    private void restoreAiForCurrentControl() {
+        ravager.setAI(getHardControlType() != HardControlType.STUN);
     }
 
     private void setMovementSpeed(double value) {
@@ -552,5 +654,12 @@ public final class HarborDevourerBoss extends CustomMonster {
             double chargeDamage,
             int managerTickInterval
     ) {
+    }
+
+    private enum ActionType {
+        NONE,
+        PHASE_TRANSITION,
+        SLAM,
+        CHARGE
     }
 }

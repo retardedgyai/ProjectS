@@ -1,5 +1,10 @@
 package io.github.gyai.projects.monster;
 
+import io.github.gyai.projects.combat.skill.CrowdControlManager;
+import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
+import io.github.gyai.projects.combat.skill.HardControlState;
+import io.github.gyai.projects.combat.skill.HardControlType;
+import io.github.gyai.projects.status.StatusEffectManager;
 import org.bukkit.Location;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.LivingEntity;
@@ -16,6 +21,8 @@ public abstract class CustomMonster {
     protected final LivingEntity entity;
     protected final Location spawnLocation;
     protected final BossBar bossBar;
+    protected final CrowdControlManager crowdControlManager;
+    protected final StatusEffectManager statusEffectManager;
     protected int currentPhase = 1;
     protected boolean removed;
 
@@ -24,13 +31,19 @@ public abstract class CustomMonster {
             MonsterData data,
             LivingEntity entity,
             Location spawnLocation,
-            BossBar bossBar
+            BossBar bossBar,
+            CrowdControlManager crowdControlManager,
+            StatusEffectManager statusEffectManager
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.data = Objects.requireNonNull(data, "data");
         this.entity = Objects.requireNonNull(entity, "entity");
         this.spawnLocation = Objects.requireNonNull(spawnLocation, "spawnLocation").clone();
         this.bossBar = Objects.requireNonNull(bossBar, "bossBar");
+        this.crowdControlManager = Objects.requireNonNull(
+                crowdControlManager, "crowdControlManager");
+        this.statusEffectManager = Objects.requireNonNull(
+                statusEffectManager, "statusEffectManager");
     }
 
     public abstract void tick();
@@ -39,6 +52,7 @@ public abstract class CustomMonster {
     }
 
     public void handleDeath(EntityDeathEvent event) {
+        clearManagedEffects(HardControlRemovalReason.ENTITY_INVALID);
         removed = true;
         bossBar.removeAll();
     }
@@ -48,6 +62,7 @@ public abstract class CustomMonster {
             return;
         }
         removed = true;
+        clearManagedEffects(HardControlRemovalReason.MONSTER_REMOVED);
         bossBar.removeAll();
         if (entity.isValid()) {
             entity.remove();
@@ -78,5 +93,24 @@ public abstract class CustomMonster {
 
     public LivingEntity getEntity() {
         return entity;
+    }
+
+    public HardControlType getHardControlType() {
+        return crowdControlManager.getType(entity);
+    }
+
+    public boolean hasHardControl(HardControlType type) {
+        return getHardControlType() == type;
+    }
+
+    public void handleHardControlChanged(
+            HardControlState previous,
+            HardControlState current
+    ) {
+    }
+
+    public void clearManagedEffects(HardControlRemovalReason reason) {
+        crowdControlManager.clear(entity, reason);
+        statusEffectManager.clear(entity);
     }
 }

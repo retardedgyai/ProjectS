@@ -259,8 +259,12 @@ skills:
       projectile-speed: 1.2
       particle-density: 1.0
 monsters:
+  ui:
+    display-range: 48.0
   bosses:
     harbor-devourer-grohm:
+      level: 30
+      rank: BOSS
       max-health: 1000.0
       attack-damage: 14.0
       movement-speed: 0.26
@@ -271,6 +275,10 @@ monsters:
       boss-bar-range: 48.0
       reset-after-seconds: 10.0
       phase-two-health-ratio: 0.5
+      cc-resistance:
+        hard-duration-multiplier: 1.0
+        status-duration-multiplier: 1.0
+        immune-types: []
       breakwater-slam:
         cooldown-seconds: 7.0
         warning-ticks: 24

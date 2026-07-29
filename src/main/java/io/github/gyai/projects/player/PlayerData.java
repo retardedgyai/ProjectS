@@ -8,6 +8,7 @@ public class PlayerData {
     private final UUID uniqueId;
     private final Stats stats = new Stats();
     private int fightingSpirit;
+    private int combatLevel = 1;
     private final double cooldownReduction;
 
     public PlayerData(UUID uniqueId) {
@@ -47,4 +48,11 @@ public class PlayerData {
         return cooldownReduction;
     }
 
+    public int getCombatLevel() {
+        return combatLevel;
+    }
+
+    public void setCombatLevel(int combatLevel) {
+        this.combatLevel = Math.clamp(combatLevel, 1, 999);
+    }
 }
