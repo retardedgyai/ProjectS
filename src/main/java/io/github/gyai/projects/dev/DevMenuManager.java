@@ -133,7 +133,8 @@ public final class DevMenuManager implements Listener {
         category(holder, inventory, 30, Material.DIAMOND_SWORD, "戦闘テスト", Page.COMBAT);
         category(holder, inventory, 32, Material.BLAZE_ROD, "職業テスト", Page.CLASSES);
         category(holder, inventory, 34, Material.COMPARATOR, "デバッグ情報", Page.DEBUG);
-        category(holder, inventory, 26, Material.NETHERITE_SWORD, "ステータス調整", Page.STATS);
+        category(holder, inventory, 26, Material.NETHERITE_SWORD,
+                "手持ち武器の個体補正", Page.STATS);
         button(holder, inventory, 49, Material.SUNFLOWER, "更新", List.of("表示内容を再取得"),
                 (player, click) -> open(player, Page.MAIN, 0));
         button(holder, inventory, 50, Material.BARRIER, "閉じる", List.of(), (player, click) -> player.closeInventory());
@@ -325,10 +326,11 @@ public final class DevMenuManager implements Listener {
         button(holder, inventory, 4, Material.NETHER_STAR, "現在の戦闘ステータス",
                 List.of(
                         "武器: " + (weaponId == null ? "なし" : weaponId),
-                        "武器の攻撃力調整: %+.1f".formatted(attackBonus),
+                        "この武器だけの攻撃力補正: %+.1f".formatted(attackBonus),
                         "現在の最終攻撃力: %.2f".formatted(finalAttack),
-                        "武器の速度調整: %+.1f%%".formatted(speedBonus * 100.0),
-                        "強化込み攻撃速度: %+.1f%%".formatted(totalSpeed * 100.0)),
+                        "この武器だけの速度補正: %+.1f%%".formatted(speedBonus * 100.0),
+                        "強化込み攻撃速度: %+.1f%%".formatted(totalSpeed * 100.0),
+                        "グローバル基礎値はFabricのバランス調整画面から変更"),
                 (target, click) -> open(target, Page.STATS, 0));
 
         statButton(holder, inventory, 19, Material.RED_DYE, "攻撃力 -10", -10.0, 0.0);
@@ -342,7 +344,8 @@ public final class DevMenuManager implements Listener {
         statButton(holder, inventory, 31, Material.FEATHER, "攻撃速度 +20%", 0.0, 0.20);
 
         button(holder, inventory, 40, Material.MILK_BUCKET, "ステータス補正をリセット",
-                List.of("攻撃力と攻撃速度を初期値へ戻します"),
+                List.of("この武器アイテムだけの補正を消去します",
+                        "グローバル基礎値には影響しません"),
                 (target, click) -> {
                     enhancementManager.resetWeaponBonuses(
                             target.getInventory().getItemInMainHand());
@@ -361,7 +364,8 @@ public final class DevMenuManager implements Listener {
             double attackSpeedChange
     ) {
         button(holder, inventory, slot, material, name,
-                List.of("クリックするたびに変更", "メインハンドの武器自体に保存"),
+                List.of("クリックするたびに変更",
+                        "この武器アイテムだけに保存されます"),
                 (player, click) -> {
                     ItemStack weapon = player.getInventory().getItemInMainHand();
                     if (!enhancementManager.isWeapon(weapon)) {
@@ -479,6 +483,7 @@ public final class DevMenuManager implements Listener {
 
     private void give(Player player, CustomItem item, boolean stack) {
         ItemStack result = item.createItem();
+        enhancementManager.refreshWeapon(result);
         if (stack && result.getMaxStackSize() > 1) result.setAmount(result.getMaxStackSize());
         Map<Integer, ItemStack> overflow = player.getInventory().addItem(result);
         overflow.values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
@@ -570,7 +575,7 @@ public final class DevMenuManager implements Listener {
         MAIN("ProjectS 開発メニュー"), WEAPONS("開発メニュー - 武器"), ITEMS("開発メニュー - アイテム"),
         DUMMIES("開発メニュー - 訓練ダミー"), COMMANDS("開発メニュー - コマンド一覧"),
         PLAYER("開発メニュー - プレイヤー操作"), COMBAT("開発メニュー - 戦闘テスト"),
-        STATS("開発メニュー - ステータス調整"),
+        STATS("開発メニュー - 手持ち武器の個体補正"),
         CLASSES("開発メニュー - 職業テスト"), DEBUG("開発メニュー - デバッグ情報"),
         CONFIRM_CLEAR("確認 - インベントリ削除"), CONFIRM_REMOVE_ALL("確認 - ダミー全削除");
         private final String title;

@@ -12,6 +12,7 @@ import io.github.gyai.projects.combat.classsystem.ClassManager;
 import io.github.gyai.projects.combat.resource.ResourceManager;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import io.github.gyai.projects.combat.classsystem.WarriorLoadoutManager;
+import io.github.gyai.projects.manager.EnhancementManager;
 
 public class PlayerListener implements Listener {
     private final PlayerManager playerManager;
@@ -21,6 +22,7 @@ public class PlayerListener implements Listener {
     private final ClassManager classManager;
     private final ResourceManager resourceManager;
     private final WarriorLoadoutManager warriorLoadoutManager;
+    private final EnhancementManager enhancementManager;
 
     public PlayerListener(
             PlayerManager playerManager,
@@ -29,7 +31,8 @@ public class PlayerListener implements Listener {
             TrainingDummyManager dummyManager,
             ClassManager classManager,
             ResourceManager resourceManager,
-            WarriorLoadoutManager warriorLoadoutManager
+            WarriorLoadoutManager warriorLoadoutManager,
+            EnhancementManager enhancementManager
     ) {
         this.playerManager = playerManager;
         this.skillManager = skillManager;
@@ -38,11 +41,13 @@ public class PlayerListener implements Listener {
         this.classManager = classManager;
         this.resourceManager = resourceManager;
         this.warriorLoadoutManager = warriorLoadoutManager;
+        this.enhancementManager = enhancementManager;
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         playerManager.initializePlayer(event.getPlayer());
+        enhancementManager.refreshInventory(event.getPlayer());
     }
 
     @EventHandler

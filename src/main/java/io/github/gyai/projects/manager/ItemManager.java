@@ -10,13 +10,15 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Collection;
+import java.util.function.Consumer;
 
 public class ItemManager {
-    private final Map<String, CustomItem> items = new HashMap<>();
+    private final Map<String, CustomItem> items = new LinkedHashMap<>();
     private final NamespacedKey itemIdKey;
+    private Consumer<ItemStack> itemInitializer = item -> { };
 
     public ItemManager(JavaPlugin plugin) {
         itemIdKey = new NamespacedKey(plugin, "item_id");
@@ -78,6 +80,17 @@ public class ItemManager {
         return java.util.List.copyOf(items.values());
     }
 
+    public Collection<Weapon> getWeapons() {
+        return items.values().stream()
+                .filter(Weapon.class::isInstance)
+                .map(Weapon.class::cast)
+                .toList();
+    }
+
+    public void setItemInitializer(Consumer<ItemStack> itemInitializer) {
+        this.itemInitializer = itemInitializer == null ? item -> { } : itemInitializer;
+    }
+
     public ItemStack createItem(String id) {
         CustomItem item = getItem(id);
 
@@ -85,7 +98,9 @@ public class ItemManager {
             return null;
         }
 
-        return item.createItem();
+        ItemStack result = item.createItem();
+        itemInitializer.accept(result);
+        return result;
     }
 
     public String getItemId(ItemStack item) {

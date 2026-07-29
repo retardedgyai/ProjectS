@@ -2,6 +2,7 @@ package io.github.gyai.projects.skill.warrior;
 
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
+import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 
@@ -25,6 +26,8 @@ public final class WarriorAttackSkills {
                 "base-damage", 14, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", 1.4, 0, 100);
+        support.registerDamageBalance(
+                "sweeping_slash", "薙ぎ払い", baseDamage, scaling);
 
         skillManager.register(new ConfiguredWarriorSkill(
                 "sweeping_slash",
@@ -36,8 +39,11 @@ public final class WarriorAttackSkills {
                     if (!support.validateCaster(player)) {
                         return Optional.empty();
                     }
-                    double damage =
-                            baseDamage + support.attackPower(player) * scaling;
+                    var values = support.damageValues("sweeping_slash");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         support.play(
                                 player,

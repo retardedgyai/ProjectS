@@ -27,6 +27,7 @@ public class EnhancementManager {
     public static final String REPAIR_MATERIAL_ID = "repair_crystal";
 
     private final ItemManager itemManager;
+    private final BalanceTuningManager balanceManager;
     private final NamespacedKey levelKey;
     private final NamespacedKey brokenKey;
     private final NamespacedKey attackSpeedModifierKey;
@@ -36,9 +37,11 @@ public class EnhancementManager {
 
     public EnhancementManager(
             JavaPlugin plugin,
-            ItemManager itemManager
+            ItemManager itemManager,
+            BalanceTuningManager balanceManager
     ) {
         this.itemManager = itemManager;
+        this.balanceManager = balanceManager;
         levelKey = new NamespacedKey(plugin, "enhancement_level");
         brokenKey = new NamespacedKey(plugin, "weapon_broken");
         attackSpeedModifierKey = new NamespacedKey(plugin, "enhancement_attack_speed");
@@ -94,14 +97,24 @@ public class EnhancementManager {
         if (!(itemManager.getItem(itemId) instanceof Weapon weapon) || isBroken(item)) {
             return 0.0;
         }
-        double baseAttackPower = Math.max(0.0,
-                weapon.getAttackDamage() + getWeaponAttackPowerBonus(item));
-        return baseAttackPower * getAttackMultiplier(item);
+        double globalBase = balanceManager.weaponAttackPower(
+                itemId, weapon.getAttackDamage());
+        return BalanceMath.attackPower(
+                globalBase,
+                getWeaponAttackPowerBonus(item),
+                getAttackMultiplier(item));
     }
 
     public double getTotalAttackSpeedBonus(Player player, ItemStack item) {
-        return getAttackSpeedBonus(getLevel(item))
-                + getWeaponAttackSpeedBonus(item);
+        String itemId = itemManager.getItemId(item);
+        double globalBase = itemManager.getItem(itemId) instanceof Weapon weapon
+                ? balanceManager.weaponAttackSpeed(
+                        itemId, weapon.getAttackSpeedBonus())
+                : 0.0;
+        return BalanceMath.attackSpeed(
+                globalBase,
+                getAttackSpeedBonus(getLevel(item)),
+                getWeaponAttackSpeedBonus(item));
     }
 
     public double getWeaponAttackPowerBonus(ItemStack item) {
@@ -197,14 +210,23 @@ public class EnhancementManager {
 
         double attackPowerBonus = getWeaponAttackPowerBonus(item);
         double attackSpeedBonus = getWeaponAttackSpeedBonus(item);
-        double damage = Math.max(0.0, weapon.getAttackDamage() + attackPowerBonus)
-                * (1.0 + level * 0.04);
+        double globalAttackPower = balanceManager.weaponAttackPower(
+                itemId, weapon.getAttackDamage());
+        double globalAttackSpeed = balanceManager.weaponAttackSpeed(
+                itemId, weapon.getAttackSpeedBonus());
+        double damage = BalanceMath.attackPower(
+                globalAttackPower, attackPowerBonus,
+                1.0 + level * 0.04);
         List<Component> lore = new ArrayList<>();
         lore.add(Component.text("強化値: +" + level + " / +" + MAX_LEVEL,
                 level >= 20 ? NamedTextColor.GOLD : NamedTextColor.AQUA));
         lore.add(Component.text("攻撃力: %.1f  (+%.0f%%)".formatted(damage, level * 4.0),
                 NamedTextColor.RED));
-        lore.add(Component.text("攻撃速度: +%.1f%%".formatted(getAttackSpeedBonus(level) * 100.0),
+        double totalItemAttackSpeed = BalanceMath.attackSpeed(
+                globalAttackSpeed,
+                getAttackSpeedBonus(level),
+                attackSpeedBonus);
+        lore.add(Component.text("攻撃速度: %+.1f%%".formatted(totalItemAttackSpeed * 100.0),
                 NamedTextColor.YELLOW));
         if (attackPowerBonus != 0.0 || attackSpeedBonus != 0.0) {
             lore.add(Component.text("武器調整: 攻撃力 %+.1f / 速度 %+.1f%%".formatted(
@@ -217,7 +239,6 @@ public class EnhancementManager {
         meta.lore(lore);
 
         meta.removeAttributeModifier(Attribute.ATTACK_SPEED);
-        double totalItemAttackSpeed = getAttackSpeedBonus(level) + attackSpeedBonus;
         if (!broken && totalItemAttackSpeed != 0.0) {
             meta.addAttributeModifier(Attribute.ATTACK_SPEED, new AttributeModifier(
                     attackSpeedModifierKey,
@@ -226,5 +247,11 @@ public class EnhancementManager {
                     EquipmentSlotGroup.MAINHAND));
         }
         item.setItemMeta(meta);
+    }
+
+    public void refreshInventory(Player player) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null) refreshWeapon(item);
+        }
     }
 }

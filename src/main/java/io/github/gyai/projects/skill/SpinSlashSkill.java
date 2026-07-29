@@ -1,6 +1,7 @@
 package io.github.gyai.projects.skill;
 
 import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
+import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -12,8 +13,6 @@ public final class SpinSlashSkill implements Skill {
     private final boolean enabled;
     private final double cooldown;
     private final double radius;
-    private final double baseDamage;
-    private final double attackPowerScaling;
 
     public SpinSlashSkill(WarriorSkillSupport support) {
         this.support = support;
@@ -21,9 +20,11 @@ public final class SpinSlashSkill implements Skill {
         enabled = config.enabled();
         cooldown = config.number("cooldown", 8, 0, 300);
         radius = config.number("radius", 3, .5, 16);
-        baseDamage = config.number("base-damage", 11, 0, 10_000);
-        attackPowerScaling = config.number(
+        double baseDamage = config.number("base-damage", 11, 0, 10_000);
+        double attackPowerScaling = config.number(
                 "attack-power-scaling", 1.2, 0, 100);
+        support.registerDamageBalance(
+                getId(), getDisplayName(), baseDamage, attackPowerScaling);
     }
 
     @Override
@@ -54,8 +55,10 @@ public final class SpinSlashSkill implements Skill {
     @Override
     public Optional<PreparedUse> prepare(Player player) {
         if (!support.validateCaster(player)) return Optional.empty();
-        double damage =
-                baseDamage + support.attackPower(player) * attackPowerScaling;
+        var values = support.damageValues(getId());
+        double damage = BalanceMath.skillDamage(
+                values.baseDamage(), support.attackPower(player),
+                values.attackPowerScaling());
         return Optional.of(new PreparedUse(0, () -> {
             support.play(
                     player,

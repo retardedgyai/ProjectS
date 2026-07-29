@@ -3,6 +3,7 @@ package io.github.gyai.projects.skill.warrior;
 import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.BalanceTuningManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -23,17 +24,20 @@ public final class WarriorSkillSupport {
     private final TrainingDummyManager dummyManager;
     private final EnhancementManager enhancementManager;
     private final WarriorCombatManager combatManager;
+    private final BalanceTuningManager balanceManager;
 
     public WarriorSkillSupport(
             JavaPlugin plugin,
             TrainingDummyManager dummyManager,
             EnhancementManager enhancementManager,
-            WarriorCombatManager combatManager
+            WarriorCombatManager combatManager,
+            BalanceTuningManager balanceManager
     ) {
         this.plugin = plugin;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
         this.combatManager = combatManager;
+        this.balanceManager = balanceManager;
     }
 
     public boolean validateCaster(Player player) {
@@ -56,6 +60,20 @@ public final class WarriorSkillSupport {
     public double attackPower(Player player) {
         return enhancementManager.getAttackPower(
                 player, player.getInventory().getItemInMainHand());
+    }
+
+    public void registerDamageBalance(
+            String skillId,
+            String displayName,
+            double baseDamage,
+            double attackPowerScaling
+    ) {
+        balanceManager.registerDamageSkill(
+                skillId, displayName, baseDamage, attackPowerScaling);
+    }
+
+    public BalanceTuningManager.DamageValues damageValues(String skillId) {
+        return balanceManager.damageValues(skillId);
     }
 
     public List<LivingEntity> nearby(Player player, double radius) {

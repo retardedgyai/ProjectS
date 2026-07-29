@@ -4,6 +4,7 @@ import io.github.gyai.projects.combat.classsystem.WarriorEffectManager;
 import io.github.gyai.projects.player.PlayerData;
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
+import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
@@ -42,6 +43,9 @@ public final class WarriorUltimateSkills {
                 "base-damage", 10, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", 1, 0, 100);
+        support.registerDamageBalance(
+                "fighting_spirit_release", "闘気解放",
+                baseDamage, scaling);
         double spiritScaling = config.number(
                 "spirit-damage-scaling", .25, 0, 100);
         skillManager.register(new ConfiguredWarriorSkill(
@@ -57,8 +61,12 @@ public final class WarriorUltimateSkills {
                                 .formatted(minimumSpirit));
                         return Optional.empty();
                     }
-                    double damage = baseDamage
-                            + support.attackPower(player) * scaling
+                    var values = support.damageValues(
+                            "fighting_spirit_release");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling())
                             + spirit * spiritScaling;
                     return Optional.of(new Skill.PreparedUse(
                             spirit,
@@ -151,6 +159,8 @@ public final class WarriorUltimateSkills {
                 "base-damage", 20, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", 2, 0, 100);
+        support.registerDamageBalance(
+                "end_war_strike", "終戦の一撃", baseDamage, scaling);
         double spiritScaling = config.number(
                 "spirit-damage-scaling", .35, 0, 100);
         double maxMissingHealthBonus = config.number(
@@ -168,8 +178,11 @@ public final class WarriorUltimateSkills {
                                 .formatted(minimumSpirit));
                         return Optional.empty();
                     }
-                    double damage = baseDamage
-                            + support.attackPower(player) * scaling
+                    var values = support.damageValues("end_war_strike");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling())
                             + spirit * spiritScaling;
                     if (spirit >= PlayerData.MAX_FIGHTING_SPIRIT) {
                         var maximumHealth =

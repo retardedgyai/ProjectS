@@ -38,6 +38,7 @@ import io.github.gyai.projects.listener.EnhancementListener;
 import io.github.gyai.projects.listener.MonsterListener;
 import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.BalanceTuningManager;
 import io.github.gyai.projects.manager.MonsterManager;
 import io.github.gyai.projects.combat.skill.SkillEffectRenderer;
 import io.github.gyai.projects.network.HudStatePacket;
@@ -45,6 +46,8 @@ import io.github.gyai.projects.network.WarriorLoadoutChannel;
 import io.github.gyai.projects.network.WarriorLoadoutRequestPacket;
 import io.github.gyai.projects.network.WarriorLoadoutSelectPacket;
 import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
+import io.github.gyai.projects.network.BalanceStatePacket;
+import io.github.gyai.projects.network.BalanceTuningChannel;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
 import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
@@ -68,6 +71,8 @@ public final class ProjectSPlugin extends JavaPlugin {
     private WarriorEffectManager warriorEffectManager;
     private WarriorLoadoutManager warriorLoadoutManager;
     private WarriorLoadoutChannel warriorLoadoutChannel;
+    private BalanceTuningManager balanceTuningManager;
+    private BalanceTuningChannel balanceTuningChannel;
     private MonsterManager monsterManager;
 
     @Override
@@ -83,8 +88,12 @@ public final class ProjectSPlugin extends JavaPlugin {
                 "classes.painter-mage.enabled", false);
         ItemManager itemManager = new ItemManager(this);
         itemManager.initialize(painterMageEnabled);
+        balanceTuningManager = new BalanceTuningManager(this, itemManager);
         playerManager = new PlayerManager();
-        EnhancementManager enhancementManager = new EnhancementManager(this, itemManager);
+        EnhancementManager enhancementManager = new EnhancementManager(
+                this, itemManager, balanceTuningManager);
+        balanceTuningManager.setEnhancementManager(enhancementManager);
+        itemManager.setItemInitializer(enhancementManager::refreshWeapon);
         EnhancementListener enhancementListener = new EnhancementListener(
                 this, itemManager, enhancementManager);
         skillManager = new SkillManager(playerManager);
@@ -106,7 +115,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
-                warriorCombatManager);
+                warriorCombatManager, balanceTuningManager);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
                 trainingDummyManager, skillManager);
@@ -127,6 +136,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         WarriorUltimateSkills.register(
                 skillManager, warriorSkillSupport, warriorEffectManager,
                 playerManager);
+        balanceTuningManager.loadOnEnable();
+        balanceTuningChannel = new BalanceTuningChannel(
+                this, balanceTuningManager);
         ClassRegistry classRegistry = new ClassRegistry();
         classRegistry.register(new ClassDefinition(
                         "warrior", "ウォーリアー", WarriorCombatManager.WARRIOR_WEAPON_ID,
@@ -204,8 +216,20 @@ public final class ProjectSPlugin extends JavaPlugin {
                 warriorLoadoutChannel);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, WarriorLoadoutStatePacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, BalanceTuningChannel.REQUEST_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, BalanceTuningChannel.UPDATE_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, BalanceTuningChannel.ACTION_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, BalanceStatePacket.CHANNEL);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
+        getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
         getServer().getPluginManager().registerEvents(warriorCombatManager, this);
         getServer().getPluginManager().registerEvents(warriorEffectManager, this);
         getServer().getPluginManager().registerEvents(
@@ -215,7 +239,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager,
-                        warriorLoadoutManager), this);
+                        warriorLoadoutManager, enhancementManager), this);
         getServer().getPluginManager().registerEvents(
                 new TrainingDummyListener(
                         trainingDummyManager, warriorCombatManager), this);
@@ -263,6 +287,17 @@ public final class ProjectSPlugin extends JavaPlugin {
                 warriorLoadoutChannel);
         getServer().getMessenger().unregisterOutgoingPluginChannel(
                 this, WarriorLoadoutStatePacket.CHANNEL);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, BalanceTuningChannel.REQUEST_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, BalanceTuningChannel.UPDATE_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, BalanceTuningChannel.ACTION_CHANNEL,
+                balanceTuningChannel);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(
+                this, BalanceStatePacket.CHANNEL);
         if (combatInputManager != null) {
             combatInputManager.clear();
         }
@@ -280,6 +315,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (warriorLoadoutChannel != null) {
             warriorLoadoutChannel.clear();
+        }
+        if (balanceTuningChannel != null) {
+            balanceTuningChannel.clear();
         }
         if (trainingDummyManager != null) {
             trainingDummyManager.stop();

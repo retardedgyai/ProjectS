@@ -4,6 +4,7 @@ import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.combat.classsystem.WarriorEffectManager;
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
+import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.EntityType;
@@ -46,6 +47,8 @@ public final class WarriorMobilitySkills {
         double baseDamage = config.number("base-damage", 8, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", .8, 0, 100);
+        support.registerDamageBalance(
+                "warrior_charge", "猛進", baseDamage, scaling);
 
         skillManager.register(new ConfiguredWarriorSkill(
                 "warrior_charge", "猛進", enabled, cooldown, 0,
@@ -61,8 +64,11 @@ public final class WarriorMobilitySkills {
                                 player, "前方へダッシュできません");
                         return Optional.empty();
                     }
-                    double damage =
-                            baseDamage + support.attackPower(player) * scaling;
+                    var values = support.damageValues("warrior_charge");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         effectManager.startCharge(
                                 player,
@@ -87,6 +93,8 @@ public final class WarriorMobilitySkills {
         double baseDamage = config.number("base-damage", 12, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", 1, 0, 100);
+        support.registerDamageBalance(
+                "execution_leap", "処刑跳躍", baseDamage, scaling);
 
         skillManager.register(new ConfiguredWarriorSkill(
                 "execution_leap", "処刑跳躍", enabled, cooldown, 0,
@@ -108,8 +116,11 @@ public final class WarriorMobilitySkills {
                         support.fail(player, "安全な着地点がありません");
                         return Optional.empty();
                     }
-                    double damage =
-                            baseDamage + support.attackPower(player) * scaling;
+                    var values = support.damageValues("execution_leap");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         player.teleport(destination);
                         player.getWorld().spawnParticle(
@@ -152,6 +163,8 @@ public final class WarriorMobilitySkills {
         double baseDamage = config.number("base-damage", 10, 0, 10_000);
         double scaling = config.number(
                 "attack-power-scaling", .9, 0, 100);
+        support.registerDamageBalance(
+                "earth_shatter", "大地砕き", baseDamage, scaling);
         double slowSeconds = config.number(
                 "slow-duration", 2, 0, 30);
         double launchY = config.number(
@@ -163,8 +176,11 @@ public final class WarriorMobilitySkills {
                     if (!support.validateCaster(player)) {
                         return Optional.empty();
                     }
-                    double damage =
-                            baseDamage + support.attackPower(player) * scaling;
+                    var values = support.damageValues("earth_shatter");
+                    double damage = BalanceMath.skillDamage(
+                            values.baseDamage(),
+                            support.attackPower(player),
+                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         List<LivingEntity> targets =
                                 support.nearby(player, radius);

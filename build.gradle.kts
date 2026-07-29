@@ -45,3 +45,18 @@ tasks.named("build") {
         }
     }
 }
+
+val balanceUnitTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.manager.BalanceMathTest")
+    jvmArgs("-ea")
+}
+
+tasks.test {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.named("check") {
+    dependsOn(balanceUnitTest)
+}
