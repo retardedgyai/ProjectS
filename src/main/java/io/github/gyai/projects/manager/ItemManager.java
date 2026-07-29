@@ -72,6 +72,10 @@ public class ItemManager {
         items.put(item.getId(), item);
     }
 
+    public void registerSimpleItem(String id, String displayName, Material material) {
+        register(new CustomItem(id, displayName, material, this::writeItemId));
+    }
+
     public CustomItem getItem(String id) {
         return items.get(id);
     }

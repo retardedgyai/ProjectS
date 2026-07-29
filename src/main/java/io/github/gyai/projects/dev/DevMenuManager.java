@@ -63,6 +63,7 @@ public final class DevMenuManager implements Listener {
     private final ClassRegistry classRegistry;
     private final ResourceManager resourceManager;
     private final EnhancementManager enhancementManager;
+    private final HardControlTestTool hardControlTestTool;
     private final Map<UUID, org.bukkit.Location> savedLocations = new HashMap<>();
 
     public DevMenuManager(
@@ -76,7 +77,8 @@ public final class DevMenuManager implements Listener {
             ClassManager classManager,
             ClassRegistry classRegistry,
             ResourceManager resourceManager,
-            EnhancementManager enhancementManager
+            EnhancementManager enhancementManager,
+            HardControlTestTool hardControlTestTool
     ) {
         this.plugin = plugin;
         this.itemManager = itemManager;
@@ -89,6 +91,7 @@ public final class DevMenuManager implements Listener {
         this.classRegistry = classRegistry;
         this.resourceManager = resourceManager;
         this.enhancementManager = enhancementManager;
+        this.hardControlTestTool = hardControlTestTool;
     }
 
     public void open(Player player) {
@@ -200,6 +203,7 @@ public final class DevMenuManager implements Listener {
     private void renderItems(DevMenuHolder holder, Inventory inventory, boolean weapons) {
         List<CustomItem> entries = itemManager.getItems().stream()
                 .filter(item -> (item instanceof Weapon) == weapons)
+                .filter(item -> !HardControlTestTool.ITEM_ID.equals(item.getId()))
                 .sorted(Comparator.comparing(CustomItem::getId)).toList();
         renderPaged(holder, inventory, entries, item -> {
             ItemStack icon = item.createItem();
@@ -307,6 +311,11 @@ public final class DevMenuManager implements Listener {
                 });
         button(holder, inventory, 20, Material.PAPER, "現在のDPSを表示", List.of(),
                 (player, click) -> showDps(player));
+        button(holder, inventory, 21, Material.BLAZE_ROD, "ハードCCテスターを受け取る",
+                List.of(
+                        "カスタムモブを攻撃して",
+                        "スタン・恐怖・魅了・ルートをテストします"),
+                (player, click) -> hardControlTestTool.giveTo(player));
         button(holder, inventory, 27, Material.TNT, "全ダミー削除", List.of("危険操作: 確認画面を表示"),
                 (player, click) -> open(player, Page.CONFIRM_REMOVE_ALL, 0));
         button(holder, inventory, 28, Material.SHEARS, "周囲のダミー削除", List.of("半径16ブロック"),

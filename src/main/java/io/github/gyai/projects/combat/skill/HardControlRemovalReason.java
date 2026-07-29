@@ -9,5 +9,6 @@ public enum HardControlRemovalReason {
     WORLD_CHANGED,
     MONSTER_REMOVED,
     BOSS_RESET,
+    DEV_TOOL,
     PLUGIN_STOP
 }

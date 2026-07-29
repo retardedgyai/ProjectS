@@ -1,5 +1,6 @@
 package io.github.gyai.projects.combat.skill;
 
+import io.github.gyai.projects.dev.HardControlTestSelection;
 import io.github.gyai.projects.monster.MonsterRank;
 import io.github.gyai.projects.network.MonsterUiMath;
 import io.github.gyai.projects.network.MonsterUiPacket;
@@ -46,6 +47,20 @@ public final class CcFoundationTest {
                 expired, HardControlType.FEAR, source, 2, 10).state();
         assert later.type() == HardControlType.FEAR;
         assert later.startTick() == 2;
+
+        assert HardControlTestSelection.nextMode(HardControlType.STUN)
+                == HardControlType.FEAR;
+        assert HardControlTestSelection.nextMode(HardControlType.FEAR)
+                == HardControlType.CHARM;
+        assert HardControlTestSelection.nextMode(HardControlType.CHARM)
+                == HardControlType.ROOT;
+        assert HardControlTestSelection.nextMode(HardControlType.ROOT)
+                == HardControlType.STUN;
+        assert HardControlTestSelection.nextDurationTicks(20) == 60;
+        assert HardControlTestSelection.nextDurationTicks(60) == 100;
+        assert HardControlTestSelection.nextDurationTicks(100) == 200;
+        assert HardControlTestSelection.nextDurationTicks(200) == 20;
+        assert HardControlTestSelection.nextDurationTicks(-1) == 20;
 
         StatusEffectState slow = StatusEffectState.apply(
                 null, StatusEffectType.SLOW, source,

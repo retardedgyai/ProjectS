@@ -36,6 +36,7 @@ import io.github.gyai.projects.combat.skill.PainterSkillExecutor;
 import io.github.gyai.projects.listener.PainterCombatListener;
 import io.github.gyai.projects.listener.EnhancementListener;
 import io.github.gyai.projects.listener.MonsterListener;
+import io.github.gyai.projects.listener.HardControlTestToolListener;
 import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.BalanceTuningManager;
@@ -55,6 +56,7 @@ import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
 import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
 import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
 import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
+import io.github.gyai.projects.dev.HardControlTestTool;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -98,6 +100,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 "classes.painter-mage.enabled", false);
         ItemManager itemManager = new ItemManager(this);
         itemManager.initialize(painterMageEnabled);
+        HardControlTestTool hardControlTestTool = new HardControlTestTool(
+                this, itemManager);
         balanceTuningManager = new BalanceTuningManager(this, itemManager);
         EnhancementManager enhancementManager = new EnhancementManager(
                 this, itemManager, balanceTuningManager);
@@ -208,7 +212,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         devMenuManager = new DevMenuManager(
                 this, itemManager, playerManager, skillManager, trainingDummyManager,
                 combatInputManager, clientInputListener, classManager, classRegistry,
-                resourceManager, enhancementManager);
+                resourceManager, enhancementManager, hardControlTestTool);
         clientInputListener.setDevMenuOpener(devMenuManager::open);
 
         getServer().getMessenger().registerIncomingPluginChannel(
@@ -247,6 +251,11 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager), this);
+        getServer().getPluginManager().registerEvents(
+                new HardControlTestToolListener(
+                        hardControlTestTool,
+                        crowdControlManager,
+                        monsterManager), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager,
