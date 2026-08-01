@@ -4,6 +4,11 @@ import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.BalanceTuningManager;
+import io.github.gyai.projects.combat.damage.DamageKind;
+import io.github.gyai.projects.combat.damage.DamageMode;
+import io.github.gyai.projects.combat.damage.DamageRequest;
+import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.DamageType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -25,19 +30,22 @@ public final class WarriorSkillSupport {
     private final EnhancementManager enhancementManager;
     private final WarriorCombatManager combatManager;
     private final BalanceTuningManager balanceManager;
+    private final DamageService damageService;
 
     public WarriorSkillSupport(
             JavaPlugin plugin,
             TrainingDummyManager dummyManager,
             EnhancementManager enhancementManager,
             WarriorCombatManager combatManager,
-            BalanceTuningManager balanceManager
+            BalanceTuningManager balanceManager,
+            DamageService damageService
     ) {
         this.plugin = plugin;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
         this.combatManager = combatManager;
         this.balanceManager = balanceManager;
+        this.damageService = damageService;
     }
 
     public boolean validateCaster(Player player) {
@@ -126,13 +134,15 @@ public final class WarriorSkillSupport {
     public int damageTargets(
             Player player,
             Iterable<? extends LivingEntity> targets,
-            double damage,
+            double fixedDamage,
+            double coefficient,
             String skillId
     ) {
         try (WarriorCombatManager.SkillHitSession session =
                      combatManager.beginSkillUse(player)) {
             for (LivingEntity target : targets) {
-                damage(player, target, damage, skillId, session);
+                damage(player, target, fixedDamage, coefficient,
+                        skillId, session, true, 1.0, false);
             }
             return session.confirmedHits();
         }
@@ -141,18 +151,32 @@ public final class WarriorSkillSupport {
     public int damageTargetsAtSpirit(
             Player player,
             Iterable<? extends LivingEntity> targets,
-            double damage,
+            double fixedDamage,
+            double coefficient,
             String skillId,
             double spiritSnapshot
     ) {
-        double adjustedDamage = damage
-                * combatManager.damageMultiplierForSpirit(spiritSnapshot);
+        return damageTargetsAtSpirit(
+                player, targets, fixedDamage, coefficient,
+                skillId, spiritSnapshot, 1.0);
+    }
+
+    public int damageTargetsAtSpirit(
+            Player player,
+            Iterable<? extends LivingEntity> targets,
+            double fixedDamage,
+            double coefficient,
+            String skillId,
+            double spiritSnapshot,
+            double additionalMultiplier
+    ) {
+        double multiplier = combatManager.damageMultiplierForSpirit(spiritSnapshot)
+                * Math.max(0.0, additionalMultiplier);
         try (WarriorCombatManager.SkillHitSession session =
                      combatManager.beginSkillUse(player)) {
             for (LivingEntity target : targets) {
-                damage(
-                        player, target, adjustedDamage,
-                        skillId, session, true);
+                damage(player, target, fixedDamage, coefficient,
+                        skillId, session, true, multiplier, true);
             }
             return session.confirmedHits();
         }
@@ -161,37 +185,64 @@ public final class WarriorSkillSupport {
     public void damage(
             Player player,
             LivingEntity target,
-            double damage,
+            double fixedDamage,
+            double coefficient,
             String skillId,
             WarriorCombatManager.SkillHitSession session
     ) {
-        damage(player, target, damage, skillId, session, false);
+        damage(player, target, fixedDamage, coefficient,
+                skillId, session, false, 1.0, false);
+    }
+
+    public void damage(
+            Player player,
+            LivingEntity target,
+            double fixedDamage,
+            double coefficient,
+            String skillId,
+            WarriorCombatManager.SkillHitSession session,
+            boolean areaDamage
+    ) {
+        damage(player, target, fixedDamage, coefficient,
+                skillId, session, areaDamage, 1.0, false);
     }
 
     private void damage(
             Player player,
             LivingEntity target,
-            double damage,
+            double fixedDamage,
+            double coefficient,
             String skillId,
             WarriorCombatManager.SkillHitSession session,
+            boolean areaDamage,
+            double modeMultiplier,
             boolean spiritBonusAlreadyApplied
     ) {
         if (!validateCaster(player)
                 || !target.isValid()
                 || !combatManager.isValidEnemy(player, target)
-                || damage <= 0.0) {
+                || (fixedDamage <= 0.0 && coefficient <= 0.0)) {
             return;
-        }
-        if (dummyManager.isTrainingDummy(target)) {
-            dummyManager.markSkillDamage(player, target, skillId);
         }
         enhancementManager.beginSkillDamage(player.getUniqueId());
         try (WarriorCombatManager.HitScope ignored = session.activate()) {
+            Runnable application = () -> damageService.apply(
+                    DamageRequest.builder(player, target)
+                            .skillId(skillId)
+                            .castId(session.sessionId())
+                            .damageType(DamageType.PHYSICAL)
+                            .damageKind(DamageKind.DIRECT_SKILL)
+                            .mode(DamageMode.PVE)
+                            .areaDamage(areaDamage)
+                            .fixedDamage(fixedDamage)
+                            .coefficient(coefficient)
+                            .pveMultiplier(modeMultiplier)
+                            .build());
             if (spiritBonusAlreadyApplied) {
                 combatManager.runWithSpiritBonusAlreadyApplied(
-                        player, () -> target.damage(damage, player));
+                        player, application);
             } else {
-                target.damage(damage, player);
+                application.run();
             }
         } finally {
             enhancementManager.endSkillDamage(player.getUniqueId());

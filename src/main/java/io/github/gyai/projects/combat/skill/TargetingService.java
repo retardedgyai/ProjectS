@@ -1,7 +1,7 @@
 package io.github.gyai.projects.combat.skill;
 
+import io.github.gyai.projects.combat.damage.DamageEventApplicationPolicy;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
-import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.LivingEntity;
@@ -16,9 +16,8 @@ public final class TargetingService {
     public boolean isEnemy(Player caster, LivingEntity target) {
         if (target == null || target == caster || target.isDead() || !target.isValid()) return false;
         if (dummyManager.isTrainingDummy(target)) return true;
-        if (target instanceof Player player) {
-            if (player.getGameMode() == GameMode.SPECTATOR || player.hasMetadata("projects_ally")) return false;
-        }
+        if (!DamageEventApplicationPolicy.allowsPveTarget(
+                target instanceof Player)) return false;
         if (target.getScoreboardTags().contains("projects_untargetable") || target.isInvulnerable()) return false;
         return !(target instanceof ArmorStand);
     }

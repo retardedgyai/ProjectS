@@ -59,6 +59,7 @@ import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
 import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
 import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
 import io.github.gyai.projects.dev.HardControlTestTool;
+import io.github.gyai.projects.combat.damage.DamageService;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -82,6 +83,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private BalanceTuningChannel balanceTuningChannel;
     private MonsterManager monsterManager;
     private TelegraphManager telegraphManager;
+    private DamageService damageService;
 
     @Override
     public void onEnable() {
@@ -116,6 +118,9 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, itemManager, enhancementManager);
         skillManager = new SkillManager(playerManager);
         trainingDummyManager = new TrainingDummyManager(this);
+        damageService = new DamageService(
+                playerManager, itemManager, enhancementManager,
+                trainingDummyManager);
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,
@@ -123,6 +128,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                 resourceManager,
                 trainingDummyManager,
                 enhancementManager,
+                damageService,
                 getConfig().getDouble(
                         "classes.warrior.fighting-spirit-retention-seconds", 10.0),
                 getConfig().getInt(
@@ -133,10 +139,10 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
-                warriorCombatManager, balanceTuningManager);
+                warriorCombatManager, balanceTuningManager, damageService);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
-                trainingDummyManager, skillManager);
+                trainingDummyManager, skillManager, damageService);
         warriorLoadoutManager = new WarriorLoadoutManager(
                 warriorCombatManager, skillManager);
         warriorLoadoutChannel = new WarriorLoadoutChannel(
@@ -182,7 +188,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                     getConfig().getDouble("skills.painter.passive.radius", 2.5),
                     getConfig().getDouble("skills.painter.passive.base-damage", 6));
             painterDamageService = new SkillDamageService(
-                    this, trainingDummyManager, painterPassiveManager);
+                    this, damageService, painterPassiveManager);
             painterPassiveManager.setDamageService(painterDamageService);
             painterSkillExecutor = new PainterSkillExecutor(
                 this, resourceManager, painterMana, skillManager,
@@ -256,12 +262,14 @@ public final class ProjectSPlugin extends JavaPlugin {
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
+        getServer().getPluginManager().registerEvents(damageService, this);
         getServer().getPluginManager().registerEvents(warriorCombatManager, this);
         getServer().getPluginManager().registerEvents(warriorEffectManager, this);
         getServer().getPluginManager().registerEvents(
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
-                        trainingDummyManager, enhancementManager), this);
+                        trainingDummyManager, enhancementManager,
+                        damageService), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
@@ -280,7 +288,8 @@ public final class ProjectSPlugin extends JavaPlugin {
         if (painterSkillExecutor != null && painterDamageService != null) {
             getServer().getPluginManager().registerEvents(
                     new PainterCombatListener(
-                            itemManager, painterSkillExecutor, painterDamageService), this);
+                            itemManager, painterSkillExecutor,
+                            painterDamageService, damageService), this);
         }
         getServer().getPluginManager().registerEvents(enhancementListener, this);
         getServer().getPluginManager().registerEvents(rangedWeaponListener, this);
@@ -380,6 +389,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (resourceManager != null) {
             resourceManager.clear();
+        }
+        if (damageService != null) {
+            damageService.clear();
         }
         if (painterSkillExecutor != null) painterSkillExecutor.clearAll();
         if (painterPassiveManager != null) painterPassiveManager.clear();

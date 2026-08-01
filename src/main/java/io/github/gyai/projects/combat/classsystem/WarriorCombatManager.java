@@ -2,6 +2,8 @@ package io.github.gyai.projects.combat.classsystem;
 
 import io.github.gyai.projects.combat.resource.ResourceDefinition;
 import io.github.gyai.projects.combat.resource.ResourceManager;
+import io.github.gyai.projects.combat.damage.DamageResult;
+import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.ItemManager;
@@ -34,6 +36,7 @@ public final class WarriorCombatManager implements Listener {
     private final ResourceManager resourceManager;
     private final TrainingDummyManager dummyManager;
     private final EnhancementManager enhancementManager;
+    private final DamageService damageService;
     private final long retentionMillis;
     private final int decayPerSecond;
     private final double damageBonusPerSpirit;
@@ -51,6 +54,7 @@ public final class WarriorCombatManager implements Listener {
             ResourceManager resourceManager,
             TrainingDummyManager dummyManager,
             EnhancementManager enhancementManager,
+            DamageService damageService,
             double retentionSeconds,
             int decayPerSecond,
             double damagePercentPerSpirit,
@@ -61,6 +65,7 @@ public final class WarriorCombatManager implements Listener {
         this.resourceManager = resourceManager;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
+        this.damageService = damageService;
         retentionMillis = Math.max(0L, Math.round(retentionSeconds * 1_000.0));
         this.decayPerSecond = Math.max(0, decayPerSecond);
         damageBonusPerSpirit = Math.max(0.0, damagePercentPerSpirit) / 100.0;
@@ -228,12 +233,17 @@ public final class WarriorCombatManager implements Listener {
         }
         markCombat(player);
         if (effectManager != null) {
+            LivingEntity target = (LivingEntity) event.getEntity();
+            DamageResult calculation = damageService.currentCalculation(
+                    player, target);
             effectManager.onConfirmedOutgoingHit(
                     player,
-                    (LivingEntity) event.getEntity(),
+                    target,
                     event.getFinalDamage(),
                     enhancementManager.isApplyingSkillDamage(
-                            player.getUniqueId()));
+                            player.getUniqueId()),
+                    calculation,
+                    damageMultiplierForSpirit(spiritBeforeHit));
         }
     }
 

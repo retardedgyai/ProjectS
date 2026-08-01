@@ -2,7 +2,6 @@ package io.github.gyai.projects.skill.warrior;
 
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
-import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 
@@ -40,10 +39,6 @@ public final class WarriorAttackSkills {
                         return Optional.empty();
                     }
                     var values = support.damageValues("sweeping_slash");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         support.play(
                                 player,
@@ -54,7 +49,8 @@ public final class WarriorAttackSkills {
                         support.damageTargets(
                                 player,
                                 support.cone(player, range, angle, true),
-                                damage,
+                                values.baseDamage(),
+                                values.attackPowerScaling(),
                                 "sweeping_slash");
                     }));
                 }));

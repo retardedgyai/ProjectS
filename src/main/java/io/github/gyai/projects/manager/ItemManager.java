@@ -31,7 +31,7 @@ public class ItemManager {
                 "starter_sword",
                 "§bProjectSの剣",
                 Material.IRON_SWORD,
-                10,
+                10, 0, 1.6, 0,
                 this::writeItemId
         ));
         if (painterMageEnabled) {
@@ -39,7 +39,7 @@ public class ItemManager {
                     "painter_staff",
                     "§d画術師の杖",
                     Material.BLAZE_ROD,
-                    7,
+                    0, 7, 1.0, 0,
                     this::writeItemId
             ));
         }
@@ -47,7 +47,7 @@ public class ItemManager {
                 "starter_bow",
                 "§a風追いの弓",
                 Material.BOW,
-                8,
+                8, 0, 1.25, 0,
                 this::writeItemId
         ));
         register(new MaterialItem(

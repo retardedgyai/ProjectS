@@ -3,6 +3,14 @@ package io.github.gyai.projects.combat.classsystem;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.skill.SkillManager;
+import io.github.gyai.projects.combat.damage.DamageKind;
+import io.github.gyai.projects.combat.damage.DamageMode;
+import io.github.gyai.projects.combat.damage.DamageOffenseSnapshot;
+import io.github.gyai.projects.combat.damage.DamageRequest;
+import io.github.gyai.projects.combat.damage.DamageResult;
+import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.DamageType;
+import io.github.gyai.projects.combat.stat.StatCalculator;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
@@ -34,6 +42,7 @@ public final class WarriorEffectManager implements Listener {
     private final EnhancementManager enhancementManager;
     private final TrainingDummyManager dummyManager;
     private final SkillManager skillManager;
+    private final DamageService damageService;
     private final NamespacedKey indomitableAttackSpeedKey;
     private final NamespacedKey bloodBattleAttackSpeedKey;
     private final Map<UUID, IndomitableState> indomitable = new HashMap<>();
@@ -51,13 +60,15 @@ public final class WarriorEffectManager implements Listener {
             WarriorCombatManager combatManager,
             EnhancementManager enhancementManager,
             TrainingDummyManager dummyManager,
-            SkillManager skillManager
+            SkillManager skillManager,
+            DamageService damageService
     ) {
         this.plugin = plugin;
         this.combatManager = combatManager;
         this.enhancementManager = enhancementManager;
         this.dummyManager = dummyManager;
         this.skillManager = skillManager;
+        this.damageService = damageService;
         indomitableAttackSpeedKey =
                 new NamespacedKey(plugin, "warrior_indomitable_attack_speed");
         bloodBattleAttackSpeedKey =
@@ -189,7 +200,8 @@ public final class WarriorEffectManager implements Listener {
             double maximumDistance,
             double speed,
             double width,
-            double damage
+            double fixedDamage,
+            double coefficient
     ) {
         cancelCharge(player);
         Vector forward = normalizedDirection(direction);
@@ -199,7 +211,8 @@ public final class WarriorEffectManager implements Listener {
                 Math.max(.5, maximumDistance),
                 Math.clamp(speed, .2, 2),
                 Math.clamp(width, .3, 6),
-                Math.max(0, damage),
+                Math.max(0, fixedDamage),
+                Math.max(0, coefficient),
                 player.getLocation().clone(),
                 combatManager.beginSkillUse(player));
         charges.put(player.getUniqueId(), state);
@@ -254,7 +267,9 @@ public final class WarriorEffectManager implements Listener {
             Player player,
             LivingEntity primaryTarget,
             double finalDamage,
-            boolean skillDamage
+            boolean skillDamage,
+            DamageResult calculation,
+            double spiritMultiplier
     ) {
         UUID playerId = player.getUniqueId();
         EndureState endureState = endure.get(playerId);
@@ -275,7 +290,9 @@ public final class WarriorEffectManager implements Listener {
                     player, eSkill, bloodState.cooldownReductionPerHit());
         }
         if (!skillDamage) {
-            splashNormalAttack(player, primaryTarget, finalDamage, bloodState);
+            splashNormalAttack(
+                    player, primaryTarget, calculation,
+                    spiritMultiplier, bloodState);
         }
     }
 
@@ -330,10 +347,19 @@ public final class WarriorEffectManager implements Listener {
     private void splashNormalAttack(
             Player player,
             LivingEntity primaryTarget,
-            double finalDamage,
+            DamageResult calculation,
+            double spiritMultiplier,
             BloodBattleState state
     ) {
-        if (finalDamage <= 0.0 || state.splashRadius() <= 0.0) return;
+        if (calculation == null || calculation.offenseResolvedDamage() <= 0.0
+                || state.splashRadius() <= 0.0) return;
+        double splashDamage = StatCalculator.saturatedMultiply(
+                calculation.offenseResolvedDamage(), spiritMultiplier);
+        splashDamage = StatCalculator.saturatedMultiply(
+                splashDamage, state.splashDamageFraction());
+        DamageOffenseSnapshot offenseSnapshot = new DamageOffenseSnapshot(
+                splashDamage, calculation.critical(),
+                calculation.criticalMultiplier());
         List<LivingEntity> targets = primaryTarget.getLocation()
                 .getNearbyLivingEntities(state.splashRadius())
                 .stream()
@@ -345,19 +371,22 @@ public final class WarriorEffectManager implements Listener {
         try (WarriorCombatManager.SkillHitSession session =
                      combatManager.beginSkillUse(player)) {
             for (LivingEntity target : targets) {
-                if (dummyManager.isTrainingDummy(target)) {
-                    dummyManager.markSkillDamage(
-                            player, target, "blood_battle");
-                }
                 enhancementManager.beginSkillDamage(player.getUniqueId());
                 try (WarriorCombatManager.HitScope ignored =
                              session.activate()) {
                     combatManager.runWithSpiritBonusAlreadyApplied(
                             player,
-                            () -> target.damage(
-                                    finalDamage
-                                            * state.splashDamageFraction(),
-                                    player));
+                            () -> damageService.apply(DamageRequest.builder(
+                                            player, target)
+                                    .skillId("blood_battle")
+                                    .castId(session.sessionId())
+                                    .damageType(DamageType.PHYSICAL)
+                                    .damageKind(DamageKind.DIRECT_SKILL)
+                                    .mode(DamageMode.PVE)
+                                    .areaDamage(true)
+                                    .criticalAllowed(false)
+                                    .offenseSnapshot(offenseSnapshot)
+                                    .build()));
                 } finally {
                     enhancementManager.endSkillDamage(player.getUniqueId());
                 }
@@ -460,14 +489,19 @@ public final class WarriorEffectManager implements Listener {
                         state.hitTargets.add(target.getUniqueId()))
                 .toList();
         for (LivingEntity target : targets) {
-            if (dummyManager.isTrainingDummy(target)) {
-                dummyManager.markSkillDamage(
-                        player, target, "warrior_charge");
-            }
             enhancementManager.beginSkillDamage(player.getUniqueId());
             try (WarriorCombatManager.HitScope ignored =
                          state.hitSession.activate()) {
-                target.damage(state.damage, player);
+                damageService.apply(DamageRequest.builder(player, target)
+                        .skillId("warrior_charge")
+                        .castId(state.hitSession.sessionId())
+                        .damageType(DamageType.PHYSICAL)
+                        .damageKind(DamageKind.DIRECT_SKILL)
+                        .mode(DamageMode.PVE)
+                        .areaDamage(true)
+                        .fixedDamage(state.fixedDamage)
+                        .coefficient(state.coefficient)
+                        .build());
             } finally {
                 enhancementManager.endSkillDamage(player.getUniqueId());
             }
@@ -611,7 +645,8 @@ public final class WarriorEffectManager implements Listener {
         private final double maximumDistance;
         private final double speed;
         private final double width;
-        private final double damage;
+        private final double fixedDamage;
+        private final double coefficient;
         private final Set<UUID> hitTargets = new HashSet<>();
         private final WarriorCombatManager.SkillHitSession hitSession;
         private Location lastLocation;
@@ -624,7 +659,8 @@ public final class WarriorEffectManager implements Listener {
                 double maximumDistance,
                 double speed,
                 double width,
-                double damage,
+                double fixedDamage,
+                double coefficient,
                 Location lastLocation,
                 WarriorCombatManager.SkillHitSession hitSession
         ) {
@@ -632,7 +668,8 @@ public final class WarriorEffectManager implements Listener {
             this.maximumDistance = maximumDistance;
             this.speed = speed;
             this.width = width;
-            this.damage = damage;
+            this.fixedDamage = fixedDamage;
+            this.coefficient = coefficient;
             this.lastLocation = lastLocation;
             this.hitSession = hitSession;
         }

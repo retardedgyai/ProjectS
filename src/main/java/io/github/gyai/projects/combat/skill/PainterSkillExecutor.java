@@ -112,7 +112,8 @@ public final class PainterSkillExecutor {
         for (LivingEntity enemy : targeting.enemies(caster, at, s.radius())) {
             double bonus = maxHealthBonus && enemy.getAttribute(Attribute.MAX_HEALTH) != null
                     ? enemy.getAttribute(Attribute.MAX_HEALTH).getValue() * .03 : 0;
-            damage.damage(caster, enemy, spell.configKey, s.baseDamage() + bonus, false, true, cast);
+            damage.damage(caster, enemy, spell.configKey, s.baseDamage() + bonus,
+                    false, true, true, cast);
         }
     }
 
@@ -169,7 +170,8 @@ public final class PainterSkillExecutor {
             if(crowdControl.isControlled(enemy))multiplier+=Math.max(0,severingSettings.controlledMultiplier()-1);
             var max=enemy.getAttribute(Attribute.MAX_HEALTH);if(max!=null&&max.getValue()>0){double missing=Math.clamp(1-enemy.getHealth()/max.getValue(),0,1);multiplier+=missing*Math.max(0,severingSettings.missingHealthScaling());}
             double finalDamage=s.baseDamage()*multiplier;if(!Double.isFinite(finalDamage)||finalDamage<=0)finalDamage=.1;
-            damage.damage(caster,enemy,"severing-bolt",finalDamage,false,true,cast);
+            damage.damage(caster,enemy,"severing-bolt",finalDamage,
+                    false,!isolated,true,cast);
         }
     }
 
@@ -197,7 +199,8 @@ public final class PainterSkillExecutor {
                     for (Location point : points) {
                         particle(point, Particle.FLAME, 3);effects.drawRing(point,s.radius(),Particle.ASH);
                         for (LivingEntity enemy : targeting.enemies(caster, point, s.radius())) if (hit.add(enemy.getUniqueId())) {
-                            damage.damage(caster, enemy, spell.configKey, s.baseDamage(), true, true, cast);
+                            damage.damage(caster, enemy, spell.configKey, s.baseDamage(),
+                                    true, true, true, cast);
                             statusEffects.slow(
                                     enemy, caster,
                                     seconds(s.tickInterval()+.5),
@@ -288,7 +291,8 @@ public final class PainterSkillExecutor {
         Location center=targetLocation(caster,s.range()); ring(center,s.radius(),Particle.SQUID_INK);effects.drawGroundRune(center,s.radius(),0);effects.drawShockwave(center,s.radius());
         SkillDamageService.UUIDCast cast=SkillDamageService.UUIDCast.create();
         for(LivingEntity enemy:targeting.enemies(caster,center,s.radius())){
-            damage.damage(caster,enemy,spell.configKey,s.baseDamage(),false,true,cast);
+            damage.damage(caster,enemy,spell.configKey,s.baseDamage(),
+                    false,true,true,cast);
             crowdControl.pull(enemy,center,.55);
             statusEffects.slow(
                     enemy, caster,
@@ -306,7 +310,8 @@ public final class PainterSkillExecutor {
                 double progress=Math.min(1,ticks/(double)seconds(s.duration())); double radius=Math.max(1,s.radius()*progress);
                 ring(last,radius,Particle.DRAGON_BREATH);
                 if(ticks%Math.max(1,seconds(s.tickInterval()))==0) for(LivingEntity enemy:targeting.enemies(caster,last,radius)){
-                    damage.damage(caster,enemy,spell.configKey,s.baseDamage()/4,true,true,cast);
+                    damage.damage(caster,enemy,spell.configKey,s.baseDamage()/4,
+                            true,true,true,cast);
                     statusEffects.slow(
                             enemy, caster,
                             seconds(s.tickInterval()+.5),
