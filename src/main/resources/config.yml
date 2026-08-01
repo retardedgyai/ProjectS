@@ -284,8 +284,20 @@ monsters:
         warning-ticks: 24
         radius: 5.0
         damage: 18.0
+        phase-two-shockwave-warning-ticks: 14
       hullbreaker-charge:
         cooldown-seconds: 12.0
         warning-ticks: 20
         distance: 14.0
         damage: 24.0
+telegraphs:
+  enabled: true
+  display-range: 64.0
+  fallback-server-particles: true
+  maximum-active-per-player: 32
+  ground-search-up: 3
+  ground-search-down: 3
+  warning-phase-threshold: 0.30
+  tracking-lock-threshold: 0.40
+  cancellation-animation-seconds: 0.15
+  detonation-animation-seconds: 0.20

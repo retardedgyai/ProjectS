@@ -60,6 +60,14 @@ val ccFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val telegraphFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.telegraph.TelegraphFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -67,4 +75,5 @@ tasks.test {
 tasks.named("check") {
     dependsOn(balanceUnitTest)
     dependsOn(ccFoundationTest)
+    dependsOn(telegraphFoundationTest)
 }

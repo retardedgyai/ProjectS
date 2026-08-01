@@ -41,6 +41,7 @@ import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.BalanceTuningManager;
 import io.github.gyai.projects.manager.MonsterManager;
+import io.github.gyai.projects.manager.TelegraphManager;
 import io.github.gyai.projects.combat.skill.SkillEffectRenderer;
 import io.github.gyai.projects.network.HudStatePacket;
 import io.github.gyai.projects.network.WarriorLoadoutChannel;
@@ -50,6 +51,7 @@ import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
 import io.github.gyai.projects.network.BalanceStatePacket;
 import io.github.gyai.projects.network.BalanceTuningChannel;
 import io.github.gyai.projects.network.MonsterUiPacket;
+import io.github.gyai.projects.network.TelegraphPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
@@ -79,6 +81,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private BalanceTuningManager balanceTuningManager;
     private BalanceTuningChannel balanceTuningChannel;
     private MonsterManager monsterManager;
+    private TelegraphManager telegraphManager;
 
     @Override
     public void onEnable() {
@@ -86,11 +89,13 @@ public final class ProjectSPlugin extends JavaPlugin {
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
         statusEffectManager = new StatusEffectManager(this);
+        telegraphManager = new TelegraphManager(this);
         monsterManager = new MonsterManager(
                 this,
                 crowdControlManager,
                 statusEffectManager,
-                playerManager);
+                playerManager,
+                telegraphManager);
         monsterManager.initialize();
         boolean debugEnabled = getConfig().getBoolean(
                 "debug.enabled", getConfig().getBoolean("debug", false));
@@ -242,6 +247,12 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, BalanceStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, MonsterUiPacket.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, TelegraphPacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this,
+                TelegraphPacket.HELLO_CHANNEL,
+                telegraphManager);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
@@ -279,10 +290,13 @@ public final class ProjectSPlugin extends JavaPlugin {
                         monsterManager,
                         crowdControlManager,
                         statusEffectManager), this);
+        getServer().getPluginManager().registerEvents(
+                telegraphManager, this);
         trainingDummyManager.start();
         warriorCombatManager.start();
         warriorEffectManager.start();
         combatHudManager.start();
+        telegraphManager.start();
         monsterManager.start();
 
         if (getCommand("projects") != null) {
@@ -300,6 +314,9 @@ public final class ProjectSPlugin extends JavaPlugin {
     public void onDisable() {
         if (monsterManager != null) {
             monsterManager.stop();
+        }
+        if (telegraphManager != null) {
+            telegraphManager.stop();
         }
         getServer().getMessenger().unregisterIncomingPluginChannel(this, ClientInputListener.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, ClientInputListener.CHANNEL);
@@ -325,6 +342,12 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, BalanceStatePacket.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(
                 this, MonsterUiPacket.CHANNEL);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(
+                this, TelegraphPacket.CHANNEL);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this,
+                TelegraphPacket.HELLO_CHANNEL,
+                telegraphManager);
         if (combatInputManager != null) {
             combatInputManager.clear();
         }

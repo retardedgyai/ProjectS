@@ -56,6 +56,7 @@ public final class MonsterManager {
     private final CrowdControlManager crowdControlManager;
     private final StatusEffectManager statusEffectManager;
     private final PlayerManager playerManager;
+    private final TelegraphManager telegraphManager;
     private final NamespacedKey customMonsterKey;
     private final Map<String, MonsterData> definitions = new HashMap<>();
     private final Map<UUID, CustomMonster> activeMonsters = new HashMap<>();
@@ -69,7 +70,8 @@ public final class MonsterManager {
             JavaPlugin plugin,
             CrowdControlManager crowdControlManager,
             StatusEffectManager statusEffectManager,
-            PlayerManager playerManager
+            PlayerManager playerManager,
+            TelegraphManager telegraphManager
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.crowdControlManager = Objects.requireNonNull(
@@ -78,6 +80,8 @@ public final class MonsterManager {
                 statusEffectManager, "statusEffectManager");
         this.playerManager = Objects.requireNonNull(
                 playerManager, "playerManager");
+        this.telegraphManager = Objects.requireNonNull(
+                telegraphManager, "telegraphManager");
         this.customMonsterKey =
                 new NamespacedKey(plugin, CUSTOM_MONSTER_KEY);
         crowdControlManager.setResistanceResolver(this::resistanceFor);
@@ -124,6 +128,9 @@ public final class MonsterManager {
                 getClampedInt("breakwater-slam.warning-ticks", 24, 1, 200),
                 getClampedDouble("breakwater-slam.radius", 5.0, 0.5, 64.0),
                 getClampedDouble("breakwater-slam.damage", 18.0, 0.0, 2048.0),
+                getClampedInt(
+                        "breakwater-slam.phase-two-shockwave-warning-ticks",
+                        14, 4, 100),
                 getClampedDouble(
                         "hullbreaker-charge.cooldown-seconds", 12.0, 0.1, 600.0),
                 getClampedInt("hullbreaker-charge.warning-ticks", 20, 1, 200),
@@ -194,7 +201,8 @@ public final class MonsterManager {
                 bossBar,
                 grohmSettings,
                 crowdControlManager,
-                statusEffectManager);
+                statusEffectManager,
+                telegraphManager);
         activeMonsters.put(ravager.getUniqueId(), boss);
         return boss;
     }
