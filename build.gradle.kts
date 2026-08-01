@@ -18,6 +18,10 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
 }
 
+configurations.named("testCompileOnly") {
+    extendsFrom(configurations.compileOnly.get())
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
@@ -75,6 +79,14 @@ val statFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.monster.editor.MobEditorFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -84,4 +96,5 @@ tasks.named("check") {
     dependsOn(ccFoundationTest)
     dependsOn(telegraphFoundationTest)
     dependsOn(statFoundationTest)
+    dependsOn(mobEditorFoundationTest)
 }

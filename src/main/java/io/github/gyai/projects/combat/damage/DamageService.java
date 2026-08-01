@@ -6,6 +6,8 @@ import io.github.gyai.projects.item.Armor;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.manager.PlayerManager;
+import io.github.gyai.projects.monster.editor.MobDefinition;
+import io.github.gyai.projects.monster.editor.MobStatsDefinition;
 import io.github.gyai.projects.player.StatType;
 import io.github.gyai.projects.player.Stats;
 import org.bukkit.attribute.Attribute;
@@ -25,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 
 public final class DamageService implements Listener {
     private static final int MAX_CRITICAL_CAST_CACHE = 2_048;
@@ -36,6 +39,8 @@ public final class DamageService implements Listener {
     private final Map<DamageKey, Deque<DamageResult>> applying = new HashMap<>();
     private final CriticalHitResolver criticalResolver =
             new CriticalHitResolver(MAX_CRITICAL_CAST_CACHE);
+    private Function<LivingEntity, MobStatsDefinition> mobStatsResolver =
+            ignored -> null;
 
     public DamageService(
             PlayerManager playerManager,
@@ -81,14 +86,16 @@ public final class DamageService implements Listener {
                 ? attackerStats.get(StatType.BASIC_ATTACK_DAMAGE_INCREASE_PERCENT)
                 : attackerStats.get(StatType.SKILL_DAMAGE_INCREASE_PERCENT);
 
-        double equipmentDefense = equipmentDefense(request.target(), request.damageType());
+        MobStatsDefinition mobStats = mobStatsResolver.apply(request.target());
+        double equipmentDefense = mobStats == null
+                ? equipmentDefense(request.target(), request.damageType()) : 0.0;
         double defense = switch (request.damageType()) {
             case PHYSICAL -> StatCalculator.defense(
-                    equipmentDefense,
+                    equipmentDefense + (mobStats == null ? 0 : mobStats.physicalDefense()),
                     targetStats.get(StatType.PHYSICAL_DEFENSE_FLAT),
                     targetStats.get(StatType.PHYSICAL_DEFENSE_PERCENT));
             case MAGICAL -> StatCalculator.defense(
-                    equipmentDefense,
+                    equipmentDefense + (mobStats == null ? 0 : mobStats.magicalDefense()),
                     targetStats.get(StatType.MAGICAL_DEFENSE_FLAT),
                     targetStats.get(StatType.MAGICAL_DEFENSE_PERCENT));
             case TRUE -> 0.0;
@@ -105,7 +112,9 @@ public final class DamageService implements Listener {
         };
         double[] reductions = append(
                 request.additionalDamageReductions(),
-                targetStats.get(StatType.DAMAGE_REDUCTION_PERCENT));
+                StatCalculator.saturatedAdd(
+                        targetStats.get(StatType.DAMAGE_REDUCTION_PERCENT),
+                        mobStats == null ? 0 : mobStats.damageReduction()));
         if (request.offenseSnapshot() != null) {
             return DamageCalculator.calculateOffenseResolved(
                     new DamageCalculator.OffenseInput(
@@ -187,7 +196,91 @@ public final class DamageService implements Listener {
                 calculated, true, shieldDamage, healthDamage, appliedHealing);
     }
 
+    public DamageApplicationResult applyMob(
+            LivingEntity attacker,
+            LivingEntity target,
+            MobDefinition definition,
+            UUID castId
+    ) {
+        MobStatsDefinition sourceStats = definition.stats();
+        MobBasicAttackValues values = new MobBasicAttackValues(definition);
+        Stats targetStats = target instanceof Player player
+                ? playerManager.getPlayerData(player).getStats() : new Stats();
+        MobStatsDefinition targetMobStats = mobStatsResolver.apply(target);
+        double equipmentDefense = targetMobStats == null
+                ? equipmentDefense(target, values.damageType()) : 0.0;
+        double defense = switch (values.damageType()) {
+            case PHYSICAL -> StatCalculator.defense(
+                    equipmentDefense + (targetMobStats == null
+                            ? 0 : targetMobStats.physicalDefense()),
+                    targetStats.get(StatType.PHYSICAL_DEFENSE_FLAT),
+                    targetStats.get(StatType.PHYSICAL_DEFENSE_PERCENT));
+            case MAGICAL -> StatCalculator.defense(
+                    equipmentDefense + (targetMobStats == null
+                            ? 0 : targetMobStats.magicalDefense()),
+                    targetStats.get(StatType.MAGICAL_DEFENSE_FLAT),
+                    targetStats.get(StatType.MAGICAL_DEFENSE_PERCENT));
+            case TRUE -> 0;
+        };
+        boolean critical = values.criticalAllowed()
+                && criticalResolver.resolve(
+                attacker.getUniqueId(), castId, sourceStats.criticalChance(),
+                () -> ThreadLocalRandom.current().nextDouble());
+        DamageResult calculated = DamageCalculator.calculate(
+                new DamageCalculator.Input(
+                        values.damageType(), DamageMode.PVE,
+                        DamageKind.NORMAL_ATTACK, values.attackPower(),
+                        values.fixedDamage(), values.coefficient(),
+                        0, 0, critical, sourceStats.criticalDamage(),
+                        defense, 0, 0, 0,
+                        StatCalculator.DEFAULT_DEFENSE_CONSTANT,
+                        new double[]{StatCalculator.saturatedAdd(
+                                targetStats.get(StatType.DAMAGE_REDUCTION_PERCENT),
+                                targetMobStats == null
+                                        ? 0 : targetMobStats.damageReduction())},
+                        1, target.getAbsorptionAmount(), target.getHealth(),
+                        0, 0, 0));
+        return applyCalculated(attacker, target, calculated);
+    }
+
+    public void setMobStatsResolver(
+            Function<LivingEntity, MobStatsDefinition> resolver
+    ) {
+        mobStatsResolver = resolver == null ? ignored -> null : resolver;
+    }
+
+    private DamageApplicationResult applyCalculated(
+            LivingEntity attacker,
+            LivingEntity target,
+            DamageResult calculated
+    ) {
+        if (calculated.finalRoundedDamage() <= 0 || !target.isValid()) {
+            return new DamageApplicationResult(calculated, false, 0, 0, 0);
+        }
+        double healthBefore = target.getHealth();
+        double shieldBefore = target.getAbsorptionAmount();
+        DamageKey key = new DamageKey(attacker.getUniqueId(), target.getUniqueId());
+        applying.computeIfAbsent(key, ignored -> new ArrayDeque<>()).push(calculated);
+        try {
+            target.damage(calculated.finalRoundedDamage(), attacker);
+        } finally {
+            Deque<DamageResult> calculations = applying.get(key);
+            if (calculations != null) {
+                calculations.poll();
+                if (calculations.isEmpty()) applying.remove(key);
+            }
+        }
+        return new DamageApplicationResult(
+                calculated, true,
+                Math.max(0, shieldBefore - Math.max(0, target.getAbsorptionAmount())),
+                Math.max(0, healthBefore - Math.max(0, target.getHealth())), 0);
+    }
+
     public boolean isApplying(Player attacker, LivingEntity target) {
+        return isApplying((LivingEntity) attacker, target);
+    }
+
+    public boolean isApplying(LivingEntity attacker, LivingEntity target) {
         Deque<DamageResult> calculations = applying.get(new DamageKey(
                 attacker.getUniqueId(), target.getUniqueId()));
         return calculations != null && !calculations.isEmpty();
@@ -202,7 +295,7 @@ public final class DamageService implements Listener {
     @SuppressWarnings("deprecation")
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void removeBukkitMitigation(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player attacker)
+        if (!(event.getDamager() instanceof LivingEntity attacker)
                 || !(event.getEntity() instanceof LivingEntity target)
                 || !isApplying(attacker, target)) {
             return;
@@ -272,5 +365,26 @@ public final class DamageService implements Listener {
     }
 
     private record DamageKey(UUID attackerId, UUID targetId) {
+    }
+
+    private record MobBasicAttackValues(
+            DamageType damageType,
+            double attackPower,
+            double fixedDamage,
+            double coefficient,
+            boolean criticalAllowed
+    ) {
+        MobBasicAttackValues(MobDefinition definition) {
+            this(
+                    definition.basicAttack().damageType(),
+                    switch (definition.basicAttack().damageType()) {
+                        case PHYSICAL -> definition.stats().physicalAttack();
+                        case MAGICAL -> definition.stats().magicalAttack();
+                        case TRUE -> 0;
+                    },
+                    definition.basicAttack().fixedDamage(),
+                    definition.basicAttack().coefficient(),
+                    definition.basicAttack().criticalAllowed());
+        }
     }
 }

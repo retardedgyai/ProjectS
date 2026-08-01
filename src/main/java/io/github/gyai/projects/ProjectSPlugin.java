@@ -51,6 +51,9 @@ import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
 import io.github.gyai.projects.network.BalanceStatePacket;
 import io.github.gyai.projects.network.BalanceTuningChannel;
 import io.github.gyai.projects.network.MonsterUiPacket;
+import io.github.gyai.projects.network.MobEditorChannel;
+import io.github.gyai.projects.network.MobEditorStatePacket;
+import io.github.gyai.projects.monster.editor.MobEditorManager;
 import io.github.gyai.projects.network.TelegraphPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
@@ -84,6 +87,8 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MonsterManager monsterManager;
     private TelegraphManager telegraphManager;
     private DamageService damageService;
+    private MobEditorManager mobEditorManager;
+    private MobEditorChannel mobEditorChannel;
 
     @Override
     public void onEnable() {
@@ -121,6 +126,10 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
+        mobEditorManager = new MobEditorManager(
+                this, monsterManager, itemManager, damageService);
+        mobEditorChannel = new MobEditorChannel(
+                this, mobEditorManager, monsterManager);
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,
@@ -253,6 +262,10 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, BalanceStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, MonsterUiPacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, MobEditorChannel.REQUEST_CHANNEL, mobEditorChannel);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, MobEditorStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, TelegraphPacket.CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(
@@ -263,6 +276,8 @@ public final class ProjectSPlugin extends JavaPlugin {
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
         getServer().getPluginManager().registerEvents(damageService, this);
+        getServer().getPluginManager().registerEvents(mobEditorManager, this);
+        getServer().getPluginManager().registerEvents(mobEditorChannel, this);
         getServer().getPluginManager().registerEvents(warriorCombatManager, this);
         getServer().getPluginManager().registerEvents(warriorEffectManager, this);
         getServer().getPluginManager().registerEvents(
@@ -351,6 +366,10 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, BalanceStatePacket.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(
                 this, MonsterUiPacket.CHANNEL);
+        getServer().getMessenger().unregisterIncomingPluginChannel(
+                this, MobEditorChannel.REQUEST_CHANNEL, mobEditorChannel);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(
+                this, MobEditorStatePacket.CHANNEL);
         getServer().getMessenger().unregisterOutgoingPluginChannel(
                 this, TelegraphPacket.CHANNEL);
         getServer().getMessenger().unregisterIncomingPluginChannel(
@@ -389,6 +408,12 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (resourceManager != null) {
             resourceManager.clear();
+        }
+        if (mobEditorChannel != null) {
+            mobEditorChannel.clear();
+        }
+        if (mobEditorManager != null) {
+            mobEditorManager.clear();
         }
         if (damageService != null) {
             damageService.clear();
