@@ -75,8 +75,10 @@ import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
+import io.github.gyai.projects.lifecycle.ShutdownSequence;
 
 import java.time.Clock;
+import java.util.logging.Level;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -104,9 +106,11 @@ public final class ProjectSPlugin extends JavaPlugin {
     private StarterSwordDamageShadow starterSwordDamageShadow;
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
+    private ShutdownSequence shutdownSequence;
 
     @Override
     public void onEnable() {
+        shutdownSequence = null;
         saveDefaultConfig();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
@@ -394,95 +398,72 @@ public final class ProjectSPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (monsterManager != null) {
-            monsterManager.stop();
+        shutdownSequence().run();
+    }
+
+    private synchronized ShutdownSequence shutdownSequence() {
+        if (shutdownSequence != null) {
+            return shutdownSequence;
         }
-        if (telegraphManager != null) {
-            telegraphManager.stop();
-        }
-        getServer().getMessenger().unregisterIncomingPluginChannel(this, ClientInputListener.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(this, ClientInputListener.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(this, HudStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, WarriorLoadoutRequestPacket.CHANNEL,
-                warriorLoadoutChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, WarriorLoadoutSelectPacket.CHANNEL,
-                warriorLoadoutChannel);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, WarriorLoadoutStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.REQUEST_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.UPDATE_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.ACTION_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, BalanceStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, MonsterUiPacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, MobEditorChannel.REQUEST_CHANNEL, mobEditorChannel);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, MobEditorStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, TelegraphPacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this,
-                TelegraphPacket.HELLO_CHANNEL,
-                telegraphManager);
-        if (combatInputManager != null) {
-            combatInputManager.clear();
-        }
-        if (combatHudManager != null) {
-            combatHudManager.stop();
-        }
-        if (warriorCombatManager != null) {
-            warriorCombatManager.stop();
-        }
-        if (warriorEffectManager != null) {
-            warriorEffectManager.stop();
-        }
-        if (warriorLoadoutManager != null) {
-            warriorLoadoutManager.clear();
-        }
-        if (warriorLoadoutChannel != null) {
-            warriorLoadoutChannel.clear();
-        }
-        if (balanceTuningChannel != null) {
-            balanceTuningChannel.clear();
-        }
-        if (trainingDummyManager != null) {
-            trainingDummyManager.stop();
-        }
-        if (playerManager != null) {
-            playerManager.clear();
-        }
-        if (skillManager != null) {
-            skillManager.clear();
-        }
-        if (resourceManager != null) {
-            resourceManager.clear();
-        }
-        if (mobEditorChannel != null) {
-            mobEditorChannel.clear();
-        }
-        if (mobEditorManager != null) {
-            mobEditorManager.clear();
-        }
-        if (damageService != null) {
-            damageService.clear();
-        }
-        if (starterSwordDamageShadow != null) {
-            starterSwordDamageShadow.close();
-        }
-        if (painterSkillExecutor != null) painterSkillExecutor.clearAll();
-        if (painterPassiveManager != null) painterPassiveManager.clear();
-        if (crowdControlManager != null) crowdControlManager.clear();
-        if (statusEffectManager != null) statusEffectManager.clear();
-        getLogger().info("ProjectS has stopped!");
+        ShutdownSequence sequence = new ShutdownSequence(
+                (name, exception) -> getLogger().log(
+                        Level.WARNING,
+                        "ProjectS cleanup failed: " + name,
+                        exception));
+
+        sequence.add("scheduler.cancelTasks",
+                () -> getServer().getScheduler().cancelTasks(this));
+        sequence.addIfPresent("monsterManager.stop",
+                monsterManager, MonsterManager::stop);
+        sequence.addIfPresent("telegraphManager.stop",
+                telegraphManager, TelegraphManager::stop);
+        sequence.addIfPresent("combatHudManager.stop",
+                combatHudManager, CombatHudManager::stop);
+        sequence.addIfPresent("warriorCombatManager.stop",
+                warriorCombatManager, WarriorCombatManager::stop);
+        sequence.addIfPresent("warriorEffectManager.stop",
+                warriorEffectManager, WarriorEffectManager::stop);
+        sequence.addIfPresent("trainingDummyManager.stop",
+                trainingDummyManager, TrainingDummyManager::stop);
+
+        sequence.add("pluginChannels.unregister", () -> {
+            getServer().getMessenger().unregisterIncomingPluginChannel(this);
+            getServer().getMessenger().unregisterOutgoingPluginChannel(this);
+        });
+
+        sequence.addIfPresent("combatInputManager.clear",
+                combatInputManager, CombatInputManager::clear);
+        sequence.addIfPresent("warriorLoadoutManager.clear",
+                warriorLoadoutManager, WarriorLoadoutManager::clear);
+        sequence.addIfPresent("warriorLoadoutChannel.clear",
+                warriorLoadoutChannel, WarriorLoadoutChannel::clear);
+        sequence.addIfPresent("balanceTuningChannel.clear",
+                balanceTuningChannel, BalanceTuningChannel::clear);
+        sequence.addIfPresent("playerManager.clear",
+                playerManager, PlayerManager::clear);
+        sequence.addIfPresent("skillManager.clear",
+                skillManager, SkillManager::clear);
+        sequence.addIfPresent("resourceManager.clear",
+                resourceManager, ResourceManager::clear);
+        sequence.addIfPresent("mobEditorChannel.clear",
+                mobEditorChannel, MobEditorChannel::clear);
+        sequence.addIfPresent("mobEditorManager.clear",
+                mobEditorManager, MobEditorManager::clear);
+        sequence.addIfPresent("damageService.clear",
+                damageService, DamageService::clear);
+        sequence.addIfPresent("starterSwordDamageShadow.close",
+                starterSwordDamageShadow, StarterSwordDamageShadow::close);
+        sequence.addIfPresent("painterSkillExecutor.clearAll",
+                painterSkillExecutor, PainterSkillExecutor::clearAll);
+        sequence.addIfPresent("painterPassiveManager.clear",
+                painterPassiveManager, PainterPassiveManager::clear);
+        sequence.addIfPresent("crowdControlManager.clear",
+                crowdControlManager, CrowdControlManager::clear);
+        sequence.addIfPresent("statusEffectManager.clear",
+                statusEffectManager, StatusEffectManager::clear);
+        sequence.add("shutdown.log",
+                () -> getLogger().info("ProjectS has stopped!"));
+        shutdownSequence = sequence;
+        return sequence;
     }
 }

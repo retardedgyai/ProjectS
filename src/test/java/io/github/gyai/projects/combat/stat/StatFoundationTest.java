@@ -10,7 +10,11 @@ import io.github.gyai.projects.combat.damage.CriticalHitResolver;
 import io.github.gyai.projects.combat.damage.DamageType;
 import io.github.gyai.projects.player.StatType;
 import io.github.gyai.projects.player.Stats;
+import io.github.gyai.projects.player.PlayerData;
+import io.github.gyai.projects.skill.SkillManager;
+import org.bukkit.entity.Player;
 
+import java.lang.reflect.Proxy;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,6 +35,12 @@ public final class StatFoundationTest {
         assertClose(1.5, StatCalculator.attacksPerSecond(1.0, .50));
         assertClose(2.0 / 3.0, StatCalculator.normalAttackInterval(1.0, .50));
         assertClose(2.0 / 3.0, StatCalculator.castDuration(1.0, .50));
+        assertClose(10.0, StatCalculator.cooldownSeconds(10.0, 0.0));
+        assertClose(20.0, StatCalculator.cooldownSeconds(20.0, 0.0));
+        assertClose(8.0, StatCalculator.cooldownSeconds(10.0, .25));
+        assertClose(10.0 / 1.5, StatCalculator.cooldownSeconds(10.0, .50));
+        assertClose(20.0, StatCalculator.cooldownSeconds(10.0, -.50));
+        assertClose(10.0, StatCalculator.cooldownSeconds(10.0, -1.0));
         assertClose(5.0, StatCalculator.cooldownSeconds(10.0, 1.0));
         assertClose(2.5, StatCalculator.cooldownSeconds(10.0, 10.0));
 
@@ -43,6 +53,18 @@ public final class StatFoundationTest {
         assertClose(36.0, StatCalculator.manaRegeneration(8, 2, .20, true));
 
         Stats stats = new Stats();
+        assertClose(0.0, stats.get(StatType.COOLDOWN_RECOVERY_PERCENT));
+        stats.set(StatType.COOLDOWN_RECOVERY_PERCENT, .25);
+        stats.reset();
+        assertClose(0.0, stats.get(StatType.COOLDOWN_RECOVERY_PERCENT));
+        expectIllegal(() -> stats.set(
+                StatType.COOLDOWN_RECOVERY_PERCENT, Double.NaN));
+        expectIllegal(() -> stats.set(
+                StatType.COOLDOWN_RECOVERY_PERCENT, Double.POSITIVE_INFINITY));
+        PlayerData newPlayer = new PlayerData(UUID.randomUUID());
+        assertClose(0.0, newPlayer.getCooldownRecoveryPercent());
+        characterizeFullCooldownToggle();
+
         stats.set(StatType.CRITICAL_CHANCE_PERCENT, 2.5);
         assertClose(2.5, stats.get(StatType.CRITICAL_CHANCE_PERCENT));
         assertClose(1.0, StatCalculator.criticalChanceForRoll(
@@ -218,6 +240,27 @@ public final class StatFoundationTest {
         } catch (IllegalArgumentException expected) {
             // Expected.
         }
+    }
+
+    private static void characterizeFullCooldownToggle() {
+        UUID playerId = UUID.randomUUID();
+        Player player = (Player) Proxy.newProxyInstance(
+                Player.class.getClassLoader(),
+                new Class<?>[]{Player.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("getUniqueId")) return playerId;
+                    if (method.getName().equals("hashCode")) return playerId.hashCode();
+                    if (method.getName().equals("equals")) return proxy == arguments[0];
+                    if (method.getName().equals("toString")) return "CooldownTestPlayer";
+                    throw new UnsupportedOperationException(method.toString());
+                });
+        SkillManager manager = new SkillManager(null);
+        manager.startCooldown(player, "test", 10.0, 0.0);
+        assert manager.getRemainingCooldownSeconds(player, "test") > 9.0;
+        assert manager.toggleFullCooldownReduction(player);
+        assertClose(0.0, manager.getRemainingCooldownSeconds(player, "test"));
+        manager.startCooldown(player, "test", 10.0, 0.0);
+        assertClose(0.0, manager.getRemainingCooldownSeconds(player, "test"));
     }
 
     private static void assertClose(double expected, double actual) {

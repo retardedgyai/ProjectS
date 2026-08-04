@@ -74,7 +74,8 @@ val telegraphFoundationTest by tasks.registering(JavaExec::class) {
 
 val statFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
-    classpath = sourceSets.test.get().runtimeClasspath
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
     mainClass.set("io.github.gyai.projects.combat.stat.StatFoundationTest")
     jvmArgs("-ea")
 }
@@ -201,6 +202,13 @@ val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val shutdownSequenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.lifecycle.ShutdownSequenceTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -224,4 +232,5 @@ tasks.named("check") {
     dependsOn(starterSwordFallbackSafetyTest)
     dependsOn(starterSwordAuthoritativeShadowTest)
     dependsOn(mobEditorFoundationTest)
+    dependsOn(shutdownSequenceTest)
 }
