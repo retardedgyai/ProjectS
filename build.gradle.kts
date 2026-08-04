@@ -287,6 +287,31 @@ val legacyItemCompatibilityTest by tasks.registering(JavaExec::class) {
     classpath = sourceSets.test.get().runtimeClasspath +
             sourceSets.main.get().compileClasspath
     mainClass.set("io.github.gyai.projects.item.compatibility.LegacyItemCompatibilityTest")
+
+val playerProgressDomainTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.player.progress.PlayerProgressDomainTest")
+    jvmArgs("-ea")
+}
+
+val playerProgressRepositoryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerProgressRepositoryTest")
+    jvmArgs("-ea")
+}
+
+val playerPersistenceCoordinatorTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerPersistenceCoordinatorTest")
     jvmArgs("-ea")
 }
 
@@ -324,4 +349,7 @@ tasks.named("check") {
     dependsOn(betaContractPresenceTest)
     dependsOn(equipmentAndModFoundationTest)
     dependsOn(legacyItemCompatibilityTest)
+    dependsOn(playerProgressDomainTest)
+    dependsOn(playerProgressRepositoryTest)
+    dependsOn(playerPersistenceCoordinatorTest)
 }
