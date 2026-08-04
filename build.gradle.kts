@@ -287,6 +287,8 @@ val legacyItemCompatibilityTest by tasks.registering(JavaExec::class) {
     classpath = sourceSets.test.get().runtimeClasspath +
             sourceSets.main.get().compileClasspath
     mainClass.set("io.github.gyai.projects.item.compatibility.LegacyItemCompatibilityTest")
+    jvmArgs("-ea")
+}
 
 val playerProgressDomainTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
