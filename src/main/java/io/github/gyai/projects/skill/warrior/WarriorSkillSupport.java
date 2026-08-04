@@ -4,11 +4,10 @@ import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.BalanceTuningManager;
-import io.github.gyai.projects.combat.damage.DamageKind;
-import io.github.gyai.projects.combat.damage.DamageMode;
 import io.github.gyai.projects.combat.damage.DamageRequest;
+import io.github.gyai.projects.combat.damage.DamageRequestApplier;
 import io.github.gyai.projects.combat.damage.DamageService;
-import io.github.gyai.projects.combat.damage.DamageType;
+import io.github.gyai.projects.combat.damage.AttackMetadata;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -22,6 +21,7 @@ import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public final class WarriorSkillSupport {
@@ -30,7 +30,7 @@ public final class WarriorSkillSupport {
     private final EnhancementManager enhancementManager;
     private final WarriorCombatManager combatManager;
     private final BalanceTuningManager balanceManager;
-    private final DamageService damageService;
+    private final DamageRequestApplier damageApplier;
 
     public WarriorSkillSupport(
             JavaPlugin plugin,
@@ -40,12 +40,25 @@ public final class WarriorSkillSupport {
             BalanceTuningManager balanceManager,
             DamageService damageService
     ) {
+        this(plugin, dummyManager, enhancementManager, combatManager,
+                balanceManager, damageService::apply);
+    }
+
+    public WarriorSkillSupport(
+            JavaPlugin plugin,
+            TrainingDummyManager dummyManager,
+            EnhancementManager enhancementManager,
+            WarriorCombatManager combatManager,
+            BalanceTuningManager balanceManager,
+            DamageRequestApplier damageApplier
+    ) {
         this.plugin = plugin;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
         this.combatManager = combatManager;
         this.balanceManager = balanceManager;
-        this.damageService = damageService;
+        this.damageApplier = Objects.requireNonNull(
+                damageApplier, "damageApplier");
     }
 
     public boolean validateCaster(Player player) {
@@ -138,11 +151,25 @@ public final class WarriorSkillSupport {
             double coefficient,
             String skillId
     ) {
+        return damageTargets(
+                player, targets, fixedDamage, coefficient,
+                skillId, AttackMetadata.EMPTY);
+    }
+
+    public int damageTargets(
+            Player player,
+            Iterable<? extends LivingEntity> targets,
+            double fixedDamage,
+            double coefficient,
+            String skillId,
+            AttackMetadata attackMetadata
+    ) {
         try (WarriorCombatManager.SkillHitSession session =
                      combatManager.beginSkillUse(player)) {
             for (LivingEntity target : targets) {
                 damage(player, target, fixedDamage, coefficient,
-                        skillId, session, true, 1.0, false);
+                        skillId, session, true, 1.0, false,
+                        attackMetadata);
             }
             return session.confirmedHits();
         }
@@ -176,7 +203,8 @@ public final class WarriorSkillSupport {
                      combatManager.beginSkillUse(player)) {
             for (LivingEntity target : targets) {
                 damage(player, target, fixedDamage, coefficient,
-                        skillId, session, true, multiplier, true);
+                        skillId, session, true, multiplier, true,
+                        AttackMetadata.EMPTY);
             }
             return session.confirmedHits();
         }
@@ -191,7 +219,20 @@ public final class WarriorSkillSupport {
             WarriorCombatManager.SkillHitSession session
     ) {
         damage(player, target, fixedDamage, coefficient,
-                skillId, session, false, 1.0, false);
+                skillId, session, AttackMetadata.EMPTY);
+    }
+
+    public void damage(
+            Player player,
+            LivingEntity target,
+            double fixedDamage,
+            double coefficient,
+            String skillId,
+            WarriorCombatManager.SkillHitSession session,
+            AttackMetadata attackMetadata
+    ) {
+        damage(player, target, fixedDamage, coefficient,
+                skillId, session, false, 1.0, false, attackMetadata);
     }
 
     public void damage(
@@ -204,7 +245,22 @@ public final class WarriorSkillSupport {
             boolean areaDamage
     ) {
         damage(player, target, fixedDamage, coefficient,
-                skillId, session, areaDamage, 1.0, false);
+                skillId, session, areaDamage, AttackMetadata.EMPTY);
+    }
+
+    public void damage(
+            Player player,
+            LivingEntity target,
+            double fixedDamage,
+            double coefficient,
+            String skillId,
+            WarriorCombatManager.SkillHitSession session,
+            boolean areaDamage,
+            AttackMetadata attackMetadata
+    ) {
+        damage(player, target, fixedDamage, coefficient,
+                skillId, session, areaDamage, 1.0, false,
+                attackMetadata);
     }
 
     private void damage(
@@ -216,7 +272,8 @@ public final class WarriorSkillSupport {
             WarriorCombatManager.SkillHitSession session,
             boolean areaDamage,
             double modeMultiplier,
-            boolean spiritBonusAlreadyApplied
+            boolean spiritBonusAlreadyApplied,
+            AttackMetadata attackMetadata
     ) {
         if (!validateCaster(player)
                 || !target.isValid()
@@ -226,18 +283,11 @@ public final class WarriorSkillSupport {
         }
         enhancementManager.beginSkillDamage(player.getUniqueId());
         try (WarriorCombatManager.HitScope ignored = session.activate()) {
-            Runnable application = () -> damageService.apply(
-                    DamageRequest.builder(player, target)
-                            .skillId(skillId)
-                            .castId(session.sessionId())
-                            .damageType(DamageType.PHYSICAL)
-                            .damageKind(DamageKind.DIRECT_SKILL)
-                            .mode(DamageMode.PVE)
-                            .areaDamage(areaDamage)
-                            .fixedDamage(fixedDamage)
-                            .coefficient(coefficient)
-                            .pveMultiplier(modeMultiplier)
-                            .build());
+            DamageRequest request = WarriorDamageRequestFactory.create(
+                    player, target, fixedDamage, coefficient,
+                    skillId, session.sessionId(), areaDamage,
+                    modeMultiplier, attackMetadata);
+            Runnable application = () -> damageApplier.apply(request);
             if (spiritBonusAlreadyApplied) {
                 combatManager.runWithSpiritBonusAlreadyApplied(
                         player, application);

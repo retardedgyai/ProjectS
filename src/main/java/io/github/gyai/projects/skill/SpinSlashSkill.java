@@ -1,6 +1,7 @@
 package io.github.gyai.projects.skill;
 
 import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
+import io.github.gyai.projects.skill.warrior.WarriorAttackMetadata;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -64,7 +65,8 @@ public final class SpinSlashSkill implements Skill {
                     .8f);
             support.damageTargets(
                     player, support.nearby(player, radius),
-                    values.baseDamage(), values.attackPowerScaling(), getId());
+                    values.baseDamage(), values.attackPowerScaling(), getId(),
+                    WarriorAttackMetadata.SPIN_SLASH);
         }));
     }
 }

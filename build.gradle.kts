@@ -202,6 +202,42 @@ val starterSwordRouteCommandServiceTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val spinSlashAttackMetadataTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.skill.warrior.SpinSlashAttackMetadataTest")
+    jvmArgs("-ea")
+}
+
+val genericDamageShadowComparatorTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.GenericDamageShadowComparatorTest")
+    jvmArgs("-ea")
+}
+
+val spinSlashDamageShadowRuntimeTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.SpinSlashDamageShadowRuntimeTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowCommandRoutingTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowCommandRoutingTest")
+    jvmArgs("-ea")
+}
+
 val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -240,6 +276,10 @@ tasks.named("check") {
     dependsOn(starterSwordFallbackSafetyTest)
     dependsOn(starterSwordAuthoritativeShadowTest)
     dependsOn(starterSwordRouteCommandServiceTest)
+    dependsOn(spinSlashAttackMetadataTest)
+    dependsOn(genericDamageShadowComparatorTest)
+    dependsOn(spinSlashDamageShadowRuntimeTest)
+    dependsOn(damageShadowCommandRoutingTest)
     dependsOn(mobEditorFoundationTest)
     dependsOn(shutdownSequenceTest)
 }
