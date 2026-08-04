@@ -1,6 +1,6 @@
 # Beta Wave 1 owner decisions
 
-Decision baseline: `f266aadca1c5b6a1c2ab098509814c177ff31d0d`  
+Decision baseline: `f266aadca1c5b6a1c2ab098509814c177ff31d0d`
 Applies to Tracks A-D. These decisions do not enable gameplay.
 
 ## Schema version 1
@@ -56,4 +56,3 @@ The one-detonation and proportional-retention rules are Beta Wave 1 policies, no
 ## Track start gate
 
 Tracks A-D must start from the exact merge commit produced when this decision PR is merged into `integration/beta-full-build`. That value is recorded as `WAVE_1_BASE_SHA`; all four branches/worktrees must resolve to it before editing.
-
