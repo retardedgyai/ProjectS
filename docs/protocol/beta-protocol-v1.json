@@ -1,0 +1,34 @@
+{
+  "aggregateProtocolVersion": 1,
+  "channels": {
+    "capabilities": "projects:beta_caps_v1",
+    "acknowledgement": "projects:beta_ack_v1",
+    "state": "projects:beta_state_v1",
+    "command": "projects:beta_command_v1"
+  },
+  "capabilities": {
+    "projects:hud": 1,
+    "projects:party": 1,
+    "projects:elements": 1,
+    "projects:equipment": 1,
+    "projects:crafting": 1,
+    "projects:enhancement": 1,
+    "projects:mob-editor-v2": 1
+  },
+  "bounds": {
+    "handshakeBytes": 8192,
+    "packetBytes": 32768,
+    "stringBytes": 256,
+    "canonicalIdBytes": 128,
+    "listEntries": 128,
+    "mapEntries": 64,
+    "mobEditorListPage": 50
+  },
+  "opcodes": {
+    "advertisement": 1,
+    "acknowledgement": 2,
+    "state": 3,
+    "command": 4,
+    "commandResult": 5
+  }
+}
