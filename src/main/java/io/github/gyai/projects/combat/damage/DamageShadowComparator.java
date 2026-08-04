@@ -29,14 +29,35 @@ public final class DamageShadowComparator {
             DamageCalculationSnapshot snapshot,
             double epsilon
     ) {
-        if (legacy == null || snapshot == null) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("snapshot must not be null");
+        }
+        return compareStarterSword(
+                legacy, snapshot.calculate(), snapshot, epsilon);
+    }
+
+    public static DamageShadowComparison compareStarterSword(
+            DamageResult legacy,
+            DamageResult shadow,
+            DamageCalculationSnapshot snapshot
+    ) {
+        return compareStarterSword(
+                legacy, shadow, snapshot, DEFAULT_EPSILON);
+    }
+
+    public static DamageShadowComparison compareStarterSword(
+            DamageResult legacy,
+            DamageResult shadow,
+            DamageCalculationSnapshot snapshot,
+            double epsilon
+    ) {
+        if (legacy == null || shadow == null || snapshot == null) {
             throw new IllegalArgumentException(
-                    "legacy result and snapshot must not be null");
+                    "legacy, shadow, and snapshot must not be null");
         }
         if (!Double.isFinite(epsilon) || epsilon <= 0.0) {
             throw new IllegalArgumentException("epsilon must be positive and finite");
         }
-        DamageResult shadow = snapshot.calculate();
         LinkedHashMap<String, Double> numeric = new LinkedHashMap<>();
         ArrayList<String> context = new ArrayList<>();
 

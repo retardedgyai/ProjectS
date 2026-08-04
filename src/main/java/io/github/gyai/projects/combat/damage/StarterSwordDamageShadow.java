@@ -3,11 +3,13 @@ package io.github.gyai.projects.combat.damage;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /** Observes starter sword parity without applying the shadow result. */
-public final class StarterSwordDamageShadow {
+public final class StarterSwordDamageShadow
+        implements StarterSwordShadowRuntime {
     public static final String ITEM_ID = "starter_sword";
     private static final long LOG_INTERVAL_MILLIS = 30_000L;
     private static final int MAX_LOG_SIGNATURES = 64;
@@ -60,7 +62,7 @@ public final class StarterSwordDamageShadow {
         }
         return damageService.apply(
                 request,
-                legacy -> compareSafely(context, request, legacy),
+                legacy -> compareLegacySafely(context, request, legacy),
                 legacyFailureObserver(request));
     }
 
@@ -68,7 +70,13 @@ public final class StarterSwordDamageShadow {
         return validationController;
     }
 
-    private void compareSafely(
+    @Override
+    public DamageShadowRuntimeContext resolveContext(DamageRequest request) {
+        return contextResolver.resolve(request);
+    }
+
+    @Override
+    public void compareLegacySafely(
             DamageShadowRuntimeContext context,
             DamageRequest request,
             DamageResult legacyResult
@@ -89,6 +97,36 @@ public final class StarterSwordDamageShadow {
             // Defensive outer boundary for future observer changes.
             validationController.recordShadowFailure();
             logError(request, "shadow", exception);
+        }
+    }
+
+    @Override
+    public Optional<DamageShadowComparison> comparePrecalculatedSafely(
+            DamageShadowRuntimeContext context,
+            DamageRequest request,
+            DamageResult legacyResult,
+            DamageResult shadowResult,
+            DamageCalculationSnapshot snapshot
+    ) {
+        if (!enabled()) {
+            return Optional.empty();
+        }
+        try {
+            Optional<DamageShadowComparison> comparison =
+                    comparisonObserver.observePrecalculatedStarterSword(
+                            context,
+                            legacyResult,
+                            shadowResult,
+                            snapshot,
+                            exception -> logError(
+                                    request, "shadow-observer", exception));
+            comparison.filter(value -> !value.matches())
+                    .ifPresent(value -> logMismatch(request, value));
+            return comparison;
+        } catch (RuntimeException exception) {
+            validationController.recordShadowFailure();
+            logError(request, "shadow-observer", exception);
+            return Optional.empty();
         }
     }
 

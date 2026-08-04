@@ -69,6 +69,12 @@ import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationController;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationExporter;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationTracker;
+import io.github.gyai.projects.combat.damage.DamageServiceStarterSwordRuntime;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRoutePolicy;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
 
 import java.time.Clock;
 
@@ -156,11 +162,27 @@ public final class ProjectSPlugin extends JavaPlugin {
                                 trainingDummyManager,
                                 monsterManager,
                                 enhancementManager,
+                                itemManager,
                                 damageShadowClock),
                         debugEnabled,
                         getLogger());
         DamageShadowCommandService damageShadowCommandService =
                 new DamageShadowCommandService(damageShadowController);
+        StarterSwordRouteController damageRouteController =
+                new StarterSwordRouteController(
+                        getConfig().getBoolean(
+                                "combat.damage-foundation.starter-sword-authoritative-enabled",
+                                false),
+                        new StarterSwordRouteTracker(),
+                        damageShadowClock);
+        StarterSwordDamageRouter starterSwordDamageRouter =
+                new StarterSwordDamageRouter(
+                        new DamageServiceStarterSwordRuntime(damageService),
+                        starterSwordDamageShadow,
+                        damageRouteController,
+                        new StarterSwordDamageRoutePolicy());
+        StarterSwordRouteCommandService damageRouteCommandService =
+                new StarterSwordRouteCommandService(damageRouteController);
         mobEditorManager = new MobEditorManager(
                 this, monsterManager, itemManager, damageService);
         mobEditorChannel = new MobEditorChannel(
@@ -319,7 +341,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager,
-                        damageService, starterSwordDamageShadow), this);
+                        damageService, starterSwordDamageRouter), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
@@ -363,7 +385,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                     itemManager, trainingDummyManager, devMenuManager,
                     enhancementListener, monsterManager,
                     crowdControlManager, statusEffectManager,
-                    playerManager, damageShadowCommandService));
+                    playerManager, damageShadowCommandService,
+                    damageRouteCommandService));
         }
 
         getLogger().info("ProjectS has started!");

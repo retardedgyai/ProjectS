@@ -2,6 +2,7 @@ package io.github.gyai.projects.combat.damage;
 
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.manager.MonsterManager;
 import io.github.gyai.projects.monster.CustomMonster;
 import io.github.gyai.projects.monster.MonsterRank;
@@ -17,12 +18,14 @@ public final class BukkitDamageShadowRuntimeContextResolver
     private final TrainingDummyManager dummyManager;
     private final MonsterManager monsterManager;
     private final EnhancementManager enhancementManager;
+    private final ItemManager itemManager;
     private final Clock clock;
 
     public BukkitDamageShadowRuntimeContextResolver(
             TrainingDummyManager dummyManager,
             MonsterManager monsterManager,
             EnhancementManager enhancementManager,
+            ItemManager itemManager,
             Clock clock
     ) {
         this.dummyManager = Objects.requireNonNull(
@@ -31,6 +34,7 @@ public final class BukkitDamageShadowRuntimeContextResolver
                 monsterManager, "monsterManager");
         this.enhancementManager = Objects.requireNonNull(
                 enhancementManager, "enhancementManager");
+        this.itemManager = Objects.requireNonNull(itemManager, "itemManager");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -43,8 +47,13 @@ public final class BukkitDamageShadowRuntimeContextResolver
                 request.attacker().getUniqueId(),
                 request.target().getUniqueId(),
                 targetType(request),
-                StarterSwordDamageShadow.ITEM_ID,
+                resolvedItemId(weapon),
                 enhancementManager.getLevel(weapon));
+    }
+
+    private String resolvedItemId(ItemStack item) {
+        String itemId = itemManager.getItemId(item);
+        return itemId == null || itemId.isBlank() ? "unknown" : itemId;
     }
 
     private DamageShadowTargetType targetType(DamageRequest request) {

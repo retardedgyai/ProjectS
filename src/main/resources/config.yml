@@ -4,6 +4,7 @@ debug:
   painter-skills: false
 combat:
   damage-foundation:
+    starter-sword-authoritative-enabled: false
     starter-sword-shadow-enabled: false
 classes:
   warrior:

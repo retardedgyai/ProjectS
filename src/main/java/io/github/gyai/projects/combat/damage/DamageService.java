@@ -151,7 +151,7 @@ public final class DamageService implements Listener {
 
     public DamageApplicationResult apply(DamageRequest request) {
         DamageResult calculated = calculate(request);
-        return applyCalculated(request, calculated);
+        return applyResolved(request, calculated);
     }
 
     public DamageApplicationResult apply(
@@ -182,7 +182,7 @@ public final class DamageService implements Listener {
         return observeThenApply(
                 calculated,
                 calculationObserver,
-                result -> applyCalculated(request, result));
+                result -> applyResolved(request, result));
     }
 
     static <T> T observeThenApply(
@@ -200,7 +200,7 @@ public final class DamageService implements Listener {
         return legacyApplier.apply(legacyResult);
     }
 
-    private DamageApplicationResult applyCalculated(
+    DamageApplicationResult applyResolved(
             DamageRequest request,
             DamageResult calculated
     ) {

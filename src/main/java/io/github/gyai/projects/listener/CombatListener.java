@@ -13,7 +13,7 @@ import io.github.gyai.projects.combat.damage.DamageType;
 import io.github.gyai.projects.combat.damage.AttackMetadata;
 import io.github.gyai.projects.combat.damage.AttackTag;
 import io.github.gyai.projects.combat.damage.ElementProfile;
-import io.github.gyai.projects.combat.damage.StarterSwordDamageShadow;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
 import io.github.gyai.projects.network.SkillInputType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -45,7 +45,7 @@ public class CombatListener implements Listener {
     private final TrainingDummyManager dummyManager;
     private final EnhancementManager enhancementManager;
     private final DamageService damageService;
-    private final StarterSwordDamageShadow starterSwordDamageShadow;
+    private final StarterSwordDamageRouter starterSwordDamageRouter;
 
     public CombatListener(
             ItemManager itemManager,
@@ -54,7 +54,7 @@ public class CombatListener implements Listener {
             TrainingDummyManager dummyManager,
             EnhancementManager enhancementManager,
             DamageService damageService,
-            StarterSwordDamageShadow starterSwordDamageShadow
+            StarterSwordDamageRouter starterSwordDamageRouter
     ) {
         this.itemManager = itemManager;
         this.combatInputManager = combatInputManager;
@@ -62,7 +62,7 @@ public class CombatListener implements Listener {
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
         this.damageService = damageService;
-        this.starterSwordDamageShadow = starterSwordDamageShadow;
+        this.starterSwordDamageRouter = starterSwordDamageRouter;
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -95,7 +95,7 @@ public class CombatListener implements Listener {
                 .coefficient(1.0)
                 .attackMetadata(STARTER_SWORD_METADATA)
                 .build();
-        starterSwordDamageShadow.apply(request);
+        starterSwordDamageRouter.apply(request);
     }
 
     @EventHandler(ignoreCancelled = true)
