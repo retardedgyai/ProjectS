@@ -2,6 +2,25 @@ debug:
   enabled: false
   allow-creative-skill-test: true
   painter-skills: false
+features:
+  fire-system: false
+  ice-system: false
+  lightning-system: false
+  equipment-v2: false
+  mod-system: false
+  player-persistence: false
+  passive-tree: false
+  gathering: false
+  refining: false
+  crafting: false
+  tier-promotion: false
+  enhancement-v2: false
+  repair-v2: false
+  party: false
+  quests: false
+  reward-v2: false
+  mob-editor-v2: false
+  client-beta-ui: false
 combat:
   damage-foundation:
     starter-sword-authoritative-enabled: false
