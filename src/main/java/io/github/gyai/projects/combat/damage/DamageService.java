@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public final class DamageService implements Listener {
@@ -150,6 +151,24 @@ public final class DamageService implements Listener {
 
     public DamageApplicationResult apply(DamageRequest request) {
         DamageResult calculated = calculate(request);
+        return applyCalculated(request, calculated);
+    }
+
+    public DamageApplicationResult apply(
+            DamageRequest request,
+            Consumer<DamageResult> calculationObserver
+    ) {
+        DamageResult calculated = calculate(request);
+        if (calculationObserver != null) {
+            calculationObserver.accept(calculated);
+        }
+        return applyCalculated(request, calculated);
+    }
+
+    private DamageApplicationResult applyCalculated(
+            DamageRequest request,
+            DamageResult calculated
+    ) {
         if (calculated.finalRoundedDamage() <= 0.0
                 || !request.target().isValid()
                 || request.mode() == DamageMode.PVE

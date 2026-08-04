@@ -165,3 +165,7 @@ Bukkit/stateful adapter:
 - attack tagを既存skill/Mob Editor定義へ保存・通信するschema migration。
 - Scout/Boss経路の個別互換移行。
 - 火・氷・雷の実ゲーム状態、party共有貢献、weakness処理。
+
+## Phase 2 characterization note
+
+Phase 2では、現在のPvE基本critical倍率175%をcharacterization testで固定する。設計書の150%へ正したことを意味せず、shadow移行中に既存gameplayを変えないための一時的な回帰基準である。TRUE damageと固定値貫通も同じ理由で現行結果を固定し、削除・補正は設計判断と個別migration testが揃う後続Phaseまで行わない。

@@ -140,17 +140,18 @@ public final class BukkitDamageSnapshotResolver {
     ) {
         double increase = attackerStats.get(
                 StatType.DAMAGE_INCREASE_PERCENT);
-        increase += switch (request.damageType()) {
+        increase = StatCalculator.saturatedAdd(increase, switch (request.damageType()) {
             case PHYSICAL -> attackerStats.get(
                     StatType.PHYSICAL_DAMAGE_INCREASE_PERCENT);
             case MAGICAL -> attackerStats.get(
                     StatType.MAGICAL_DAMAGE_INCREASE_PERCENT);
             case TRUE -> 0.0;
-        };
-        increase += request.damageKind() == DamageKind.NORMAL_ATTACK
+        });
+        increase = StatCalculator.saturatedAdd(increase,
+                request.damageKind() == DamageKind.NORMAL_ATTACK
                 ? attackerStats.get(
                 StatType.BASIC_ATTACK_DAMAGE_INCREASE_PERCENT)
-                : attackerStats.get(StatType.SKILL_DAMAGE_INCREASE_PERCENT);
+                : attackerStats.get(StatType.SKILL_DAMAGE_INCREASE_PERCENT));
         return increase;
     }
 

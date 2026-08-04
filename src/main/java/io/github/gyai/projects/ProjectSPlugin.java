@@ -63,6 +63,7 @@ import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
 import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
 import io.github.gyai.projects.dev.HardControlTestTool;
 import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageShadow;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -126,6 +127,14 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
+        StarterSwordDamageShadow starterSwordDamageShadow =
+                new StarterSwordDamageShadow(
+                        damageService,
+                        getConfig().getBoolean(
+                                "combat.damage-foundation.starter-sword-shadow-enabled",
+                                false),
+                        debugEnabled,
+                        getLogger());
         mobEditorManager = new MobEditorManager(
                 this, monsterManager, itemManager, damageService);
         mobEditorChannel = new MobEditorChannel(
@@ -284,7 +293,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager,
-                        damageService), this);
+                        damageService, starterSwordDamageShadow), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
