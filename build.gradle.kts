@@ -364,6 +364,32 @@ val wave2OwnerDecisionContractTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val legacyEnhancementCharacterizationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.enhancement.v2.LegacyEnhancementCharacterizationTest")
+    jvmArgs("-ea")
+}
+
+val trackEFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.enhancement.v2.TrackEFoundationTest")
+    jvmArgs("-ea")
+}
+
+val enhancementTransactionSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.equipment.operation.EnhancementTransactionSafetyTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -407,4 +433,7 @@ tasks.named("check") {
     dependsOn(playerPersistenceCoordinatorTest)
     dependsOn(wave1IntegratedFoundationTest)
     dependsOn(wave2OwnerDecisionContractTest)
+    dependsOn(legacyEnhancementCharacterizationTest)
+    dependsOn(trackEFoundationTest)
+    dependsOn(enhancementTransactionSafetyTest)
 }
