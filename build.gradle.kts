@@ -407,6 +407,14 @@ val wave2IntegratedFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val betaProtocolFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.network.beta.BetaProtocolFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -455,4 +463,5 @@ tasks.named("check") {
     dependsOn(trackEFoundationTest)
     dependsOn(enhancementTransactionSafetyTest)
     dependsOn(wave2IntegratedFoundationTest)
+    dependsOn(betaProtocolFoundationTest)
 }
