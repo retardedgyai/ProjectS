@@ -377,6 +377,35 @@ public final class TrackFPartyQuestRewardFoundationTest {
         assert !retryableFull.claim(retryRequest).replayed();
         assert retryableCalls.get() == 2
                 : "Full-inventory retry semantics must come from policy, not Track F defaults";
+
+        RewardClaimService deliveryFailure = new RewardClaimService(
+                new DurableFakeClaimStore(4), ignored -> {
+                    throw new IllegalStateException("delivery-port-failure");
+                }, receipt -> true, clock);
+        RewardClaimResult deliveryFailureResult = deliveryFailure.claim(claim(950));
+        assert deliveryFailureResult.status() == RewardClaimResult.Status.PERSIST_FAILURE;
+        assert !deliveryFailureResult.terminal();
+
+        RewardClaimStore failingLookup = new RewardClaimStore() {
+            @Override
+            public Optional<RewardClaimResult> findTerminal(RewardClaimKey key) {
+                throw new IllegalStateException("claim-store-unavailable");
+            }
+
+            @Override
+            public RewardClaimResult executeExclusive(
+                    RewardClaimKey key, UUID attemptId,
+                    Supplier<RewardClaimResult> operation
+            ) {
+                throw new AssertionError("Admission must not run after lookup failure");
+            }
+        };
+        RewardClaimResult storeFailure = new RewardClaimService(
+                failingLookup, ignored -> {
+                    throw new AssertionError("Delivery must not run after store failure");
+                }, receipt -> true, clock).claim(claim(951));
+        assert storeFailure.status() == RewardClaimResult.Status.CLAIM_STORE_FAILURE;
+        assert !storeFailure.terminal();
     }
 
     private static void rewardDeliveryUsesStableTrackDTransactions() {

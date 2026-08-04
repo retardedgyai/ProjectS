@@ -24,23 +24,43 @@ public final class RewardClaimService {
 
     public synchronized RewardClaimResult claim(RewardClaimRequest request) {
         Objects.requireNonNull(request, "request");
-        Optional<RewardClaimResult> existing = store.findTerminal(request.key());
+        Optional<RewardClaimResult> existing;
+        try {
+            existing = Objects.requireNonNull(
+                    store.findTerminal(request.key()), "terminal lookup");
+        } catch (RuntimeException failure) {
+            return storeFailure(request, failure);
+        }
         if (existing.isPresent()) return existing.orElseThrow().asReplay();
 
         try {
             return store.executeExclusive(request.key(), request.requestId(), () -> {
-                RewardDeliveryReceipt receipt = Objects.requireNonNull(
-                        delivery.deliver(request), "delivery receipt");
+                RewardDeliveryReceipt receipt;
+                try {
+                    receipt = Objects.requireNonNull(
+                            delivery.deliver(request), "delivery receipt");
+                } catch (RuntimeException failure) {
+                    return new RewardClaimResult(request.key(),
+                            RewardClaimResult.Status.PERSIST_FAILURE,
+                            "delivery=" + bounded(failure), false, false,
+                            clock.instant());
+                }
                 boolean terminal = retryPolicy.terminal(receipt);
                 return new RewardClaimResult(
                         request.key(), map(receipt.status()), receipt.reason(), terminal,
                         false, clock.instant());
             });
         } catch (RuntimeException failure) {
-            return new RewardClaimResult(request.key(),
-                    RewardClaimResult.Status.CLAIM_STORE_FAILURE,
-                    bounded(failure), false, false, clock.instant());
+            return storeFailure(request, failure);
         }
+    }
+
+    private RewardClaimResult storeFailure(
+            RewardClaimRequest request, RuntimeException failure
+    ) {
+        return new RewardClaimResult(request.key(),
+                RewardClaimResult.Status.CLAIM_STORE_FAILURE,
+                bounded(failure), false, false, clock.instant());
     }
 
     private static RewardClaimResult.Status map(RewardDeliveryReceipt.Status status) {
