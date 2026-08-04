@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -242,6 +243,8 @@ public final class MobV2FoundationTest {
             assert java.util.Arrays.equals(beforeFailure, Files.readAllBytes(
                     failureRoot.resolve("atomic_failure.yml")));
             failureFixture.repository.close(); deleteTree(failureRoot);
+            atomicMoveUnsupportedFailsClosed(policy);
+            symlinkedStoragePathsAreRejected(policy);
             fixture.repository.close(); fixture.repository.close();
         } finally { deleteTree(root); }
     }
@@ -267,6 +270,97 @@ public final class MobV2FoundationTest {
         assert registry.current(first.mobId()).orElseThrow().revision() == 2;
         registry.close(); registry.close();
         assert registry.snapshot().isEmpty();
+    }
+
+    private static void atomicMoveUnsupportedFailsClosed(
+            MobDefinitionV2Policy policy
+    ) throws Exception {
+        Path root = Files.createTempDirectory("projects-mob-v2-no-atomic-");
+        try {
+            Fixture initial = fixture(root, policy, allResolved());
+            assert initial.repository.save(valid("no_atomic", 0), 0).success();
+            initial.repository.close();
+            Path target = root.resolve("no_atomic.yml");
+            byte[] before = Files.readAllBytes(target);
+            AtomicBoolean temporaryObserved = new AtomicBoolean();
+            var writer = MobDefinitionV2Repository.strictAtomicWriter(
+                    (temporary, destination) -> {
+                        temporaryObserved.set(Files.isRegularFile(temporary));
+                        throw new AtomicMoveNotSupportedException(
+                                temporary.toString(), destination.toString(), "fixture");
+                    });
+            Fixture unsupported = fixture(root, policy, allResolved(), writer);
+            var result = unsupported.repository.save(valid("no_atomic", 0), 1);
+            assert !result.success();
+            assert temporaryObserved.get();
+            assert java.util.Arrays.equals(before, Files.readAllBytes(target));
+            try (var files = Files.list(root)) {
+                assert files.noneMatch(path -> path.getFileName().toString().endsWith(".tmp"));
+            }
+            unsupported.repository.close();
+        } finally { deleteTree(root); }
+    }
+
+    private static void symlinkedStoragePathsAreRejected(
+            MobDefinitionV2Policy policy
+    ) throws Exception {
+        Path sandbox = Files.createTempDirectory("projects-mob-v2-symlink-path-");
+        try {
+            Path realRoot = sandbox.resolve("real-root");
+            Files.createDirectories(realRoot);
+            Path linkedRoot = sandbox.resolve("linked-root");
+            if (createSymlink(linkedRoot, realRoot)) {
+                Fixture fixture = fixture(linkedRoot, policy, allResolved());
+                assert !fixture.repository.save(valid("linked_root", 0), 0).success();
+                assert fixture.repository.read("linked_root").status()
+                        == MobDefinitionV2Repository.ReadStatus.UNSAFE_PATH;
+                assert directoryEmpty(realRoot);
+                fixture.repository.close();
+            }
+
+            Path realParent = sandbox.resolve("real-parent");
+            Files.createDirectories(realParent);
+            Path linkedParent = sandbox.resolve("linked-parent");
+            if (createSymlink(linkedParent, realParent)) {
+                Fixture fixture = fixture(linkedParent.resolve("repository"),
+                        policy, allResolved());
+                assert !fixture.repository.save(valid("linked_parent", 0), 0).success();
+                assert !Files.exists(realParent.resolve("repository"));
+                fixture.repository.close();
+            }
+
+            Path historyRoot = sandbox.resolve("history-root");
+            Fixture initial = fixture(historyRoot, policy, allResolved());
+            assert initial.repository.save(valid("history_guard", 0), 0).success();
+            byte[] current = Files.readAllBytes(historyRoot.resolve("history_guard.yml"));
+            deleteTree(historyRoot.resolve(".history"));
+            Path externalHistory = sandbox.resolve("external-history");
+            Files.createDirectories(externalHistory);
+            if (createSymlink(historyRoot.resolve(".history"), externalHistory)) {
+                assert !initial.repository.save(valid("history_guard", 0), 1).success();
+                assert java.util.Arrays.equals(current,
+                        Files.readAllBytes(historyRoot.resolve("history_guard.yml")));
+                assert directoryEmpty(externalHistory);
+            }
+            initial.repository.close();
+
+            Path quarantineRoot = sandbox.resolve("quarantine-root");
+            Files.createDirectories(quarantineRoot);
+            Path externalQuarantine = sandbox.resolve("external-quarantine");
+            Files.createDirectories(externalQuarantine);
+            if (createSymlink(quarantineRoot.resolve(".quarantine"), externalQuarantine)) {
+                Path unknown = quarantineRoot.resolve("quarantine_guard.yml");
+                Files.writeString(unknown,
+                        "schema-version: 99\nid: quarantine_guard\nrevision: 0\n");
+                Fixture fixture = fixture(quarantineRoot, policy, allResolved());
+                var result = fixture.repository.read("quarantine_guard");
+                assert result.status() == MobDefinitionV2Repository.ReadStatus.UNSAFE_PATH;
+                assert result.quarantinePath() == null;
+                assert Files.exists(unknown);
+                assert directoryEmpty(externalQuarantine);
+                fixture.repository.close();
+            }
+        } finally { deleteTree(sandbox); }
     }
 
     private static void editorFoundation() throws Exception {
@@ -433,6 +527,21 @@ public final class MobV2FoundationTest {
     private static void assertNoBukkit(Class<?> type) {
         assert !type.getTypeName().startsWith("org.bukkit") : type;
         if (type.isArray()) assertNoBukkit(type.componentType());
+    }
+
+    private static boolean createSymlink(Path link, Path target) {
+        try {
+            Files.createSymbolicLink(link, target.toAbsolutePath());
+            return true;
+        } catch (IOException | UnsupportedOperationException | SecurityException exception) {
+            return false;
+        }
+    }
+
+    private static boolean directoryEmpty(Path directory) throws IOException {
+        try (var paths = Files.list(directory)) {
+            return paths.findAny().isEmpty();
+        }
     }
 
     private static void assertThrows(Action action) {

@@ -47,7 +47,10 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
             MobDefinitionV2Validator validator,
             MobDefinitionV2Policy policy
     ) {
-        this(root, codec, validator, policy, MobDefinitionV2Repository::writeAtomic);
+        this(root, codec, validator, policy, strictAtomicWriter(
+                (temporary, target) -> Files.move(temporary, target,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING)));
     }
 
     public MobDefinitionV2Repository(
@@ -110,8 +113,10 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
             if (!validation.valid()) return SaveResult.rejected(validation);
             Path target = definitionPath(draft.mobId());
             ReadResult current = read(draft.mobId());
-            if (current.status().quarantined()) {
-                return SaveResult.failure("current definition is quarantined");
+            if (current.status() != ReadStatus.NOT_FOUND
+                    && current.status() != ReadStatus.V1
+                    && current.status() != ReadStatus.V2) {
+                return SaveResult.failure("current definition is not safely writable");
             }
             long currentRevision = current.status() == ReadStatus.NOT_FOUND ? 0 : current.revision();
             if (current.status() == ReadStatus.NOT_FOUND
@@ -132,7 +137,8 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
             writeHistory(saved, encoded);
             pruneHistory(saved.mobId(), saved.revision());
             return SaveResult.success(saved);
-        } catch (IOException | ArithmeticException | IllegalStateException exception) {
+        } catch (IOException | ArithmeticException | IllegalStateException
+                 | UnsafePathException exception) {
             return SaveResult.failure(bounded(exception.getMessage()));
         }
     }
@@ -192,7 +198,7 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
                         .map(path -> revisionFromName(path.getFileName().toString()))
                         .filter(value -> value > 0).sorted().toList();
             }
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
             return List.of();
         }
     }
@@ -208,7 +214,7 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
                 if (ids.size() > policy.maximumDefinitions()) return List.of();
                 return ids.stream().map(this::read).toList();
             }
-        } catch (IOException exception) { return List.of(); }
+        } catch (IOException | RuntimeException exception) { return List.of(); }
     }
 
     @Override public synchronized void close() {
@@ -218,6 +224,7 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
 
     private ReadResult quarantine(Path target, ReadStatus status, String message) {
         try {
+            rejectSymlinkDirectoryChain(quarantineRoot);
             Files.createDirectories(quarantineRoot);
             Path destination = quarantineRoot.resolve(target.getFileName().toString()
                     + "." + System.nanoTime() + ".quarantine");
@@ -238,12 +245,18 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
                 ? historyDirectory(mobId).resolve("legacy-v1-backup.yml")
                 : historyPath(mobId, current.revision());
         if (!Files.exists(backup, LinkOption.NOFOLLOW_LINKS)) {
-            writeAtomic(backup, current.originalBytes());
+            strictAtomicWriter((temporary, target) -> Files.move(temporary, target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING))
+                    .write(backup, current.originalBytes());
         }
     }
 
     private void writeHistory(MobDefinitionV2 definition, byte[] bytes) throws IOException {
-        writeAtomic(historyPath(definition.mobId(), definition.revision()), bytes);
+        strictAtomicWriter((temporary, target) -> Files.move(temporary, target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING))
+                .write(historyPath(definition.mobId(), definition.revision()), bytes);
     }
 
     private void pruneHistory(String mobId, long currentRevision) throws IOException {
@@ -279,8 +292,16 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
         }
     }
 
-    private Path definitionPath(String mobId) { return contained(root.resolve(id(mobId) + ".yml"), root); }
-    private Path historyDirectory(String mobId) { return contained(historyRoot.resolve(id(mobId)), historyRoot); }
+    private Path definitionPath(String mobId) {
+        rejectSymlinkDirectoryChain(root);
+        return contained(root.resolve(id(mobId) + ".yml"), root);
+    }
+    private Path historyDirectory(String mobId) {
+        rejectSymlinkDirectoryChain(historyRoot);
+        Path directory = contained(historyRoot.resolve(id(mobId)), historyRoot);
+        rejectSymlinkDirectoryChain(directory);
+        return directory;
+    }
     private Path historyPath(String mobId, long revision) {
         if (revision < 1) throw new UnsafePathException("invalid history revision");
         return contained(historyDirectory(mobId).resolve(revision + ".yml"), historyRoot);
@@ -302,21 +323,51 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new UnsafePathException("non-regular file rejected");
     }
 
-    private static void writeAtomic(Path target, byte[] bytes) throws IOException {
+    public static AtomicWriter strictAtomicWriter(AtomicMover mover) {
+        java.util.Objects.requireNonNull(mover, "mover");
+        return (target, bytes) -> writeAtomic(target, bytes, mover);
+    }
+
+    private static void writeAtomic(Path target, byte[] bytes, AtomicMover mover)
+            throws IOException {
+        rejectSymlinkDirectoryChain(target.toAbsolutePath().normalize().getParent());
         Files.createDirectories(target.getParent());
         Path temporary = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
         boolean moved = false;
-        try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING)) {
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) channel.write(buffer);
-            channel.force(true);
-        }
         try {
-            try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
-            catch (AtomicMoveNotSupportedException exception) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING)) {
+                ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+            rejectSymlinkDirectoryChain(target.toAbsolutePath().normalize().getParent());
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)
+                    && (Files.isSymbolicLink(target)
+                    || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))) {
+                throw new IOException("atomic target is not a regular file");
+            }
+            mover.move(temporary, target);
             moved = true;
         } finally { if (!moved) Files.deleteIfExists(temporary); }
+    }
+
+    private static void rejectSymlinkDirectoryChain(Path directory) {
+        Path absolute = directory.toAbsolutePath().normalize();
+        Path current = absolute.getRoot();
+        if (current == null) throw new UnsafePathException("path has no root");
+        for (Path component : absolute) {
+            current = current.resolve(component);
+            if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) continue;
+            if (Files.isSymbolicLink(current)) {
+                throw new UnsafePathException("symbolic-link ancestor rejected: "
+                        + current.getFileName());
+            }
+            if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                throw new UnsafePathException("non-directory ancestor rejected: "
+                        + current.getFileName());
+            }
+        }
     }
 
     private static byte[] sha256(byte[] bytes) {
@@ -325,7 +376,10 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
     }
 
     private static Path absolute(Path path) { return java.util.Objects.requireNonNull(path, "root").toAbsolutePath().normalize(); }
-    private void ensureOpen() { if (closed) throw new IllegalStateException("repository closed"); }
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("repository closed");
+        rejectSymlinkDirectoryChain(root);
+    }
     private Path safePath(String mobId) { try { return definitionPath(mobId); } catch (RuntimeException e) { return null; } }
     private static String safe(String value) { return value == null ? "" : bounded(value); }
     private static String fileId(Path path) { return path.getFileName().toString().replaceFirst("\\.yml$", ""); }
@@ -333,6 +387,7 @@ public final class MobDefinitionV2Repository implements AutoCloseable {
     private static long revisionFromName(String value) { try { return Long.parseLong(value.replaceFirst("\\..*$", "")); } catch (NumberFormatException e) { return -1; } }
 
     @FunctionalInterface public interface AtomicWriter { void write(Path target, byte[] contents) throws IOException; }
+    @FunctionalInterface public interface AtomicMover { void move(Path temporary, Path target) throws IOException; }
 
     public enum ReadStatus {
         V1, V2, NOT_FOUND, INVALID, UNKNOWN_VERSION, CORRUPT, OVERSIZED, UNSAFE_PATH;
