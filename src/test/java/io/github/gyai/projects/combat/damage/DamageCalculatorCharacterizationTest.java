@@ -1,16 +1,6 @@
 package io.github.gyai.projects.combat.damage;
 
 import io.github.gyai.projects.combat.stat.StatCalculator;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
-
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Proxy;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -292,79 +282,50 @@ public final class DamageCalculatorCharacterizationTest {
         assert !DamageEventApplicationPolicy.replacesModifier("ABSORPTION");
     }
 
-    @SuppressWarnings("unchecked")
     private static void characterizeReentryTracking() {
+        DamageApplicationGuard<String> guard = new DamageApplicationGuard<>();
+        UUID attacker = UUID.randomUUID();
+        UUID otherAttacker = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+        UUID otherTarget = UUID.randomUUID();
+        AtomicInteger targetDamage = new AtomicInteger();
+        AtomicInteger health = new AtomicInteger();
+        AtomicInteger shield = new AtomicInteger();
+        AtomicInteger lifeSteal = new AtomicInteger();
+        AtomicInteger reroutes = new AtomicInteger();
+
+        guard.run(attacker, target, "outer", () -> {
+            targetDamage.incrementAndGet();
+            health.incrementAndGet();
+            shield.incrementAndGet();
+            lifeSteal.incrementAndGet();
+            if (!guard.isApplying(attacker, target)) reroutes.incrementAndGet();
+            assert guard.current(attacker, target).equals("outer");
+            guard.run(attacker, target, "nested", () -> {
+                assert guard.current(attacker, target).equals("nested");
+            });
+            assert guard.current(attacker, target).equals("outer");
+            assert !guard.isApplying(attacker, otherTarget);
+            assert !guard.isApplying(otherAttacker, target);
+        });
+
+        assert targetDamage.get() == 1;
+        assert health.get() == 1;
+        assert shield.get() == 1;
+        assert lifeSteal.get() == 1;
+        assert reroutes.get() == 0;
+        assert !guard.isApplying(attacker, target);
+        assert guard.current(attacker, target) == null;
+
         try {
-            DamageService service = allocateWithoutConstructor(DamageService.class);
-            UUID attackerId = UUID.randomUUID();
-            UUID targetId = UUID.randomUUID();
-            Player attacker = entityProxy(Player.class, attackerId);
-            LivingEntity target = entityProxy(LivingEntity.class, targetId);
-
-            Class<?> keyType = Class.forName(
-                    DamageService.class.getName() + "$DamageKey");
-            Constructor<?> keyConstructor = keyType.getDeclaredConstructor(
-                    UUID.class, UUID.class);
-            keyConstructor.setAccessible(true);
-            Object key = keyConstructor.newInstance(attackerId, targetId);
-
-            Field applyingField = DamageService.class.getDeclaredField("applying");
-            applyingField.setAccessible(true);
-            applyingField.set(service, new HashMap<>());
-            Map<Object, Deque<DamageResult>> applying =
-                    (Map<Object, Deque<DamageResult>>) applyingField.get(service);
-            DamageResult outer = DamageCalculator.calculate(input(
-                    DamageType.PHYSICAL, DamageMode.PVE,
-                    DamageKind.NORMAL_ATTACK,
-                    0, 10, 0, 0, false, 1.75,
-                    0, 0, 0, 0, new double[0], 1,
-                    0, 100, 0, 1));
-            DamageResult nested = DamageCalculator.calculate(input(
-                    DamageType.PHYSICAL, DamageMode.PVE,
-                    DamageKind.NORMAL_ATTACK,
-                    0, 20, 0, 0, false, 1.75,
-                    0, 0, 0, 0, new double[0], 1,
-                    0, 100, 0, 1));
-            Deque<DamageResult> stack = new ArrayDeque<>();
-            applying.put(key, stack);
-
-            stack.push(outer);
-            assert service.isApplying(attacker, target);
-            assert service.currentCalculation(attacker, target).equals(outer);
-            stack.push(nested);
-            assert service.currentCalculation(attacker, target).equals(nested);
-            stack.pop();
-            assert service.currentCalculation(attacker, target).equals(outer);
-            stack.pop();
-            applying.remove(key);
-            assert !service.isApplying(attacker, target);
-            assert service.currentCalculation(attacker, target) == null;
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("Unable to characterize reentry tracking", exception);
+            guard.run(attacker, target, "failure", () -> {
+                throw new IllegalStateException("application failed");
+            });
+            throw new AssertionError("Expected callback failure");
+        } catch (IllegalStateException expected) {
+            assert expected.getMessage().equals("application failed");
         }
-    }
-
-    private static <T> T allocateWithoutConstructor(Class<T> type)
-            throws ReflectiveOperationException {
-        Class<?> unsafeType = Class.forName("sun.misc.Unsafe");
-        Field singleton = unsafeType.getDeclaredField("theUnsafe");
-        singleton.setAccessible(true);
-        Object unsafe = singleton.get(null);
-        return type.cast(unsafeType.getMethod("allocateInstance", Class.class)
-                .invoke(unsafe, type));
-    }
-
-    private static <T> T entityProxy(Class<T> type, UUID id) {
-        Object proxy = Proxy.newProxyInstance(
-                type.getClassLoader(), new Class<?>[]{type},
-                (ignored, method, arguments) -> {
-                    if (method.getName().equals("getUniqueId")) return id;
-                    if (method.getName().equals("toString")) return type.getSimpleName();
-                    if (method.getName().equals("hashCode")) return System.identityHashCode(ignored);
-                    if (method.getName().equals("equals")) return ignored == arguments[0];
-                    throw new UnsupportedOperationException(method.toString());
-                });
-        return type.cast(proxy);
+        assert !guard.isApplying(attacker, target);
     }
 
     private static DamageCalculator.Input input(

@@ -21,10 +21,6 @@ import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -38,7 +34,8 @@ public final class DamageService implements Listener {
     private final EnhancementManager enhancementManager;
     private final TrainingDummyManager dummyManager;
     private final BukkitDamageSnapshotResolver snapshotResolver;
-    private final Map<DamageKey, Deque<DamageResult>> applying = new HashMap<>();
+    private final DamageApplicationGuard<DamageResult> applicationGuard =
+            new DamageApplicationGuard<>();
     private final CriticalHitResolver criticalResolver =
             new CriticalHitResolver(MAX_CRITICAL_CAST_CACHE);
     private Function<LivingEntity, MobStatsDefinition> mobStatsResolver =
@@ -220,20 +217,12 @@ public final class DamageService implements Listener {
         }
         double healthBefore = request.target().getHealth();
         double shieldBefore = request.target().getAbsorptionAmount();
-        DamageKey key = new DamageKey(
-                request.attacker().getUniqueId(), request.target().getUniqueId());
-        applying.computeIfAbsent(key, ignored -> new ArrayDeque<>())
-                .push(calculated);
-        try {
-            request.target().damage(
-                    calculated.finalRoundedDamage(), request.attacker());
-        } finally {
-            Deque<DamageResult> calculations = applying.get(key);
-            if (calculations != null) {
-                calculations.poll();
-                if (calculations.isEmpty()) applying.remove(key);
-            }
-        }
+        applicationGuard.run(
+                request.attacker().getUniqueId(),
+                request.target().getUniqueId(),
+                calculated,
+                () -> request.target().damage(
+                        calculated.finalRoundedDamage(), request.attacker()));
         double healthDamage = Math.max(0.0,
                 healthBefore - Math.max(0.0, request.target().getHealth()));
         double shieldDamage = Math.max(0.0,
@@ -324,17 +313,9 @@ public final class DamageService implements Listener {
         }
         double healthBefore = target.getHealth();
         double shieldBefore = target.getAbsorptionAmount();
-        DamageKey key = new DamageKey(attacker.getUniqueId(), target.getUniqueId());
-        applying.computeIfAbsent(key, ignored -> new ArrayDeque<>()).push(calculated);
-        try {
-            target.damage(calculated.finalRoundedDamage(), attacker);
-        } finally {
-            Deque<DamageResult> calculations = applying.get(key);
-            if (calculations != null) {
-                calculations.poll();
-                if (calculations.isEmpty()) applying.remove(key);
-            }
-        }
+        applicationGuard.run(
+                attacker.getUniqueId(), target.getUniqueId(), calculated,
+                () -> target.damage(calculated.finalRoundedDamage(), attacker));
         return new DamageApplicationResult(
                 calculated, true,
                 Math.max(0, shieldBefore - Math.max(0, target.getAbsorptionAmount())),
@@ -346,15 +327,13 @@ public final class DamageService implements Listener {
     }
 
     public boolean isApplying(LivingEntity attacker, LivingEntity target) {
-        Deque<DamageResult> calculations = applying.get(new DamageKey(
-                attacker.getUniqueId(), target.getUniqueId()));
-        return calculations != null && !calculations.isEmpty();
+        return applicationGuard.isApplying(
+                attacker.getUniqueId(), target.getUniqueId());
     }
 
     public DamageResult currentCalculation(Player attacker, LivingEntity target) {
-        Deque<DamageResult> calculations = applying.get(new DamageKey(
-                attacker.getUniqueId(), target.getUniqueId()));
-        return calculations == null ? null : calculations.peek();
+        return applicationGuard.current(
+                attacker.getUniqueId(), target.getUniqueId());
     }
 
     @SuppressWarnings("deprecation")
@@ -387,7 +366,7 @@ public final class DamageService implements Listener {
     }
 
     public void clear() {
-        applying.clear();
+        applicationGuard.clear();
         criticalResolver.clear();
     }
 
@@ -427,9 +406,6 @@ public final class DamageService implements Listener {
         double after = Math.min(maximumHealth.getValue(), before + requested);
         attacker.setHealth(after);
         return Math.max(0.0, after - before);
-    }
-
-    private record DamageKey(UUID attackerId, UUID targetId) {
     }
 
     private record MobBasicAttackValues(
