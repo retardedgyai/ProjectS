@@ -14,6 +14,8 @@ public final class LegacyItemCompatibilityTest {
     public static void main(String[] args) {
         readOnlyPdcFixture();
         malformedValuesAreIsolated();
+        wrongKnownPdcTypesAreIsolated();
+        missingItemIdentityIsNotMalformed();
         inventoryRoundTripDoesNotCreateIdentity();
         bukkitItemStackReadDoesNotMutateBytesOrPdc();
     }
@@ -49,8 +51,31 @@ public final class LegacyItemCompatibilityTest {
         malformed.values.put("weapon_attack_speed_bonus", Double.POSITIVE_INFINITY);
         LegacyItemReadResult result = new LegacyItemCompatibilityReader().read(malformed);
         assert !result.valid() && result.view().isEmpty();
+        assert result.status() == LegacyItemReadResult.Status.MALFORMED;
         assert result.issues().containsAll(List.of(
                 "itemId", "enhancementLevel", "attackPowerBonus", "attackSpeedBonus"));
+    }
+
+    private static void wrongKnownPdcTypesAreIsolated() {
+        Fixture wrongTypes = new Fixture("minecraft:iron_sword");
+        wrongTypes.values.put("item_id", 17);
+        wrongTypes.values.put("enhancement_level", "9");
+        wrongTypes.values.put("weapon_broken", true);
+        wrongTypes.values.put("weapon_attack_power_bonus", "3.0");
+        wrongTypes.values.put("weapon_attack_speed_bonus", 2);
+        LegacyItemReadResult result = new LegacyItemCompatibilityReader().read(wrongTypes);
+        assert result.status() == LegacyItemReadResult.Status.MALFORMED;
+        assert result.view().isEmpty();
+        assert result.issues().containsAll(List.of(
+                "itemIdType", "enhancementLevelType", "brokenType",
+                "attackPowerBonusType", "attackSpeedBonusType"));
+    }
+
+    private static void missingItemIdentityIsNotMalformed() {
+        LegacyItemReadResult result = new LegacyItemCompatibilityReader().read(
+                new Fixture("minecraft:stone"));
+        assert result.status() == LegacyItemReadResult.Status.MISSING;
+        assert result.view().isEmpty() && result.issues().isEmpty();
     }
 
     private static void inventoryRoundTripDoesNotCreateIdentity() {
@@ -94,6 +119,7 @@ public final class LegacyItemCompatibilityTest {
         private final LinkedHashMap<String, Object> values = new LinkedHashMap<>();
         private Fixture(String material) { this.material = material; }
         @Override public String materialIdentity() { return material; }
+        @Override public boolean contains(String key) { return values.containsKey(key); }
         @Override public Optional<String> stringValue(String key) { return typed(key, String.class); }
         @Override public Optional<Integer> integerValue(String key) { return typed(key, Integer.class); }
         @Override public Optional<Byte> byteValue(String key) { return typed(key, Byte.class); }
@@ -124,6 +150,9 @@ public final class LegacyItemCompatibilityTest {
                     (proxy, method, args) -> {
                         if (method.getName().equals("get") && args != null && args.length == 2) {
                             return values.get(((NamespacedKey) args[0]).toString());
+                        }
+                        if (method.getName().equals("has") && args != null && args.length == 1) {
+                            return values.containsKey(((NamespacedKey) args[0]).toString());
                         }
                         if (method.getName().equals("toString")) return values.toString();
                         return primitiveDefault(method.getReturnType());

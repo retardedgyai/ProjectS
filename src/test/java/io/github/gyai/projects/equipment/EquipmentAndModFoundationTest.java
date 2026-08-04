@@ -71,6 +71,12 @@ public final class EquipmentAndModFoundationTest {
         assertThrows(IllegalArgumentException.class, () -> item(
                 EquipmentRarity.UNCOMMON, List.of(),
                 List.of(EquipmentModSlot.empty(0), EquipmentModSlot.empty(0)), Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> item(
+                EquipmentRarity.COMMON, List.of(),
+                List.of(EquipmentModSlot.empty(3)), Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> item(
+                EquipmentRarity.UNCOMMON, List.of(),
+                List.of(EquipmentModSlot.empty(0), EquipmentModSlot.empty(2)), Optional.empty()));
         assertThrows(IllegalArgumentException.class, () -> new EquipmentItemV1(
                 SchemaVersions.EQUIPMENT_ITEM, "bad", EquipmentCategory.ARMOR,
                 EquipmentSlot.WEAPON, EquipmentTier.T1, 1,

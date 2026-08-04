@@ -24,8 +24,11 @@ public record EquipmentValidation(boolean valid, List<String> issues) {
         if (view.enhancementLevel() < 0 || view.enhancementLevel() > 30) issues.add("enhancementLevel");
         if (view.binding() == null || view.tradePolicy() == null) issues.add("policy");
         HashSet<Integer> indexes = new HashSet<>();
+        int expectedCapacity = view.rarity() == null
+                ? -1 : view.rarity().modCapacity();
         if (view.modSlots() != null) for (EquipmentModSlot slot : view.modSlots()) {
             if (slot == null || !indexes.add(slot.index())) issues.add("duplicateModSlot");
+            else if (slot.index() >= expectedCapacity) issues.add("modSlotIndexRange");
             else if (slot.entry().orElse(null) instanceof ModEntry entry
                     && entry.rank().tier() != view.tier()) issues.add("modRankTier");
         }

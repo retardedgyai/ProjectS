@@ -18,7 +18,9 @@ read-only `LegacyPdcSource` projection:
 No writer exists on that projection. Reads, lore rendering, and inventory
 scans never generate an item-instance UUID. Invalid legacy numeric or oversized
 input is isolated as a failed `LegacyItemReadResult`; it is not normalized or
-written back.
+written back. Raw PDC presence is checked separately from typed reads, so a
+known key stored with the wrong PDC type is `MALFORMED`, not mistaken for a
+missing optional value.
 
 ## Equipment schema v1
 
@@ -27,6 +29,8 @@ model defines the eight logical slots, T1/1-15, T2/16-30, T3/31-45, rarity
 capacities 1/2/3/4, `UNSPECIFIED` quality, finite base rolls, optional crafter
 and instance identity, enhancement 0-30, broken state, binding, and independent
 trade/market/dismantle policy.
+MOD slot indexes must be the exact contiguous set `0..capacity-1`; shifted or
+sparse slot sets are rejected even when their list size matches the rarity.
 
 An optional UUID is accepted only as input to a proposed immutable item. No
 code in this track creates one. `EquipmentWriteBoundary` is an interface only;

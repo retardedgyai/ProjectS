@@ -30,6 +30,11 @@ public final class BukkitLegacyPdcSource implements LegacyPdcSource {
         this.materialIdentity = Objects.requireNonNull(materialIdentity, "materialIdentity");
     }
     @Override public String materialIdentity() { return materialIdentity.apply(item); }
+    @Override public boolean contains(String key) {
+        ItemMeta meta = item.getItemMeta();
+        return meta != null && meta.getPersistentDataContainer().has(
+                new NamespacedKey(namespace, key));
+    }
     @Override public Optional<String> stringValue(String key) { return value(key, PersistentDataType.STRING); }
     @Override public Optional<Integer> integerValue(String key) { return value(key, PersistentDataType.INTEGER); }
     @Override public Optional<Byte> byteValue(String key) { return value(key, PersistentDataType.BYTE); }
