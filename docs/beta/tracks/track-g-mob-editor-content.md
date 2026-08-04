@@ -3,12 +3,16 @@
 - **Branch:** `codex/beta-track-g-mob-editor-content`
 - **Worktree:** `beta-track-g-mob-editor-content`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** the merge commit containing `wave-3-owner-decisions.md`; Track G and H must record the same `WAVE_3_BASE_SHA`.
 - **PR base:** `integration/beta-full-build`
 
 ## Scope
 
-Preserve Mob schema v1 while adding an approved additive v2 definition/reader for skills, phases, drops, spawns, attack metadata, attributes, weaknesses, fire/ice category, and rewards; strengthen cross-reference validation, revision conflicts, atomic save/history/rollback, and runtime last-good-definition behavior.
+Preserve Mob schema v1 while adding current write schema v2 with supported reads
+for v1/v2. V2 covers skills, phases, drops, spawns, attack metadata, attributes,
+weaknesses, fire/ice category, and rewards; it strengthens cross-reference
+validation, revision conflicts, atomic save/history/rollback, and runtime
+last-good-definition behavior.
 
 ## Out of scope
 
@@ -36,7 +40,10 @@ V1 fixtures/load/save invariance, v2 current/unknown versions, all finite/bounds
 
 ## Merge prerequisites and rollback
 
-B/C/F public IDs/interfaces stable; schema/channel capability owner decision; approved content data for runtime. Rollback flag false, keep v1 repository, cancel v2 tasks, select last good revision as a new commit.
+B/C/F public IDs/interfaces stable and Wave 3 owner decisions merged. Approved
+content data remains required for runtime activation. Rollback keeps the flag
+false and v1 repository available, cancels v2 tasks, and commits a selected last
+good revision as a new revision.
 
 ## Completion report
 

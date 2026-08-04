@@ -24,6 +24,7 @@ import io.github.gyai.projects.item.compatibility.LegacyItemCompatibilityReader;
 import io.github.gyai.projects.item.compatibility.LegacyItemReadResult;
 import io.github.gyai.projects.item.compatibility.LegacyPdcSource;
 import io.github.gyai.projects.mod.UnknownModEntry;
+import io.github.gyai.projects.monster.editor.MobDefinition;
 import io.github.gyai.projects.persistence.player.FilePlayerProgressRepository;
 import io.github.gyai.projects.persistence.player.PlayerProgressLoadStatus;
 import io.github.gyai.projects.persistence.player.PlayerProgressSaveStatus;
@@ -84,10 +85,13 @@ public final class Wave1IntegratedFoundationTest {
         assert SchemaVersions.EQUIPMENT_ITEM == 1;
         assert SchemaVersions.MOD_DEFINITION == 1;
         assert SchemaVersions.RECIPE_DEFINITION == 1;
-        assert SchemaVersions.MOB_DEFINITION == 1;
-        assert SchemaVersions.currentVersion(SchemaId.CLIENT_PROTOCOL).isEmpty();
-        assert SchemaVersions.requiresOwnerDecision().contains(
-                SchemaId.CLIENT_PROTOCOL);
+        assert MobDefinition.SCHEMA_VERSION == 1;
+        assert SchemaVersions.MOB_DEFINITION == 2;
+        assert SchemaVersions.supportedReadVersions(SchemaId.MOB_DEFINITION)
+                .equals(Set.of(1, 2));
+        assert SchemaVersions.CLIENT_PROTOCOL == 1;
+        assert SchemaVersions.currentVersion(SchemaId.CLIENT_PROTOCOL)
+                .orElseThrow() == 1;
 
         FeatureFlagService flags = new FeatureFlagService();
         for (FeatureKey key : List.of(

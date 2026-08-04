@@ -2,9 +2,9 @@
 
 ## Compatibility
 
-Existing `MobDefinition.SCHEMA_VERSION = 1`, YAML, revision checks, atomic saves, permissions, payload bounds, and channels `projects:mob_editor_req_v1` / `projects:mob_editor_state_v1` remain supported. Phase 0 does not implement schema v2 and does not assign its number. The v2 version/channel negotiation is `REQUIRES_OWNER_DECISION`.
+Existing `MobDefinition.SCHEMA_VERSION = 1`, YAML, revision checks, atomic saves, permissions, payload bounds, and channels `projects:mob_editor_req_v1` / `projects:mob_editor_state_v1` remain supported. The current write version is `2`; supported read versions are `1` and `2`.
 
-A v1 definition loads exactly as before. A v2-capable editor may present additive defaults in a read-only projection, but it cannot rewrite v1 merely by opening, previewing, reloading, or test spawning.
+A v1 definition loads exactly as before. Opening, previewing, reloading, or test spawning never rewrites it. Conversion requires explicit upgrade/save confirmation, full validation, backup, and a new v2 revision. Unknown versions are quarantined and downgrade is forbidden.
 
 ## Proposed additive v2 sections
 
@@ -35,4 +35,10 @@ Clients submit the base revision. Save compares it to the repository revision an
 ## Runtime and rollback
 
 Runtime instances retain the definition revision used at spawn. Reload swaps validated immutable definitions and does not mutate an attack already in progress. Failed apply leaves current mobs on the last good definition. `MOB_EDITOR_V2=false` disables v2 editing/runtime sections while v1 remains available. Rollback selects a known good revision and commits it as a new revision; it does not rewrite history.
+
+Definition files are limited to 1 MiB. History is bounded to 20 committed
+revisions per mob while retaining current, last-known-good, and referenced
+rollback targets. Editor sessions are bounded to 512 global and 4 per player;
+test spawns are bounded to 128 global and 8 per player. These are injectable
+safety policies rather than content balance.
 

@@ -48,3 +48,14 @@ multiplayer, persistence activation, balance approval, or public-enable cells.
 Both Tracks must start from the same `WAVE_2_BASE_SHA` created by merging
 `wave-2-owner-decisions.md`; neither Track is automatically merged.
 
+## Wave 3 foundation gate
+
+Track G and Track H start from the same merge commit containing
+`wave-3-owner-decisions.md`. Draft PRs require schema-v1 read invariance,
+mob-definition v2 current writes with v1/v2 reads, aggregate client protocol v1,
+bounded codecs/repositories/sessions, malformed-input and permission tests,
+old-client fallback, lifecycle cleanup, and all feature flags false. The gate
+does not satisfy production content/balance, Paper/manual, gameplay activation,
+deployment, or public-enable cells. G/H PRs remain Draft and are not
+automatically merged.
+

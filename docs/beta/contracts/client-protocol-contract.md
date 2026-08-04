@@ -2,11 +2,15 @@
 
 ## Existing boundary
 
-Existing channel names and their payload versions remain unchanged. Current code includes independent versions such as HUD v2 and multiple v1 packets; therefore an aggregate `client-protocol` schema number is `REQUIRES_OWNER_DECISION`. Phase 0 adds no packet or channel.
+Existing channel names and payload versions remain unchanged. The additive Beta
+aggregate `client-protocol` version is `1`.
 
 ## Capability handshake
 
-A future server handshake advertises a bounded protocol version plus explicit capabilities, each with its payload version and enabled/disabled state. The global handshake channel ID and version are `REQUIRES_OWNER_DECISION`; `projects:telegraph_hello_v1` remains telegraph-specific and is not repurposed.
+The server advertises bounded capabilities on `projects:beta_caps_v1`; clients
+acknowledge on `projects:beta_ack_v1`. State uses `projects:beta_state_v1` and
+commands use `projects:beta_command_v1`. `projects:telegraph_hello_v1` remains
+telegraph-specific and is not repurposed.
 
 The client responds only with supported capabilities. Server features send new packets only after capability agreement. Capability state is per connection, bounded, cleared on quit/disable/reload, and never persisted as player progression.
 
@@ -35,7 +39,18 @@ The client responds only with supported capabilities. Server features send new p
 - **Enhancement UI:** item revision, level/broken state, validated balance-data preview, transaction result.
 - **Mob Editor v2:** negotiated schema/capability, bounded lists/details, base revision, conflict response, permissions.
 
-Exact screen design, new channel IDs, aggregate version, packet byte budgets beyond existing limits, and capability codes are `REQUIRES_OWNER_DECISION` with Track H.
+Canonical capabilities are `projects:hud`, `projects:party`,
+`projects:elements`, `projects:equipment`, `projects:crafting`,
+`projects:enhancement`, and `projects:mob-editor-v2`, each at payload version 1.
+Agreement requires exact aggregate and payload versions plus producer,
+permission, and visibility availability; there is no implicit downgrade.
+
+Advertisement/acknowledgement packets are limited to 8 KiB and normal
+state/command packets to 32 KiB. UTF-8 strings are limited to 256 bytes,
+canonical IDs to 128 bytes, lists to 128 entries, maps to 64 entries, and Mob
+Editor list pages to 50 entries. Decoders reject invalid UTF-8, malformed or
+oversized lengths, duplicates, non-finite numbers, unknown mandatory enums,
+excessive nesting, and trailing bytes.
 
 ## Lifecycle and rollback
 

@@ -16,6 +16,8 @@ public final class BetaContractPresenceTest {
             "docs/beta/canonical-ids.md",
             "docs/beta/acceptance-matrix.md",
             "docs/beta/wave-1-owner-decisions.md",
+            "docs/beta/wave-2-owner-decisions.md",
+            "docs/beta/wave-3-owner-decisions.md",
             "docs/beta/contracts/player-data-contract.md",
             "docs/beta/contracts/item-metadata-contract.md",
             "docs/beta/contracts/mod-contract.md",
