@@ -330,8 +330,7 @@ public final class Wave1IntegratedFoundationTest {
     }
 
     private static void assertNotBukkit(Class<?> owner, Type type) {
-        assert !type.getTypeName().startsWith("org.bukkit.")
-                && !type.getTypeName().contains("<org.bukkit.")
+        assert !type.getTypeName().contains("org.bukkit.")
                 : owner.getName() + " exposes " + type.getTypeName();
     }
 
