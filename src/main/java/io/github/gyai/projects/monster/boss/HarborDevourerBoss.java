@@ -4,6 +4,10 @@ import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlState;
 import io.github.gyai.projects.combat.skill.HardControlType;
+import io.github.gyai.projects.combat.telegraph.TelegraphGeometry;
+import io.github.gyai.projects.combat.telegraph.TelegraphInstance;
+import io.github.gyai.projects.combat.telegraph.TelegraphRequest;
+import io.github.gyai.projects.manager.TelegraphManager;
 import io.github.gyai.projects.monster.CustomMonster;
 import io.github.gyai.projects.monster.MonsterData;
 import io.github.gyai.projects.status.StatusEffectManager;
@@ -33,6 +37,8 @@ public final class HarborDevourerBoss extends CustomMonster {
     public static final String MONSTER_ID = "harbor_devourer_grohm";
     public static final String BREAKWATER_SLAM_ID = "breakwater_slam";
     public static final String HULLBREAKER_CHARGE_ID = "hullbreaker_charge";
+    public static final String DEEP_TIDE_SHOCKWAVE_ID =
+            "deep_tide_shockwave";
 
     private static final Particle.DustOptions RED_DUST =
             new Particle.DustOptions(Color.fromRGB(190, 35, 45), 1.35f);
@@ -41,10 +47,13 @@ public final class HarborDevourerBoss extends CustomMonster {
 
     private final Ravager ravager;
     private final Settings settings;
+    private final TelegraphManager telegraphManager;
     private final Set<BukkitTask> actionTasks = new HashSet<>();
+    private final Set<UUID> activeTelegraphs = new HashSet<>();
     private boolean phaseTwo;
     private boolean activeAction;
     private ActionType activeActionType = ActionType.NONE;
+    private ChargeContext activeCharge;
     private int noTargetTicks;
     private long nextSlamTick;
     private long nextChargeTick;
@@ -57,7 +66,8 @@ public final class HarborDevourerBoss extends CustomMonster {
             BossBar bossBar,
             Settings settings,
             CrowdControlManager crowdControlManager,
-            StatusEffectManager statusEffectManager
+            StatusEffectManager statusEffectManager,
+            TelegraphManager telegraphManager
     ) {
         super(
                 plugin,
@@ -69,12 +79,15 @@ public final class HarborDevourerBoss extends CustomMonster {
                 statusEffectManager);
         this.ravager = entity;
         this.settings = settings;
+        this.telegraphManager = telegraphManager;
         initializeCooldowns();
     }
 
     @Override
     public void tick() {
         pruneCompletedTasks();
+        activeTelegraphs.removeIf(
+                id -> telegraphManager.get(id).isEmpty());
         if (!isValid()) {
             bossBar.removeAll();
             return;
@@ -131,7 +144,11 @@ public final class HarborDevourerBoss extends CustomMonster {
 
     @Override
     public void handleDeath(EntityDeathEvent event) {
+        finishChargeIfActive(ChargeFinishReason.SOURCE_REMOVED);
         cancelActionTasks();
+        cancelActiveTelegraphs(
+                TelegraphInstance.CancellationReason
+                        .SOURCE_REMOVED);
         activeAction = false;
         activeActionType = ActionType.NONE;
         super.handleDeath(event);
@@ -139,7 +156,11 @@ public final class HarborDevourerBoss extends CustomMonster {
 
     @Override
     public void remove() {
+        finishChargeIfActive(ChargeFinishReason.SOURCE_REMOVED);
         cancelActionTasks();
+        cancelActiveTelegraphs(
+                TelegraphInstance.CancellationReason
+                        .SOURCE_REMOVED);
         activeAction = false;
         activeActionType = ActionType.NONE;
         if (ravager.isValid()) {
@@ -223,7 +244,11 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void resetBoss() {
+        finishChargeIfActive(ChargeFinishReason.BOSS_RESET);
         cancelActionTasks();
+        cancelActiveTelegraphs(
+                TelegraphInstance.CancellationReason
+                        .BOSS_RESET);
         activeAction = false;
         activeActionType = ActionType.NONE;
         phaseTwo = false;
@@ -256,7 +281,11 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void startPhaseTwo() {
+        finishChargeIfActive(ChargeFinishReason.BOSS_RESET);
         cancelActionTasks();
+        cancelActiveTelegraphs(
+                TelegraphInstance.CancellationReason
+                        .BOSS_RESET);
         phaseTwo = true;
         currentPhase = 2;
         activeAction = true;
@@ -306,6 +335,17 @@ public final class HarborDevourerBoss extends CustomMonster {
         ravager.setVelocity(new Vector());
         nextSlamTick = plugin.getServer().getCurrentTick()
                 + cooldownTicks(settings.slamCooldownSeconds());
+        Location center = ravager.getLocation().clone();
+        UUID telegraphId = createFixedTelegraph(
+                BREAKWATER_SLAM_ID,
+                TelegraphInstance.Shape.CIRCLE,
+                center,
+                new Vector(0.0, 0.0, 1.0),
+                settings.slamRadius(),
+                0.0,
+                0.0,
+                0.0,
+                settings.slamWarningTicks());
 
         BukkitRunnable warning = new BukkitRunnable() {
             private int elapsed;
@@ -320,7 +360,6 @@ public final class HarborDevourerBoss extends CustomMonster {
                     cancel();
                     return;
                 }
-                drawWarningCircle(settings.slamRadius());
                 if (elapsed % 8 == 0) {
                     ravager.getWorld().playSound(
                             ravager.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS,
@@ -331,47 +370,83 @@ public final class HarborDevourerBoss extends CustomMonster {
         };
         track(warning.runTaskTimer(plugin, 0L, 4L));
         track(plugin.getServer().getScheduler().runTaskLater(
-                plugin, this::executeSlam, settings.slamWarningTicks()));
+                plugin,
+                () -> executeSlam(telegraphId),
+                settings.slamWarningTicks()));
     }
 
-    private void executeSlam() {
+    private void executeSlam(UUID telegraphId) {
         if (!isValid()
                 || !activeAction
                 || activeActionType != ActionType.SLAM
-                || !canUseStationaryAttack()) {
+                || !canUseStationaryAttack()
+                || !telegraphManager.detonate(telegraphId)) {
             finishAction();
             return;
         }
-        Location center = ravager.getLocation();
-        damagePlayersInRing(
-                center, 0.0, settings.slamRadius(), settings.slamDamage(), 1.2, 0.35);
-        ravager.getWorld().spawnParticle(
-                Particle.EXPLOSION, center.clone().add(0.0, 0.4, 0.0),
-                10, settings.slamRadius() * 0.4, 0.3,
-                settings.slamRadius() * 0.4, 0.0);
+        activeTelegraphs.remove(telegraphId);
+        Location center = telegraphManager.center(telegraphId);
+        if (center == null) {
+            finishAction();
+            return;
+        }
+        damagePlayersInTelegraph(
+                telegraphId,
+                settings.slamDamage(),
+                1.2,
+                0.35);
         ravager.getWorld().playSound(
                 center, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.7f);
 
         if (phaseTwo) {
-            track(plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (isValid()
-                        && activeAction
-                        && activeActionType == ActionType.SLAM
-                        && canUseStationaryAttack()) {
-                    Location secondCenter = ravager.getLocation();
-                    drawWarningCircle(8.0);
-                    damagePlayersInRing(secondCenter, 5.0, 8.0, 12.0, 0.8, 0.35);
-                    ravager.getWorld().spawnParticle(
-                            Particle.CLOUD, secondCenter.clone().add(0.0, 0.25, 0.0),
-                            55, 4.0, 0.25, 4.0, 0.03);
-                    ravager.getWorld().playSound(
-                            secondCenter, Sound.ENTITY_GENERIC_EXPLODE, 1.1f, 0.9f);
-                }
-                finishAction();
-            }, 10L));
+            UUID shockwaveId = createFixedTelegraph(
+                    DEEP_TIDE_SHOCKWAVE_ID,
+                    TelegraphInstance.Shape.DONUT,
+                    center,
+                    new Vector(0.0, 0.0, 1.0),
+                    8.0,
+                    5.0,
+                    0.0,
+                    0.0,
+                    settings.phaseTwoShockwaveWarningTicks());
+            track(plugin.getServer().getScheduler()
+                    .runTaskLater(
+                            plugin,
+                            () -> executePhaseTwoShockwave(
+                                    shockwaveId),
+                            settings
+                                    .phaseTwoShockwaveWarningTicks()));
         } else {
             finishAction();
         }
+    }
+
+    private void executePhaseTwoShockwave(
+            UUID telegraphId
+    ) {
+        if (!isValid()
+                || !activeAction
+                || activeActionType != ActionType.SLAM
+                || !canUseStationaryAttack()
+                || !telegraphManager.detonate(telegraphId)) {
+            finishAction();
+            return;
+        }
+        activeTelegraphs.remove(telegraphId);
+        Location center = telegraphManager.center(telegraphId);
+        if (center != null) {
+            damagePlayersInTelegraph(
+                    telegraphId,
+                    12.0,
+                    0.8,
+                    0.35);
+            ravager.getWorld().playSound(
+                    center,
+                    Sound.ENTITY_GENERIC_EXPLODE,
+                    1.1f,
+                    0.9f);
+        }
+        finishAction();
     }
 
     private void startHullbreakerCharge(Player target) {
@@ -395,6 +470,20 @@ public final class HarborDevourerBoss extends CustomMonster {
         direction.normalize();
         double warningDistance = Math.min(
                 settings.chargeDistance(), horizontalDistance(start, recordedTarget));
+        UUID telegraphId = createFixedTelegraph(
+                HULLBREAKER_CHARGE_ID,
+                TelegraphInstance.Shape.LINE,
+                start,
+                direction,
+                0.0,
+                0.0,
+                4.0,
+                warningDistance,
+                settings.chargeWarningTicks());
+        ChargeContext charge = new ChargeContext(
+                telegraphId,
+                new ChargeRuntimeGuard());
+        activeCharge = charge;
 
         BukkitRunnable warning = new BukkitRunnable() {
             private int elapsed;
@@ -409,7 +498,6 @@ public final class HarborDevourerBoss extends CustomMonster {
                     cancel();
                     return;
                 }
-                drawWarningLine(start, direction, warningDistance);
                 if (elapsed % 8 == 0) {
                     ravager.getWorld().playSound(
                             ravager.getLocation(), Sound.ENTITY_RAVAGER_STEP,
@@ -421,42 +509,103 @@ public final class HarborDevourerBoss extends CustomMonster {
         track(warning.runTaskTimer(plugin, 0L, 4L));
         track(plugin.getServer().getScheduler().runTaskLater(
                 plugin,
-                () -> beginChargeMovement(start, direction),
+                () -> beginChargeMovement(
+                        start, direction, charge),
                 settings.chargeWarningTicks()));
     }
 
-    private void beginChargeMovement(Location start, Vector direction) {
+    private void beginChargeMovement(
+            Location start,
+            Vector direction,
+            ChargeContext charge
+    ) {
         if (!isValid()
                 || !activeAction
                 || activeActionType != ActionType.CHARGE
-                || !canUseMovementAttack()) {
-            finishAction();
+                || !canUseMovementAttack()
+                || activeCharge != charge
+                || !telegraphManager.detonate(
+                charge.telegraphId())) {
+            finishCharge(
+                    ChargeFinishReason.INVALID_STATE,
+                    charge);
             return;
         }
+        // A no-AI mob does not run vanilla travel and therefore ignores
+        // velocity-based movement. Keep travel enabled while preventing the
+        // normal Ravager goals from steering the charge away from its line.
+        ravager.setAware(false);
+        ravager.setAI(true);
         Set<UUID> hitPlayers = new HashSet<>();
         BukkitRunnable movement = new BukkitRunnable() {
+            private Location previous =
+                    ravager.getLocation().clone();
+            private final int maximumTicks = Math.max(
+                    8,
+                    (int) Math.ceil(
+                            settings.chargeDistance()
+                                    / 1.35) + 10);
+
             @Override
             public void run() {
                 if (!isValid()
                         || !activeAction
                         || activeActionType != ActionType.CHARGE
+                        || activeCharge != charge
                         || !canUseMovementAttack()) {
-                    cancel();
-                    finishAction();
+                    finishCharge(
+                            ChargeFinishReason.INVALID_STATE,
+                            charge);
                     return;
                 }
                 Location current = ravager.getLocation();
-                if (horizontalDistance(start, current) >= settings.chargeDistance()
-                        || collidesWithSolidBlock(current, direction)) {
-                    cancel();
-                    finishAction();
+                if (horizontalDistance(
+                        start, current)
+                        >= settings.chargeDistance()) {
+                    finishCharge(
+                            ChargeFinishReason.DISTANCE_REACHED,
+                            charge);
+                    return;
+                }
+                if (collidesWithSolidBlock(
+                        current, direction)) {
+                    finishCharge(
+                            ChargeFinishReason.COLLISION,
+                            charge);
+                    return;
+                }
+                ChargeRuntimeGuard.StopReason stopReason =
+                        charge.guard().observe(
+                                horizontalDistance(
+                                        previous,
+                                        current),
+                                maximumTicks);
+                previous = current.clone();
+                if (stopReason
+                        == ChargeRuntimeGuard.StopReason.STUCK) {
+                    finishCharge(
+                            ChargeFinishReason.STUCK,
+                            charge);
+                    return;
+                }
+                if (stopReason
+                        == ChargeRuntimeGuard.StopReason.TIMEOUT) {
+                    finishCharge(
+                            ChargeFinishReason.TIMEOUT,
+                            charge);
                     return;
                 }
 
                 ravager.setVelocity(direction.clone().multiply(1.35));
-                ravager.getWorld().spawnParticle(
-                        Particle.CLOUD, current.clone().add(0.0, 0.35, 0.0),
-                        5, 0.7, 0.2, 0.7, 0.02);
+                if (charge.guard().particlesAllowed()) {
+                    ravager.getWorld().spawnParticle(
+                            Particle.CLOUD,
+                            current.clone()
+                                    .add(0.0, 0.35, 0.0),
+                            3,
+                            0.6, 0.15, 0.6,
+                            0.015);
+                }
                 for (Player player : ravager.getWorld().getPlayers()) {
                     if (!isEligiblePlayer(player)
                             || hitPlayers.contains(player.getUniqueId())
@@ -488,30 +637,33 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private boolean isInsideChargeHitbox(Location boss, Location player) {
-        double dx = boss.getX() - player.getX();
-        double dz = boss.getZ() - player.getZ();
-        double dy = Math.abs(boss.getY() - player.getY());
-        return dx * dx + dz * dz <= 4.0 && dy <= 2.75;
+        return TelegraphGeometry.containsCircle(
+                boss.getX(),
+                boss.getY(),
+                boss.getZ(),
+                2.0,
+                3.0,
+                player.getX(),
+                player.getY(),
+                player.getZ());
     }
 
-    private void damagePlayersInRing(
-            Location center,
-            double innerRadius,
-            double outerRadius,
+    private void damagePlayersInTelegraph(
+            UUID telegraphId,
             double damage,
             double horizontalKnockback,
             double verticalKnockback
     ) {
-        double innerSquared = innerRadius * innerRadius;
-        double outerSquared = outerRadius * outerRadius;
+        Location center = telegraphManager.center(
+                telegraphId);
+        if (center == null) {
+            return;
+        }
         for (Player player : center.getWorld().getPlayers()) {
-            if (!isEligiblePlayer(player)) {
-                continue;
-            }
-            double distance = horizontalDistanceSquared(center, player.getLocation());
-            if ((innerRadius > 0.0 && distance <= innerSquared)
-                    || distance > outerSquared
-                    || Math.abs(player.getY() - center.getY()) > 3.5) {
+            if (!isEligiblePlayer(player)
+                    || !telegraphManager.contains(
+                    telegraphId,
+                    player.getLocation())) {
                 continue;
             }
             player.damage(damage, ravager);
@@ -520,41 +672,29 @@ public final class HarborDevourerBoss extends CustomMonster {
         }
     }
 
-    private void drawWarningCircle(double radius) {
-        Location center = ravager.getLocation().clone().add(0.0, 0.12, 0.0);
-        int points = Math.max(24, (int) Math.ceil(radius * 10.0));
-        for (int index = 0; index < points; index++) {
-            double angle = Math.PI * 2.0 * index / points;
-            Location point = center.clone().add(
-                    Math.cos(angle) * radius, 0.0, Math.sin(angle) * radius);
-            ravager.getWorld().spawnParticle(
-                    Particle.DUST, point, 1, 0.0, 0.0, 0.0, 0.0,
-                    phaseTwo ? PURPLE_DUST : RED_DUST);
-        }
-    }
-
-    private void drawWarningLine(Location start, Vector direction, double distance) {
-        for (double step = 0.5; step <= distance; step += 0.55) {
-            Location point = start.clone()
-                    .add(direction.clone().multiply(step))
-                    .add(0.0, 0.12, 0.0);
-            ravager.getWorld().spawnParticle(
-                    Particle.DUST, point, 1, 0.0, 0.0, 0.0, 0.0, RED_DUST);
-        }
-    }
-
     private void finishAction() {
-        if (!isValid()) {
+        if (activeActionType == ActionType.CHARGE
+                && activeCharge != null) {
+            finishCharge(
+                    ChargeFinishReason.INVALID_STATE,
+                    activeCharge);
             return;
         }
-        ravager.setVelocity(new Vector());
-        restoreAiForCurrentControl();
+        if (ravager.isValid()) {
+            ravager.setVelocity(new Vector());
+            restoreAiForCurrentControl();
+        }
         activeAction = false;
         activeActionType = ActionType.NONE;
     }
 
     private void interruptActionForControl(HardControlType type) {
+        finishChargeIfActive(
+                ChargeFinishReason.HARD_CONTROL);
         cancelActionTasks();
+        cancelActiveTelegraphs(
+                TelegraphInstance.CancellationReason
+                        .HARD_CONTROL);
         activeAction = false;
         activeActionType = ActionType.NONE;
         if (ravager.isValid()) {
@@ -564,6 +704,94 @@ public final class HarborDevourerBoss extends CustomMonster {
             } else {
                 ravager.setAI(true);
             }
+        }
+    }
+
+    private void finishChargeIfActive(
+            ChargeFinishReason reason
+    ) {
+        ChargeContext charge = activeCharge;
+        if (charge != null) {
+            finishCharge(reason, charge);
+        }
+    }
+
+    private void finishCharge(
+            ChargeFinishReason reason,
+            ChargeContext charge
+    ) {
+        ChargeRuntimeGuard.StopReason guardReason =
+                reason == ChargeFinishReason.COLLISION
+                        ? ChargeRuntimeGuard.StopReason.COLLISION
+                        : reason == ChargeFinishReason.STUCK
+                        ? ChargeRuntimeGuard.StopReason.STUCK
+                        : reason == ChargeFinishReason.TIMEOUT
+                        ? ChargeRuntimeGuard.StopReason.TIMEOUT
+                        : ChargeRuntimeGuard.StopReason.EXTERNAL;
+        if (!charge.guard().finishOnce(guardReason)) {
+            return;
+        }
+        cancelActionTasks();
+        TelegraphInstance.CancellationReason
+                cancellationReason =
+                switch (reason) {
+                    case HARD_CONTROL ->
+                            TelegraphInstance
+                                    .CancellationReason
+                                    .HARD_CONTROL;
+                    case BOSS_RESET ->
+                            TelegraphInstance
+                                    .CancellationReason
+                                    .BOSS_RESET;
+                    case SOURCE_REMOVED ->
+                            TelegraphInstance
+                                    .CancellationReason
+                                    .SOURCE_REMOVED;
+                    case INVALID_STATE ->
+                            TelegraphInstance
+                                    .CancellationReason
+                                    .TARGET_INVALID;
+                    default ->
+                            TelegraphInstance
+                                    .CancellationReason.NONE;
+                };
+        if (cancellationReason
+                != TelegraphInstance.CancellationReason.NONE) {
+            telegraphManager.cancel(
+                    charge.telegraphId(),
+                    cancellationReason);
+        }
+        telegraphManager.removeNow(
+                charge.telegraphId());
+        activeTelegraphs.remove(
+                charge.telegraphId());
+        if (ravager.isValid()) {
+            ravager.setVelocity(new Vector());
+            restoreAiForCurrentControl();
+            if (reason == ChargeFinishReason.COLLISION) {
+                Location impact = ravager.getLocation()
+                        .clone().add(0.0, 0.6, 0.0);
+                ravager.getWorld().spawnParticle(
+                        Particle.BLOCK,
+                        impact,
+                        8,
+                        0.6, 0.35, 0.6,
+                        0.08,
+                        impact.clone()
+                                .subtract(0.0, 0.7, 0.0)
+                                .getBlock()
+                                .getBlockData());
+                ravager.getWorld().playSound(
+                        impact,
+                        Sound.ENTITY_RAVAGER_STUNNED,
+                        1.0f,
+                        0.8f);
+            }
+        }
+        activeAction = false;
+        activeActionType = ActionType.NONE;
+        if (activeCharge == charge) {
+            activeCharge = null;
         }
     }
 
@@ -577,6 +805,7 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private void restoreAiForCurrentControl() {
+        ravager.setAware(true);
         ravager.setAI(getHardControlType() != HardControlType.STUN);
     }
 
@@ -615,6 +844,58 @@ public final class HarborDevourerBoss extends CustomMonster {
         actionTasks.clear();
     }
 
+    private UUID createFixedTelegraph(
+            String attackId,
+            TelegraphInstance.Shape shape,
+            Location center,
+            Vector direction,
+            double radius,
+            double innerRadius,
+            double width,
+            double length,
+            int warningTicks
+    ) {
+        long startTick =
+                plugin.getServer().getCurrentTick();
+        TelegraphRequest request = new TelegraphRequest(
+                attackId,
+                center.getWorld().getUID(),
+                center.getWorld().getKey().toString(),
+                shape,
+                TelegraphInstance.VisualTheme.DAMAGE,
+                TelegraphInstance.VisualStyle
+                        .GROHM_STONE_TIDE,
+                center.getX(),
+                center.getY(),
+                center.getZ(),
+                direction.getX(),
+                direction.getZ(),
+                radius,
+                innerRadius,
+                width,
+                length,
+                startTick,
+                startTick + 1L,
+                startTick + warningTicks,
+                startTick + warningTicks + 5L,
+                TelegraphInstance.TrackingMode.FIXED,
+                null,
+                3.0);
+        UUID id = telegraphManager.create(
+                ravager, request);
+        activeTelegraphs.add(id);
+        return id;
+    }
+
+    private void cancelActiveTelegraphs(
+            TelegraphInstance.CancellationReason reason
+    ) {
+        for (UUID id : Set.copyOf(activeTelegraphs)) {
+            telegraphManager.cancel(id, reason);
+        }
+        activeTelegraphs.clear();
+    }
+
     private void pruneCompletedTasks() {
         actionTasks.removeIf(task -> task.isCancelled()
                 || (!plugin.getServer().getScheduler().isQueued(task.getTaskId())
@@ -648,6 +929,7 @@ public final class HarborDevourerBoss extends CustomMonster {
             int slamWarningTicks,
             double slamRadius,
             double slamDamage,
+            int phaseTwoShockwaveWarningTicks,
             double chargeCooldownSeconds,
             int chargeWarningTicks,
             double chargeDistance,
@@ -661,5 +943,22 @@ public final class HarborDevourerBoss extends CustomMonster {
         PHASE_TRANSITION,
         SLAM,
         CHARGE
+    }
+
+    private record ChargeContext(
+            UUID telegraphId,
+            ChargeRuntimeGuard guard
+    ) {
+    }
+
+    private enum ChargeFinishReason {
+        DISTANCE_REACHED,
+        COLLISION,
+        STUCK,
+        TIMEOUT,
+        HARD_CONTROL,
+        BOSS_RESET,
+        SOURCE_REMOVED,
+        INVALID_STATE
     }
 }

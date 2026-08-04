@@ -3,6 +3,7 @@ package io.github.gyai.projects.skill;
 import io.github.gyai.projects.manager.PlayerManager;
 import io.github.gyai.projects.manager.CombatHudManager;
 import io.github.gyai.projects.player.PlayerData;
+import io.github.gyai.projects.combat.stat.StatCalculator;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Player;
@@ -96,7 +97,8 @@ public class SkillManager {
         }
 
         data.consumeFightingSpirit(resourceCost);
-        startCooldown(player, skillId, skill.getBaseCooldownSeconds(), data.getCooldownReduction());
+        startCooldown(player, skillId, skill.getBaseCooldownSeconds(),
+                data.getCooldownRecoveryPercent());
         try {
             prepared.execution().run();
         } catch (RuntimeException exception) {
@@ -114,12 +116,17 @@ public class SkillManager {
         }
     }
 
-    public void startCooldown(Player player, String id, double baseSeconds, double cooldownReduction) {
+    public void startCooldown(
+            Player player,
+            String id,
+            double baseSeconds,
+            double cooldownRecoveryPercent
+    ) {
         if (fullCooldownReduction.contains(player.getUniqueId())) {
             return;
         }
-        double clampedCdr = Math.clamp(cooldownReduction, 0.0, 0.5);
-        long durationMillis = Math.round(baseSeconds * (1.0 - clampedCdr) * 1_000.0);
+        long durationMillis = Math.round(StatCalculator.cooldownSeconds(
+                baseSeconds, cooldownRecoveryPercent) * 1_000.0);
         cooldownEnds.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>())
                 .put(id, System.currentTimeMillis() + durationMillis);
     }

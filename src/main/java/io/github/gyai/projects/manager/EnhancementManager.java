@@ -94,11 +94,30 @@ public class EnhancementManager {
 
     public double getAttackPower(Player player, ItemStack item) {
         String itemId = itemManager.getItemId(item);
+        if (!(itemManager.getItem(itemId) instanceof Weapon weapon)) return 0.0;
+        return weapon.getMagicalAttack() > weapon.getPhysicalAttack()
+                ? getMagicalAttackPower(player, item)
+                : getPhysicalAttackPower(player, item);
+    }
+
+    public double getPhysicalAttackPower(Player player, ItemStack item) {
+        return getTypedAttackPower(item, false);
+    }
+
+    public double getMagicalAttackPower(Player player, ItemStack item) {
+        return getTypedAttackPower(item, true);
+    }
+
+    private double getTypedAttackPower(ItemStack item, boolean magical) {
+        String itemId = itemManager.getItemId(item);
         if (!(itemManager.getItem(itemId) instanceof Weapon weapon) || isBroken(item)) {
             return 0.0;
         }
-        double globalBase = balanceManager.weaponAttackPower(
-                itemId, weapon.getAttackDamage());
+        double typedBase = magical
+                ? weapon.getMagicalAttack() : weapon.getPhysicalAttack();
+        double globalBase = BalanceMath.typedWeaponAttackPower(
+                typedBase,
+                balanceManager.weaponAttackPower(itemId, typedBase));
         return BalanceMath.attackPower(
                 globalBase,
                 getWeaponAttackPowerBonus(item),
@@ -220,8 +239,10 @@ public class EnhancementManager {
         List<Component> lore = new ArrayList<>();
         lore.add(Component.text("強化値: +" + level + " / +" + MAX_LEVEL,
                 level >= 20 ? NamedTextColor.GOLD : NamedTextColor.AQUA));
-        lore.add(Component.text("攻撃力: %.1f  (+%.0f%%)".formatted(damage, level * 4.0),
-                NamedTextColor.RED));
+        String attackLabel = weapon.getMagicalAttack() > weapon.getPhysicalAttack()
+                ? "魔法攻撃力" : "物理攻撃力";
+        lore.add(Component.text((attackLabel + ": %.1f  (+%.0f%%)")
+                        .formatted(damage, level * 4.0), NamedTextColor.RED));
         double totalItemAttackSpeed = BalanceMath.attackSpeed(
                 globalAttackSpeed,
                 getAttackSpeedBonus(level),

@@ -4,6 +4,8 @@ import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlType;
+import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import io.github.gyai.projects.dev.DevMenuManager;
@@ -33,6 +35,8 @@ public class ProjectCommand implements CommandExecutor {
     private final CrowdControlManager crowdControlManager;
     private final StatusEffectManager statusEffectManager;
     private final PlayerManager playerManager;
+    private final DamageShadowCommandService damageShadowCommandService;
+    private final StarterSwordRouteCommandService damageRouteCommandService;
 
     public ProjectCommand(
             ItemManager itemManager,
@@ -42,7 +46,9 @@ public class ProjectCommand implements CommandExecutor {
             MonsterManager monsterManager,
             CrowdControlManager crowdControlManager,
             StatusEffectManager statusEffectManager,
-            PlayerManager playerManager
+            PlayerManager playerManager,
+            DamageShadowCommandService damageShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService
     ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
@@ -52,6 +58,8 @@ public class ProjectCommand implements CommandExecutor {
         this.crowdControlManager = crowdControlManager;
         this.statusEffectManager = statusEffectManager;
         this.playerManager = playerManager;
+        this.damageShadowCommandService = damageShadowCommandService;
+        this.damageRouteCommandService = damageRouteCommandService;
     }
 
     @Override
@@ -61,6 +69,14 @@ public class ProjectCommand implements CommandExecutor {
             String label,
             String[] args
     ) {
+        if (args.length > 0
+                && args[0].equalsIgnoreCase("damage-shadow")) {
+            return handleDamageShadowCommand(sender, args);
+        }
+        if (args.length > 0
+                && args[0].equalsIgnoreCase("damage-route")) {
+            return handleDamageRouteCommand(sender, args);
+        }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("このコマンドはゲーム内で実行してください。");
             return true;
@@ -118,6 +134,42 @@ public class ProjectCommand implements CommandExecutor {
         player.getInventory().addItem(sword);
         player.sendMessage("§aProjectSの剣を受け取りました！");
 
+        return true;
+    }
+
+    private boolean handleDamageShadowCommand(
+            CommandSender sender,
+            String[] args
+    ) {
+        if (!sender.hasPermission("projects.dev")) {
+            sender.sendMessage("§cこのコマンドを実行する権限がありません。");
+            return true;
+        }
+        DamageShadowCommandService.Response response =
+                damageShadowCommandService.execute(
+                        args.length >= 2 ? args[1] : "status");
+        String color = response.success() ? "§e" : "§c";
+        for (String message : response.messages()) {
+            sender.sendMessage(color + message);
+        }
+        return true;
+    }
+
+    private boolean handleDamageRouteCommand(
+            CommandSender sender,
+            String[] args
+    ) {
+        if (!sender.hasPermission("projects.dev")) {
+            sender.sendMessage("§cこのコマンドを実行する権限がありません。");
+            return true;
+        }
+        StarterSwordRouteCommandService.Response response =
+                damageRouteCommandService.execute(
+                        args.length >= 2 ? args[1] : "status");
+        String color = response.success() ? "§e" : "§c";
+        for (String message : response.messages()) {
+            sender.sendMessage(color + message);
+        }
         return true;
     }
 

@@ -4,7 +4,6 @@ import io.github.gyai.projects.combat.classsystem.WarriorCombatManager;
 import io.github.gyai.projects.combat.classsystem.WarriorEffectManager;
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
-import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.EntityType;
@@ -65,10 +64,6 @@ public final class WarriorMobilitySkills {
                         return Optional.empty();
                     }
                     var values = support.damageValues("warrior_charge");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         effectManager.startCharge(
                                 player,
@@ -76,7 +71,8 @@ public final class WarriorMobilitySkills {
                                 distance,
                                 speed,
                                 width,
-                                damage);
+                                values.baseDamage(),
+                                values.attackPowerScaling());
                     }));
                 }));
     }
@@ -117,10 +113,6 @@ public final class WarriorMobilitySkills {
                         return Optional.empty();
                     }
                     var values = support.damageValues("execution_leap");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         player.teleport(destination);
                         player.getWorld().spawnParticle(
@@ -137,7 +129,8 @@ public final class WarriorMobilitySkills {
                             support.damage(
                                     player,
                                     target,
-                                    damage,
+                                    values.baseDamage(),
+                                    values.attackPowerScaling(),
                                     "execution_leap",
                                     session);
                         }
@@ -177,10 +170,6 @@ public final class WarriorMobilitySkills {
                         return Optional.empty();
                     }
                     var values = support.damageValues("earth_shatter");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling());
                     return Optional.of(new Skill.PreparedUse(0, () -> {
                         List<LivingEntity> targets =
                                 support.nearby(player, radius);
@@ -196,9 +185,11 @@ public final class WarriorMobilitySkills {
                                 support.damage(
                                         player,
                                         target,
-                                        damage,
+                                        values.baseDamage(),
+                                        values.attackPowerScaling(),
                                         "earth_shatter",
-                                        session);
+                                        session,
+                                        true);
                                 if (!session.confirmedTarget(
                                         target.getUniqueId())) {
                                     continue;

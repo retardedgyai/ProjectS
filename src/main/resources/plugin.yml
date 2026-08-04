@@ -8,9 +8,30 @@ description: ProjectS MMO Plugin
 commands:
   projects:
     description: ProjectSの動作確認コマンド
-    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|dev|devmenu]
+    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|damage-shadow|damage-route|dev|devmenu]
 
 permissions:
   projects.dev:
     description: Allows access to the ProjectS developer menu
+    default: op
+  projects.mobeditor.open:
+    description: Mob Editorを開く
+    default: op
+  projects.mobeditor.edit:
+    description: Mob定義を編集・保存する
+    default: op
+  projects.mobeditor.appearance:
+    description: Mobの外見と装備を編集する
+    default: op
+  projects.mobeditor.head.import:
+    description: カスタムヘッドを登録する
+    default: op
+  projects.mobeditor.test:
+    description: Draftからテスト個体を操作する
+    default: op
+  projects.mobeditor.apply:
+    description: 保存済みMob定義を既存個体へ適用する
+    default: op
+  projects.mobeditor.reload:
+    description: Mob Editor定義を再読み込みする
     default: op

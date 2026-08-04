@@ -18,6 +18,10 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
 }
 
+configurations.named("testCompileOnly") {
+    extendsFrom(configurations.compileOnly.get())
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
@@ -60,6 +64,159 @@ val ccFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val telegraphFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.telegraph.TelegraphFoundationTest")
+    jvmArgs("-ea")
+}
+
+val statFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.combat.stat.StatFoundationTest")
+    jvmArgs("-ea")
+}
+
+val combatDamageFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.CombatDamageFoundationTest")
+    jvmArgs("-ea")
+}
+
+val damageCalculatorCharacterizationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageCalculatorCharacterizationTest")
+    jvmArgs("-ea")
+}
+
+val damageSnapshotTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.combat.damage.DamageSnapshotTest")
+    jvmArgs("-ea")
+}
+
+val attackMetadataAdapterTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.AttackMetadataAdapterTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordShadowParityTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordShadowParityTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowValidationTrackerTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowValidationTrackerTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowRuntimeSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowRuntimeSafetyTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowCommandTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowCommandTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowExportTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowExportTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordRoutePolicyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordRoutePolicyTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordLimitedCutoverTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordLimitedCutoverTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordFallbackSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordFallbackSafetyTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordAuthoritativeShadowTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordAuthoritativeShadowTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordRouteCommandServiceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordRouteCommandServiceTest")
+    jvmArgs("-ea")
+}
+
+val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.monster.editor.MobEditorFoundationTest")
+    jvmArgs("-ea")
+}
+
+val shutdownSequenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.lifecycle.ShutdownSequenceTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -67,4 +224,22 @@ tasks.test {
 tasks.named("check") {
     dependsOn(balanceUnitTest)
     dependsOn(ccFoundationTest)
+    dependsOn(telegraphFoundationTest)
+    dependsOn(statFoundationTest)
+    dependsOn(combatDamageFoundationTest)
+    dependsOn(damageCalculatorCharacterizationTest)
+    dependsOn(damageSnapshotTest)
+    dependsOn(attackMetadataAdapterTest)
+    dependsOn(starterSwordShadowParityTest)
+    dependsOn(damageShadowValidationTrackerTest)
+    dependsOn(damageShadowRuntimeSafetyTest)
+    dependsOn(damageShadowCommandTest)
+    dependsOn(damageShadowExportTest)
+    dependsOn(starterSwordRoutePolicyTest)
+    dependsOn(starterSwordLimitedCutoverTest)
+    dependsOn(starterSwordFallbackSafetyTest)
+    dependsOn(starterSwordAuthoritativeShadowTest)
+    dependsOn(starterSwordRouteCommandServiceTest)
+    dependsOn(mobEditorFoundationTest)
+    dependsOn(shutdownSequenceTest)
 }

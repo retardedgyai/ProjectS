@@ -4,7 +4,6 @@ import io.github.gyai.projects.combat.classsystem.WarriorEffectManager;
 import io.github.gyai.projects.player.PlayerData;
 import io.github.gyai.projects.skill.Skill;
 import io.github.gyai.projects.skill.SkillManager;
-import io.github.gyai.projects.manager.BalanceMath;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
@@ -63,10 +62,7 @@ public final class WarriorUltimateSkills {
                     }
                     var values = support.damageValues(
                             "fighting_spirit_release");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling())
+                    double fixedDamage = values.baseDamage()
                             + spirit * spiritScaling;
                     return Optional.of(new Skill.PreparedUse(
                             spirit,
@@ -78,7 +74,8 @@ public final class WarriorUltimateSkills {
                                 support.damageTargetsAtSpirit(
                                         player,
                                         support.nearby(player, radius),
-                                        damage,
+                                        fixedDamage,
+                                        values.attackPowerScaling(),
                                         "fighting_spirit_release",
                                         spirit);
                             }));
@@ -179,11 +176,7 @@ public final class WarriorUltimateSkills {
                         return Optional.empty();
                     }
                     var values = support.damageValues("end_war_strike");
-                    double damage = BalanceMath.skillDamage(
-                            values.baseDamage(),
-                            support.attackPower(player),
-                            values.attackPowerScaling())
-                            + spirit * spiritScaling;
+                    double damageMultiplier = 1.0;
                     if (spirit >= PlayerData.MAX_FIGHTING_SPIRIT) {
                         var maximumHealth =
                                 player.getAttribute(Attribute.MAX_HEALTH);
@@ -192,10 +185,12 @@ public final class WarriorUltimateSkills {
                                 : maximumHealth.getValue();
                         double missing = maximum <= 0
                                 ? 0 : 1.0 - player.getHealth() / maximum;
-                        damage *= 1.0
+                        damageMultiplier = 1.0
                                 + missing * maxMissingHealthBonus;
                     }
-                    double capturedDamage = damage;
+                    double capturedMultiplier = damageMultiplier;
+                    double fixedDamage = values.baseDamage()
+                            + spirit * spiritScaling;
                     long delayTicks = Math.max(
                             1L, Math.round(castDelay * 20));
                     return Optional.of(new Skill.PreparedUse(
@@ -221,9 +216,11 @@ public final class WarriorUltimateSkills {
                                                     support.cone(
                                                             player, range,
                                                             angle, true),
-                                                    capturedDamage,
+                                                    fixedDamage,
+                                                    values.attackPowerScaling(),
                                                     "end_war_strike",
-                                                    spirit);
+                                                    spirit,
+                                                    capturedMultiplier);
                                         });
                             }));
                 }));

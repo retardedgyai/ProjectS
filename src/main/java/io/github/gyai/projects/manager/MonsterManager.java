@@ -10,6 +10,11 @@ import io.github.gyai.projects.monster.CustomMonster;
 import io.github.gyai.projects.monster.MonsterData;
 import io.github.gyai.projects.monster.MonsterRank;
 import io.github.gyai.projects.monster.boss.HarborDevourerBoss;
+import io.github.gyai.projects.monster.editor.EditorCustomMonster;
+import io.github.gyai.projects.monster.editor.MobAppearanceApplier;
+import io.github.gyai.projects.monster.editor.MobDefinition;
+import io.github.gyai.projects.monster.editor.MobStatsDefinition;
+import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.network.MonsterUiMath;
 import io.github.gyai.projects.network.MonsterUiPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
@@ -47,19 +52,37 @@ import java.util.UUID;
 
 public final class MonsterManager {
     public static final String CUSTOM_MONSTER_KEY = "custom_monster_id";
+    public enum TestControl {
+        PAUSE_AI,
+        RESUME_AI,
+        INVULNERABLE,
+        VULNERABLE,
+        HEALTH_25,
+        HEALTH_50,
+        HEALTH_100,
+        REAPPLY_APPEARANCE
+    }
     private static final String CONFIG_ROOT =
             "monsters.bosses.harbor-devourer-grohm.";
     private static final int TICK_INTERVAL = 2;
     private static final int SAFE_RESYNC_TICKS = 40;
+    private static final int MAX_TEST_MOBS_PER_OWNER = 32;
 
     private final JavaPlugin plugin;
     private final CrowdControlManager crowdControlManager;
     private final StatusEffectManager statusEffectManager;
     private final PlayerManager playerManager;
+    private final TelegraphManager telegraphManager;
     private final NamespacedKey customMonsterKey;
+    private final NamespacedKey editorTestKey;
+    private final NamespacedKey editorTestOwnerKey;
     private final Map<String, MonsterData> definitions = new HashMap<>();
     private final Map<UUID, CustomMonster> activeMonsters = new HashMap<>();
     private final Map<UUID, ViewerState> viewerStates = new HashMap<>();
+    private final Map<String, MobDefinition> editorDefinitions = new HashMap<>();
+    private final Map<UUID, Set<UUID>> testMonstersByOwner = new HashMap<>();
+    private DamageService damageService;
+    private MobAppearanceApplier appearanceApplier;
     private HarborDevourerBoss.Settings grohmSettings;
     private BukkitTask tickTask;
     private double uiDisplayRange = 48.0;
@@ -69,7 +92,8 @@ public final class MonsterManager {
             JavaPlugin plugin,
             CrowdControlManager crowdControlManager,
             StatusEffectManager statusEffectManager,
-            PlayerManager playerManager
+            PlayerManager playerManager,
+            TelegraphManager telegraphManager
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.crowdControlManager = Objects.requireNonNull(
@@ -78,8 +102,12 @@ public final class MonsterManager {
                 statusEffectManager, "statusEffectManager");
         this.playerManager = Objects.requireNonNull(
                 playerManager, "playerManager");
+        this.telegraphManager = Objects.requireNonNull(
+                telegraphManager, "telegraphManager");
         this.customMonsterKey =
                 new NamespacedKey(plugin, CUSTOM_MONSTER_KEY);
+        editorTestKey = new NamespacedKey(plugin, "mob_editor_test");
+        editorTestOwnerKey = new NamespacedKey(plugin, "mob_editor_test_owner");
         crowdControlManager.setResistanceResolver(this::resistanceFor);
         statusEffectManager.setResistanceResolver(this::resistanceFor);
         crowdControlManager.setChangeListener(this::onHardControlChanged);
@@ -124,6 +152,9 @@ public final class MonsterManager {
                 getClampedInt("breakwater-slam.warning-ticks", 24, 1, 200),
                 getClampedDouble("breakwater-slam.radius", 5.0, 0.5, 64.0),
                 getClampedDouble("breakwater-slam.damage", 18.0, 0.0, 2048.0),
+                getClampedInt(
+                        "breakwater-slam.phase-two-shockwave-warning-ticks",
+                        14, 4, 100),
                 getClampedDouble(
                         "hullbreaker-charge.cooldown-seconds", 12.0, 0.1, 600.0),
                 getClampedInt("hullbreaker-charge.warning-ticks", 20, 1, 200),
@@ -142,6 +173,218 @@ public final class MonsterManager {
             throw new IllegalArgumentException(
                     "Monster id is already registered: " + data.id());
         }
+    }
+
+    public void configureEditor(
+            DamageService damageService,
+            MobAppearanceApplier appearanceApplier
+    ) {
+        this.damageService = Objects.requireNonNull(damageService, "damageService");
+        this.appearanceApplier = Objects.requireNonNull(
+                appearanceApplier, "appearanceApplier");
+    }
+
+    public void replaceEditorDefinitions(List<MobDefinition> updated) {
+        editorDefinitions.clear();
+        for (MobDefinition definition : updated) {
+            if (definitions.containsKey(definition.id())) {
+                plugin.getLogger().warning(
+                        "既存モブとMob Editor定義のIDが衝突しました: "
+                                + definition.id());
+                continue;
+            }
+            editorDefinitions.put(definition.id(), definition);
+        }
+    }
+
+    public boolean isBuiltInDefinitionId(String id) {
+        return definitions.containsKey(id);
+    }
+
+    public EditorCustomMonster spawnEditorMob(
+            MobDefinition definition,
+            Location location,
+            Player testOwner
+    ) {
+        return spawnEditorMob(definition, location, location, testOwner, false);
+    }
+
+    private EditorCustomMonster spawnEditorMob(
+            MobDefinition definition,
+            Location location,
+            Location homeLocation,
+            Player testOwner,
+            boolean bypassTestLimit
+    ) {
+        if (damageService == null || appearanceApplier == null
+                || location == null || location.getWorld() == null) return null;
+        if (!bypassTestLimit && testOwner != null && testMonstersByOwner.getOrDefault(
+                testOwner.getUniqueId(), Set.of()).size() >= MAX_TEST_MOBS_PER_OWNER) {
+            return null;
+        }
+        EntityType type;
+        try {
+            type = EntityType.valueOf(definition.entityType());
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+        Entity spawned = location.getWorld().spawnEntity(location, type);
+        if (!(spawned instanceof LivingEntity living)) {
+            spawned.remove();
+            return null;
+        }
+        living.getPersistentDataContainer().set(
+                customMonsterKey, PersistentDataType.STRING, definition.id());
+        living.setPersistent(false);
+        if (testOwner != null) {
+            living.getPersistentDataContainer().set(
+                    editorTestKey, PersistentDataType.BOOLEAN, true);
+            living.getPersistentDataContainer().set(
+                    editorTestOwnerKey, PersistentDataType.STRING,
+                    testOwner.getUniqueId().toString());
+        }
+        BossBar bossBar = plugin.getServer().createBossBar(
+                definition.displayName(), BarColor.RED, BarStyle.SOLID);
+        EditorCustomMonster monster;
+        try {
+            monster = new EditorCustomMonster(
+                    plugin, definition, living, homeLocation, bossBar,
+                    crowdControlManager, statusEffectManager,
+                    damageService, appearanceApplier);
+            monster.initializeEntity();
+        } catch (RuntimeException exception) {
+            bossBar.removeAll();
+            living.remove();
+            plugin.getLogger().warning("Editor Mob初期化に失敗しました: "
+                    + exception.getClass().getSimpleName());
+            return null;
+        }
+        activeMonsters.put(living.getUniqueId(), monster);
+        if (testOwner != null) {
+            testMonstersByOwner.computeIfAbsent(
+                    testOwner.getUniqueId(), ignored -> new HashSet<>())
+                    .add(living.getUniqueId());
+        }
+        return monster;
+    }
+
+    public DefinitionApplyResult applyEditorDefinition(MobDefinition definition) {
+        editorDefinitions.put(definition.id(), definition);
+        int applied = 0;
+        int blocked = 0;
+        int failed = 0;
+        for (EditorCustomMonster monster : activeMonsters.values().stream()
+                .filter(EditorCustomMonster.class::isInstance)
+                .map(EditorCustomMonster.class::cast)
+                .filter(value -> value.definition().id().equals(definition.id()))
+                .toList()) {
+            if (monster.applyDefinition(definition)) {
+                applied++;
+                continue;
+            }
+            LivingEntity previous = monster.getEntity();
+            if (crowdControlManager.isControlled(previous)
+                    || !statusEffectManager.snapshots(
+                    previous, plugin.getServer().getCurrentTick()).isEmpty()) {
+                blocked++;
+                continue;
+            }
+            Location location = previous.getLocation().clone();
+            Location homeLocation = monster.homeLocation();
+            Player owner = testOwner(previous);
+            var oldMaximum = previous.getAttribute(Attribute.MAX_HEALTH);
+            double healthRatio = oldMaximum == null || oldMaximum.getValue() <= 0
+                    ? 1 : Math.clamp(previous.getHealth() / oldMaximum.getValue(), 0, 1);
+            LivingEntity target = previous instanceof org.bukkit.entity.Mob mob
+                    ? mob.getTarget() : null;
+            boolean aiPaused = monster.aiPaused();
+            boolean invulnerable = previous.isInvulnerable();
+            EditorCustomMonster replacement = spawnEditorMob(
+                    definition, location, homeLocation, owner, true);
+            if (replacement != null) {
+                remove(monster.getEntityId());
+                setHealthFraction(replacement.getEntity(), healthRatio);
+                replacement.getEntity().setInvulnerable(invulnerable);
+                replacement.setAiPaused(aiPaused);
+                replacement.restoreTarget(target);
+                applied++;
+            } else {
+                failed++;
+            }
+        }
+        return new DefinitionApplyResult(applied, blocked, failed);
+    }
+
+    public record DefinitionApplyResult(
+            int applied,
+            int blockedByEffects,
+            int failed
+    ) { }
+
+    public MobStatsDefinition editorStats(LivingEntity entity) {
+        CustomMonster monster = activeMonsters.get(entity.getUniqueId());
+        return monster instanceof EditorCustomMonster editor
+                ? editor.definition().stats() : null;
+    }
+
+    public boolean isEditorMonster(Entity entity) {
+        return activeMonsters.get(entity.getUniqueId()) instanceof EditorCustomMonster;
+    }
+
+    public boolean isApplyingEditorDamage(
+            LivingEntity attacker,
+            LivingEntity target
+    ) {
+        return damageService != null && damageService.isApplying(attacker, target);
+    }
+
+    public int removeTestMobs(Player owner) {
+        Set<UUID> ids = testMonstersByOwner.remove(owner.getUniqueId());
+        if (ids == null) return 0;
+        int removedCount = 0;
+        for (UUID id : Set.copyOf(ids)) {
+            if (remove(id)) removedCount++;
+        }
+        return removedCount;
+    }
+
+    public boolean canSpawnTestMob(Player owner) {
+        return testMonstersByOwner.getOrDefault(
+                owner.getUniqueId(), Set.of()).size() < MAX_TEST_MOBS_PER_OWNER;
+    }
+
+    public int removeAllTestMobs() {
+        int count = 0;
+        for (UUID ownerId : Set.copyOf(testMonstersByOwner.keySet())) {
+            Set<UUID> ids = testMonstersByOwner.remove(ownerId);
+            if (ids == null) continue;
+            for (UUID id : ids) if (remove(id)) count++;
+        }
+        return count;
+    }
+
+    public int controlTestMobs(Player owner, TestControl control) {
+        Set<UUID> ids = testMonstersByOwner.get(owner.getUniqueId());
+        if (ids == null) return 0;
+        int changed = 0;
+        for (UUID id : Set.copyOf(ids)) {
+            CustomMonster value = activeMonsters.get(id);
+            if (!(value instanceof EditorCustomMonster monster)
+                    || !monster.isValid()) continue;
+            switch (control) {
+                case PAUSE_AI -> monster.setAiPaused(true);
+                case RESUME_AI -> monster.setAiPaused(false);
+                case INVULNERABLE -> monster.getEntity().setInvulnerable(true);
+                case VULNERABLE -> monster.getEntity().setInvulnerable(false);
+                case HEALTH_25 -> setHealthFraction(monster.getEntity(), .25);
+                case HEALTH_50 -> setHealthFraction(monster.getEntity(), .50);
+                case HEALTH_100 -> setHealthFraction(monster.getEntity(), 1);
+                case REAPPLY_APPEARANCE ->
+                        monster.applyDefinition(monster.definition());
+            }
+            changed++;
+        }
+        return changed;
     }
 
     public void start() {
@@ -194,7 +437,8 @@ public final class MonsterManager {
                 bossBar,
                 grohmSettings,
                 crowdControlManager,
-                statusEffectManager);
+                statusEffectManager,
+                telegraphManager);
         activeMonsters.put(ravager.getUniqueId(), boss);
         return boss;
     }
@@ -239,9 +483,11 @@ public final class MonsterManager {
     }
 
     public boolean isCustomMonster(Entity entity) {
+        if (activeMonsters.containsKey(entity.getUniqueId())) return true;
         String id = entity.getPersistentDataContainer().get(
                 customMonsterKey, PersistentDataType.STRING);
-        return id != null && definitions.containsKey(id);
+        return id != null && (definitions.containsKey(id)
+                || editorDefinitions.containsKey(id));
     }
 
     public String getCustomMonsterId(Entity entity) {
@@ -255,6 +501,7 @@ public final class MonsterManager {
         if (monster == null) {
             return false;
         }
+        untrackTestMob(entityId);
         monster.remove();
         return true;
     }
@@ -262,6 +509,7 @@ public final class MonsterManager {
     public void forget(UUID entityId) {
         CustomMonster monster =
                 activeMonsters.remove(entityId);
+        untrackTestMob(entityId);
         if (monster != null) {
             monster.clearManagedEffects(
                     HardControlRemovalReason.MONSTER_REMOVED);
@@ -276,6 +524,7 @@ public final class MonsterManager {
             monster.remove();
         }
         activeMonsters.clear();
+        testMonstersByOwner.clear();
         return count;
     }
 
@@ -357,11 +606,26 @@ public final class MonsterManager {
             if (!monster.isValid()) {
                 monster.remove();
                 activeMonsters.remove(entry.getKey(), monster);
+                untrackTestMob(entry.getKey());
                 continue;
             }
-            monster.tick();
+            try {
+                monster.tick();
+            } catch (RuntimeException exception) {
+                plugin.getLogger().warning("CustomMonster tickに失敗したため削除します: "
+                        + monster.getEntityId() + " ("
+                        + exception.getClass().getSimpleName() + ")");
+                monster.remove();
+                activeMonsters.remove(entry.getKey(), monster);
+                untrackTestMob(entry.getKey());
+            }
         }
         syncMonsterUi(currentTick);
+    }
+
+    private void untrackTestMob(UUID entityId) {
+        testMonstersByOwner.values().forEach(ids -> ids.remove(entityId));
+        testMonstersByOwner.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     private void syncMonsterUi(long currentTick) {
@@ -725,5 +989,23 @@ public final class MonsterManager {
             int networkEntityId,
             int fingerprint
     ) {
+    }
+
+    private Player testOwner(LivingEntity entity) {
+        String value = entity.getPersistentDataContainer().get(
+                editorTestOwnerKey, PersistentDataType.STRING);
+        if (value == null) return null;
+        try {
+            return plugin.getServer().getPlayer(UUID.fromString(value));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static void setHealthFraction(LivingEntity entity, double fraction) {
+        AttributeInstance maximum = entity.getAttribute(Attribute.MAX_HEALTH);
+        if (maximum != null) {
+            entity.setHealth(Math.max(.001, maximum.getValue() * fraction));
+        }
     }
 }

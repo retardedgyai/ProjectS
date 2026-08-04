@@ -24,6 +24,18 @@ public final class BalanceMath {
                 + perItemAttackSpeedBonus;
     }
 
+    public static double typedWeaponAttackPower(
+            double typedBaseAttackPower,
+            double tunedPrimaryAttackPower
+    ) {
+        if (!Double.isFinite(typedBaseAttackPower)
+                || !Double.isFinite(tunedPrimaryAttackPower)
+                || typedBaseAttackPower <= 0.0) {
+            return 0.0;
+        }
+        return Math.max(0.0, tunedPrimaryAttackPower);
+    }
+
     public static double skillDamage(
             double baseDamage,
             double attackPower,

@@ -41,6 +41,7 @@ import io.github.gyai.projects.listener.RangedWeaponListener;
 import io.github.gyai.projects.manager.EnhancementManager;
 import io.github.gyai.projects.manager.BalanceTuningManager;
 import io.github.gyai.projects.manager.MonsterManager;
+import io.github.gyai.projects.manager.TelegraphManager;
 import io.github.gyai.projects.combat.skill.SkillEffectRenderer;
 import io.github.gyai.projects.network.HudStatePacket;
 import io.github.gyai.projects.network.WarriorLoadoutChannel;
@@ -50,6 +51,10 @@ import io.github.gyai.projects.network.WarriorLoadoutStatePacket;
 import io.github.gyai.projects.network.BalanceStatePacket;
 import io.github.gyai.projects.network.BalanceTuningChannel;
 import io.github.gyai.projects.network.MonsterUiPacket;
+import io.github.gyai.projects.network.MobEditorChannel;
+import io.github.gyai.projects.network.MobEditorStatePacket;
+import io.github.gyai.projects.monster.editor.MobEditorManager;
+import io.github.gyai.projects.network.TelegraphPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
@@ -57,6 +62,23 @@ import io.github.gyai.projects.skill.warrior.WarriorMobilitySkills;
 import io.github.gyai.projects.skill.warrior.WarriorSkillSupport;
 import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
 import io.github.gyai.projects.dev.HardControlTestTool;
+import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageShadow;
+import io.github.gyai.projects.combat.damage.BukkitDamageShadowRuntimeContextResolver;
+import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationController;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationExporter;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationTracker;
+import io.github.gyai.projects.combat.damage.DamageServiceStarterSwordRuntime;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRoutePolicy;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
+import io.github.gyai.projects.lifecycle.ShutdownSequence;
+
+import java.time.Clock;
+import java.util.logging.Level;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -79,18 +101,27 @@ public final class ProjectSPlugin extends JavaPlugin {
     private BalanceTuningManager balanceTuningManager;
     private BalanceTuningChannel balanceTuningChannel;
     private MonsterManager monsterManager;
+    private TelegraphManager telegraphManager;
+    private DamageService damageService;
+    private StarterSwordDamageShadow starterSwordDamageShadow;
+    private MobEditorManager mobEditorManager;
+    private MobEditorChannel mobEditorChannel;
+    private ShutdownSequence shutdownSequence;
 
     @Override
     public void onEnable() {
+        shutdownSequence = null;
         saveDefaultConfig();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
         statusEffectManager = new StatusEffectManager(this);
+        telegraphManager = new TelegraphManager(this);
         monsterManager = new MonsterManager(
                 this,
                 crowdControlManager,
                 statusEffectManager,
-                playerManager);
+                playerManager,
+                telegraphManager);
         monsterManager.initialize();
         boolean debugEnabled = getConfig().getBoolean(
                 "debug.enabled", getConfig().getBoolean("debug", false));
@@ -111,6 +142,55 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, itemManager, enhancementManager);
         skillManager = new SkillManager(playerManager);
         trainingDummyManager = new TrainingDummyManager(this);
+        damageService = new DamageService(
+                playerManager, itemManager, enhancementManager,
+                trainingDummyManager);
+        Clock damageShadowClock = Clock.systemUTC();
+        DamageShadowValidationController damageShadowController =
+                new DamageShadowValidationController(
+                        getConfig().getBoolean(
+                                "combat.damage-foundation.starter-sword-shadow-enabled",
+                                false),
+                        new DamageShadowValidationTracker(),
+                        new DamageShadowValidationExporter(),
+                        getDataFolder().toPath()
+                                .resolve("debug")
+                                .resolve("damage-shadow"),
+                        damageShadowClock,
+                        getLogger());
+        starterSwordDamageShadow =
+                new StarterSwordDamageShadow(
+                        damageService,
+                        damageShadowController,
+                        new BukkitDamageShadowRuntimeContextResolver(
+                                trainingDummyManager,
+                                monsterManager,
+                                enhancementManager,
+                                itemManager,
+                                damageShadowClock),
+                        debugEnabled,
+                        getLogger());
+        DamageShadowCommandService damageShadowCommandService =
+                new DamageShadowCommandService(damageShadowController);
+        StarterSwordRouteController damageRouteController =
+                new StarterSwordRouteController(
+                        getConfig().getBoolean(
+                                "combat.damage-foundation.starter-sword-authoritative-enabled",
+                                false),
+                        new StarterSwordRouteTracker(),
+                        damageShadowClock);
+        StarterSwordDamageRouter starterSwordDamageRouter =
+                new StarterSwordDamageRouter(
+                        new DamageServiceStarterSwordRuntime(damageService),
+                        starterSwordDamageShadow,
+                        damageRouteController,
+                        new StarterSwordDamageRoutePolicy());
+        StarterSwordRouteCommandService damageRouteCommandService =
+                new StarterSwordRouteCommandService(damageRouteController);
+        mobEditorManager = new MobEditorManager(
+                this, monsterManager, itemManager, damageService);
+        mobEditorChannel = new MobEditorChannel(
+                this, mobEditorManager, monsterManager);
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,
@@ -118,6 +198,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                 resourceManager,
                 trainingDummyManager,
                 enhancementManager,
+                damageService,
                 getConfig().getDouble(
                         "classes.warrior.fighting-spirit-retention-seconds", 10.0),
                 getConfig().getInt(
@@ -128,10 +209,10 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
-                warriorCombatManager, balanceTuningManager);
+                warriorCombatManager, balanceTuningManager, damageService);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
-                trainingDummyManager, skillManager);
+                trainingDummyManager, skillManager, damageService);
         warriorLoadoutManager = new WarriorLoadoutManager(
                 warriorCombatManager, skillManager);
         warriorLoadoutChannel = new WarriorLoadoutChannel(
@@ -177,7 +258,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                     getConfig().getDouble("skills.painter.passive.radius", 2.5),
                     getConfig().getDouble("skills.painter.passive.base-damage", 6));
             painterDamageService = new SkillDamageService(
-                    this, trainingDummyManager, painterPassiveManager);
+                    this, damageService, painterPassiveManager);
             painterPassiveManager.setDamageService(painterDamageService);
             painterSkillExecutor = new PainterSkillExecutor(
                 this, resourceManager, painterMana, skillManager,
@@ -242,15 +323,29 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, BalanceStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, MonsterUiPacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, MobEditorChannel.REQUEST_CHANNEL, mobEditorChannel);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, MobEditorStatePacket.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, TelegraphPacket.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this,
+                TelegraphPacket.HELLO_CHANNEL,
+                telegraphManager);
 
         getServer().getOnlinePlayers().forEach(playerManager::initializePlayer);
         getServer().getOnlinePlayers().forEach(enhancementManager::refreshInventory);
+        getServer().getPluginManager().registerEvents(damageService, this);
+        getServer().getPluginManager().registerEvents(mobEditorManager, this);
+        getServer().getPluginManager().registerEvents(mobEditorChannel, this);
         getServer().getPluginManager().registerEvents(warriorCombatManager, this);
         getServer().getPluginManager().registerEvents(warriorEffectManager, this);
         getServer().getPluginManager().registerEvents(
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
-                        trainingDummyManager, enhancementManager), this);
+                        trainingDummyManager, enhancementManager,
+                        damageService, starterSwordDamageRouter), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
@@ -269,7 +364,8 @@ public final class ProjectSPlugin extends JavaPlugin {
         if (painterSkillExecutor != null && painterDamageService != null) {
             getServer().getPluginManager().registerEvents(
                     new PainterCombatListener(
-                            itemManager, painterSkillExecutor, painterDamageService), this);
+                            itemManager, painterSkillExecutor,
+                            painterDamageService, damageService), this);
         }
         getServer().getPluginManager().registerEvents(enhancementListener, this);
         getServer().getPluginManager().registerEvents(rangedWeaponListener, this);
@@ -279,10 +375,13 @@ public final class ProjectSPlugin extends JavaPlugin {
                         monsterManager,
                         crowdControlManager,
                         statusEffectManager), this);
+        getServer().getPluginManager().registerEvents(
+                telegraphManager, this);
         trainingDummyManager.start();
         warriorCombatManager.start();
         warriorEffectManager.start();
         combatHudManager.start();
+        telegraphManager.start();
         monsterManager.start();
 
         if (getCommand("projects") != null) {
@@ -290,7 +389,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                     itemManager, trainingDummyManager, devMenuManager,
                     enhancementListener, monsterManager,
                     crowdControlManager, statusEffectManager,
-                    playerManager));
+                    playerManager, damageShadowCommandService,
+                    damageRouteCommandService));
         }
 
         getLogger().info("ProjectS has started!");
@@ -298,70 +398,72 @@ public final class ProjectSPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (monsterManager != null) {
-            monsterManager.stop();
+        shutdownSequence().run();
+    }
+
+    private synchronized ShutdownSequence shutdownSequence() {
+        if (shutdownSequence != null) {
+            return shutdownSequence;
         }
-        getServer().getMessenger().unregisterIncomingPluginChannel(this, ClientInputListener.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(this, ClientInputListener.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(this, HudStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, WarriorLoadoutRequestPacket.CHANNEL,
-                warriorLoadoutChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, WarriorLoadoutSelectPacket.CHANNEL,
-                warriorLoadoutChannel);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, WarriorLoadoutStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.REQUEST_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.UPDATE_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterIncomingPluginChannel(
-                this, BalanceTuningChannel.ACTION_CHANNEL,
-                balanceTuningChannel);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, BalanceStatePacket.CHANNEL);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(
-                this, MonsterUiPacket.CHANNEL);
-        if (combatInputManager != null) {
-            combatInputManager.clear();
-        }
-        if (combatHudManager != null) {
-            combatHudManager.stop();
-        }
-        if (warriorCombatManager != null) {
-            warriorCombatManager.stop();
-        }
-        if (warriorEffectManager != null) {
-            warriorEffectManager.stop();
-        }
-        if (warriorLoadoutManager != null) {
-            warriorLoadoutManager.clear();
-        }
-        if (warriorLoadoutChannel != null) {
-            warriorLoadoutChannel.clear();
-        }
-        if (balanceTuningChannel != null) {
-            balanceTuningChannel.clear();
-        }
-        if (trainingDummyManager != null) {
-            trainingDummyManager.stop();
-        }
-        if (playerManager != null) {
-            playerManager.clear();
-        }
-        if (skillManager != null) {
-            skillManager.clear();
-        }
-        if (resourceManager != null) {
-            resourceManager.clear();
-        }
-        if (painterSkillExecutor != null) painterSkillExecutor.clearAll();
-        if (painterPassiveManager != null) painterPassiveManager.clear();
-        if (crowdControlManager != null) crowdControlManager.clear();
-        if (statusEffectManager != null) statusEffectManager.clear();
-        getLogger().info("ProjectS has stopped!");
+        ShutdownSequence sequence = new ShutdownSequence(
+                (name, exception) -> getLogger().log(
+                        Level.WARNING,
+                        "ProjectS cleanup failed: " + name,
+                        exception));
+
+        sequence.add("scheduler.cancelTasks",
+                () -> getServer().getScheduler().cancelTasks(this));
+        sequence.addIfPresent("monsterManager.stop",
+                monsterManager, MonsterManager::stop);
+        sequence.addIfPresent("telegraphManager.stop",
+                telegraphManager, TelegraphManager::stop);
+        sequence.addIfPresent("combatHudManager.stop",
+                combatHudManager, CombatHudManager::stop);
+        sequence.addIfPresent("warriorCombatManager.stop",
+                warriorCombatManager, WarriorCombatManager::stop);
+        sequence.addIfPresent("warriorEffectManager.stop",
+                warriorEffectManager, WarriorEffectManager::stop);
+        sequence.addIfPresent("trainingDummyManager.stop",
+                trainingDummyManager, TrainingDummyManager::stop);
+
+        sequence.add("pluginChannels.unregister", () -> {
+            getServer().getMessenger().unregisterIncomingPluginChannel(this);
+            getServer().getMessenger().unregisterOutgoingPluginChannel(this);
+        });
+
+        sequence.addIfPresent("combatInputManager.clear",
+                combatInputManager, CombatInputManager::clear);
+        sequence.addIfPresent("warriorLoadoutManager.clear",
+                warriorLoadoutManager, WarriorLoadoutManager::clear);
+        sequence.addIfPresent("warriorLoadoutChannel.clear",
+                warriorLoadoutChannel, WarriorLoadoutChannel::clear);
+        sequence.addIfPresent("balanceTuningChannel.clear",
+                balanceTuningChannel, BalanceTuningChannel::clear);
+        sequence.addIfPresent("playerManager.clear",
+                playerManager, PlayerManager::clear);
+        sequence.addIfPresent("skillManager.clear",
+                skillManager, SkillManager::clear);
+        sequence.addIfPresent("resourceManager.clear",
+                resourceManager, ResourceManager::clear);
+        sequence.addIfPresent("mobEditorChannel.clear",
+                mobEditorChannel, MobEditorChannel::clear);
+        sequence.addIfPresent("mobEditorManager.clear",
+                mobEditorManager, MobEditorManager::clear);
+        sequence.addIfPresent("damageService.clear",
+                damageService, DamageService::clear);
+        sequence.addIfPresent("starterSwordDamageShadow.close",
+                starterSwordDamageShadow, StarterSwordDamageShadow::close);
+        sequence.addIfPresent("painterSkillExecutor.clearAll",
+                painterSkillExecutor, PainterSkillExecutor::clearAll);
+        sequence.addIfPresent("painterPassiveManager.clear",
+                painterPassiveManager, PainterPassiveManager::clear);
+        sequence.addIfPresent("crowdControlManager.clear",
+                crowdControlManager, CrowdControlManager::clear);
+        sequence.addIfPresent("statusEffectManager.clear",
+                statusEffectManager, StatusEffectManager::clear);
+        sequence.add("shutdown.log",
+                () -> getLogger().info("ProjectS has stopped!"));
+        shutdownSequence = sequence;
+        return sequence;
     }
 }

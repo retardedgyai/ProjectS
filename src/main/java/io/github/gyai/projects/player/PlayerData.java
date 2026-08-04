@@ -9,11 +9,9 @@ public class PlayerData {
     private final Stats stats = new Stats();
     private int fightingSpirit;
     private int combatLevel = 1;
-    private final double cooldownReduction;
 
     public PlayerData(UUID uniqueId) {
         this.uniqueId = uniqueId;
-        this.cooldownReduction = 0.30;
     }
 
     public UUID getUniqueId() {
@@ -44,8 +42,18 @@ public class PlayerData {
         return true;
     }
 
+    public double getCooldownRecoveryPercent() {
+        return stats.get(StatType.COOLDOWN_RECOVERY_PERCENT);
+    }
+
+    /**
+     * @deprecated This name remains only for binary and source compatibility.
+     * The returned value is the cooldown recovery speed stat, not a cooldown
+     * reduction rate. New code must use {@link #getCooldownRecoveryPercent()}.
+     */
+    @Deprecated
     public double getCooldownReduction() {
-        return cooldownReduction;
+        return getCooldownRecoveryPercent();
     }
 
     public int getCombatLevel() {

@@ -6,6 +6,7 @@ import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlType;
 import io.github.gyai.projects.manager.MonsterManager;
 import io.github.gyai.projects.monster.CustomMonster;
+import io.github.gyai.projects.monster.boss.HarborDevourerBoss;
 import io.github.gyai.projects.status.StatusEffectManager;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
@@ -45,6 +46,12 @@ public final class MonsterListener implements Listener {
             return;
         }
         HardControlType type = crowdControlManager.getType(attacker);
+        if (monsterManager.isEditorMonster(attacker)
+                && (!(event.getEntity() instanceof org.bukkit.entity.LivingEntity target)
+                || !monsterManager.isApplyingEditorDamage(attacker, target))) {
+            event.setCancelled(true);
+            return;
+        }
         if (type == HardControlType.STUN
                 || type == HardControlType.FEAR
                 || type == HardControlType.CHARM) {
@@ -72,10 +79,12 @@ public final class MonsterListener implements Listener {
 
         event.getDrops().clear();
         event.setDroppedExp(0);
-        for (Player player : event.getEntity().getWorld().getPlayers()) {
-            if (player.getLocation().distanceSquared(event.getEntity().getLocation())
-                    <= DEFEAT_MESSAGE_RANGE_SQUARED) {
-                player.sendMessage("§6港喰らいの巨獣 グロームを討伐した！");
+        if (monster.getData().id().equals(HarborDevourerBoss.MONSTER_ID)) {
+            for (Player player : event.getEntity().getWorld().getPlayers()) {
+                if (player.getLocation().distanceSquared(event.getEntity().getLocation())
+                        <= DEFEAT_MESSAGE_RANGE_SQUARED) {
+                    player.sendMessage("§6港喰らいの巨獣 グロームを討伐した！");
+                }
             }
         }
         monster.handleDeath(event);

@@ -9,6 +9,8 @@ public final class BalanceMathTest {
         assertClose(0.0, BalanceMath.attackPower(10, -20, 1.4));
         assertClose(0.39, BalanceMath.attackSpeed(.10, .24, .05));
         assertClose(33.0, BalanceMath.skillDamage(12, 15, 1.4));
+        assertClose(15.0, BalanceMath.typedWeaponAttackPower(10, 15));
+        assertClose(0.0, BalanceMath.typedWeaponAttackPower(0, 15));
 
         assert BalanceMath.finiteInRange(0, 0, 10_000);
         assert BalanceMath.finiteInRange(10_000, 0, 10_000);

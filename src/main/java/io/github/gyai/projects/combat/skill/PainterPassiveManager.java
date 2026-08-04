@@ -78,7 +78,8 @@ public final class PainterPassiveManager {
         effects.drawShockwave(location,radius);effects.drawHelix(location,.7,4,0);effects.particle(location,Particle.ELECTRIC_SPARK,12);
         location.getWorld().playSound(location,Sound.ENTITY_ILLUSIONER_PREPARE_BLINDNESS,.35f,1.5f);
         location.getWorld().playSound(location,Sound.ENTITY_GENERIC_EXPLODE,.5f,1.35f);
-        int count=0;for(LivingEntity enemy:targeting.enemies(caster,location,radius)){if(damageService!=null)damageService.bonusDamage(caster,enemy,"signature-of-the-visionary",damage);count++;}
+        SkillDamageService.UUIDCast cast = SkillDamageService.UUIDCast.create();
+        int count=0;for(LivingEntity enemy:targeting.enemies(caster,location,radius)){if(damageService!=null)damageService.bonusAreaDamage(caster,enemy,"signature-of-the-visionary",damage,cast);count++;}
         log(caster,"[PainterPassive] signature exploded targets="+count+" damage="+damage);
     }
 
