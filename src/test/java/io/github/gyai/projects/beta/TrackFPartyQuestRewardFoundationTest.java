@@ -279,6 +279,18 @@ public final class TrackFPartyQuestRewardFoundationTest {
                 4, Optional.empty(), 0, 7));
         assert claimed.proposal().orElseThrow().claimedMarked();
 
+        QuestProgressSnapshot exhausted = new QuestProgressSnapshot(
+                player, definition, QuestProgressSnapshot.State.ACTIVE,
+                Map.of(), Set.of(), false, false, Long.MAX_VALUE);
+        QuestProgressResult overflow = service.propose(Optional.of(exhausted), command(
+                player, definition, QuestProgressCommand.Type.SET_MARKER,
+                Long.MAX_VALUE, Optional.of("projects:marker/overflow"), 0, 8));
+        assert overflow.status() == QuestProgressResult.Status.REJECTED;
+        assert overflow.reason().equals("progress-revision-exhausted");
+        assert overflow.proposal().isEmpty();
+        assert exhausted.definition().questRevision() == 7
+                : "Definition revision remains distinct from progress revision";
+
         QuestProgressState legacy = new QuestProgressState(
                 "active", Map.of("kill", 2L), Set.of("seen"));
         var playerSnapshot = new PlayerProgressBuilder(player)

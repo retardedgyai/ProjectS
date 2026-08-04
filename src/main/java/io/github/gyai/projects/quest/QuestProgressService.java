@@ -114,9 +114,13 @@ public final class QuestProgressService {
             boolean completed, boolean claimed, QuestProgressSnapshot.State state,
             QuestProgressResult.Status status
     ) {
+        if (before.progressRevision() == Long.MAX_VALUE) {
+            return result(command, QuestProgressResult.Status.REJECTED, null,
+                    "progress-revision-exhausted");
+        }
         QuestProgressSnapshot proposal = new QuestProgressSnapshot(
                 before.playerId(), before.definition(), state, counters, markers,
-                completed, claimed, Math.addExact(before.progressRevision(), 1));
+                completed, claimed, before.progressRevision() + 1);
         return result(command, status, proposal, "");
     }
 
