@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -90,6 +91,12 @@ public final class TrackDTransactionFoundationTest {
                 0, InventoryCapacityProposal.DeliveryMode.RESERVED_INVENTORY));
         expectIllegal(() -> new TransactionParticipant.Validation(
                 true, "", Optional.empty()));
+        expectIllegal(() -> new TransactionRecoveryRecord(
+                request(99), new ReservationToken("committed"),
+                TransactionStage.COMMIT, Optional.empty()));
+        expectIllegal(() -> new TransactionRecoveryRecord(
+                request(98), new ReservationToken("not-reserved"),
+                TransactionStage.VALIDATE, Optional.empty()));
     }
 
     private static void transactionSuccessIsOrderedAndIdempotent() {
@@ -103,6 +110,8 @@ public final class TrackDTransactionFoundationTest {
         assert result.output().orElseThrow().equals(participant.output);
         assert participant.calls.equals(List.of(TransactionStage.values()));
         assert participant.rollbackCount == 0;
+        assert participant.reservedCapacity.equals(
+                InventoryCapacityProposal.reservedInventory(1));
 
         TransactionAuditResult replay = engine.execute(request, new FakeParticipant());
         assert replay.outcome() == TransactionAuditResult.Outcome.COMMITTED;
@@ -110,14 +119,37 @@ public final class TrackDTransactionFoundationTest {
         assert replay.requestId().equals(result.requestId());
 
         TransactionRequest conflictingRequest = new TransactionRequest(
-                request.requestId(), uuid(9_999), request.recipeId(),
-                request.expectedRevision());
+                request.requestId(), uuid(9_999), request.operationId(),
+                request.recipeId(), request.expectedRevision(),
+                request.expectedOutputUnits(), request.inputs());
         assert engine.execute(conflictingRequest, new FakeParticipant()).outcome()
                 == TransactionAuditResult.Outcome.REPLAY_CONFLICT;
 
-        engine.execute(request(2), new FakeParticipant());
-        engine.execute(request(3), new FakeParticipant());
+        assert engine.execute(request(2), new FakeParticipant()).outcome()
+                == TransactionAuditResult.Outcome.COMMITTED;
+        FakeParticipant rejectedByRetention = new FakeParticipant();
+        assert engine.execute(request(3), rejectedByRetention).outcome()
+                == TransactionAuditResult.Outcome.TERMINAL_LIMIT;
+        assert rejectedByRetention.calls.isEmpty();
         assert engine.committedResultCount() == 2 : "Committed cache must be bounded";
+
+        int callsBeforeRestart = participant.calls.size();
+        TransactionEngine restarted = new TransactionEngine(2, 2, CLOCK);
+        TransactionAuditResult durableReplay = restarted.execute(request, participant);
+        assert durableReplay.replayed();
+        assert participant.calls.size() == callsBeforeRestart
+                : "Durable commit receipt must close the restart crash window";
+
+        TransactionEngine postCommitFailureEngine =
+                new TransactionEngine(1, 2, CLOCK);
+        FakeParticipant postCommitFailure = new FakeParticipant();
+        postCommitFailure.commitThrowsAfterRecord = true;
+        TransactionAuditResult recoveredCommit = postCommitFailureEngine.execute(
+                request(4), postCommitFailure);
+        assert recoveredCommit.outcome()
+                == TransactionAuditResult.Outcome.COMMITTED;
+        assert postCommitFailure.rollbackCount == 0
+                : "A durable commit must never enter rollback";
         expectUnsupported(() -> result.completedStages().clear());
         engine.close();
         engine.close();
@@ -134,6 +166,14 @@ public final class TrackDTransactionFoundationTest {
                     || failure == TransactionStage.RESERVE) {
                 assert result.outcome() == TransactionAuditResult.Outcome.REJECTED;
                 assert participant.rollbackCount == 0;
+            } else if (failure == TransactionStage.COMMIT) {
+                assert result.outcome()
+                        == TransactionAuditResult.Outcome.COMMIT_UNCERTAIN;
+                assert participant.rollbackCount == 0;
+                FakeParticipant uncertainRetry = new FakeParticipant();
+                assert engine.execute(
+                        request(10 + failure.ordinal()), uncertainRetry).replayed();
+                assert uncertainRetry.calls.isEmpty();
             } else {
                 assert result.outcome() == TransactionAuditResult.Outcome.ROLLED_BACK;
                 assert participant.rollbackCount == 1 : failure;
@@ -150,6 +190,19 @@ public final class TrackDTransactionFoundationTest {
         assert full.calls.equals(List.of(TransactionStage.VALIDATE));
         assert full.rollbackCount == 0;
 
+        FakeParticipant insufficientCapacity = new FakeParticipant();
+        TransactionRequest twoUnitOutput = new TransactionRequest(
+                uuid(32), uuid(1_032), "projects:operation/craft",
+                "projects:craft/test-32", 32, 2,
+                List.of(new TransactionRequest.InputRevision(
+                        "projects:item/test-32", 32)));
+        TransactionAuditResult capacityRejected = engine.execute(
+                twoUnitOutput, insufficientCapacity);
+        assert capacityRejected.outcome()
+                == TransactionAuditResult.Outcome.REJECTED;
+        assert capacityRejected.reason().contains("capacity is insufficient");
+        assert insufficientCapacity.calls.equals(List.of(TransactionStage.VALIDATE));
+
         FakeParticipant rollbackFailure = new FakeParticipant();
         rollbackFailure.failAt = TransactionStage.PRODUCE;
         rollbackFailure.rollbackFails = true;
@@ -158,6 +211,17 @@ public final class TrackDTransactionFoundationTest {
         assert rollbackFailed.outcome()
                 == TransactionAuditResult.Outcome.ROLLBACK_FAILED;
         assert rollbackFailed.reason().contains("rollback=rollback-failed");
+        FakeParticipant retryAfterRollbackFailure = new FakeParticipant();
+        TransactionAuditResult rollbackReplay = engine.execute(
+                request(31), retryAfterRollbackFailure);
+        assert rollbackReplay.replayed();
+        assert rollbackReplay.outcome()
+                == TransactionAuditResult.Outcome.ROLLBACK_FAILED;
+        assert retryAfterRollbackFailure.calls.isEmpty();
+        int rollbackCallsBeforeRestart = rollbackFailure.calls.size();
+        TransactionEngine rollbackRestart = new TransactionEngine(1, 4, CLOCK);
+        assert rollbackRestart.execute(request(31), rollbackFailure).replayed();
+        assert rollbackFailure.calls.size() == rollbackCallsBeforeRestart;
     }
 
     private static void activeConflictsAndBoundsAreEnforced() throws Exception {
@@ -186,6 +250,52 @@ public final class TrackDTransactionFoundationTest {
         } finally {
             blocking.release.countDown();
             executor.shutdownNow();
+        }
+
+        TransactionEngine inputEngine = new TransactionEngine(2, 4, CLOCK);
+        FakeParticipant firstInput = new FakeParticipant();
+        firstInput.blockAt = TransactionStage.VALIDATE;
+        var inputExecutor = Executors.newSingleThreadExecutor();
+        try {
+            TransactionRequest first = requestWithInput(
+                    42, "projects:item/shared-input");
+            var future = inputExecutor.submit(
+                    () -> inputEngine.execute(first, firstInput));
+            assert firstInput.entered.await(5, TimeUnit.SECONDS);
+            FakeParticipant competitor = new FakeParticipant();
+            TransactionAuditResult conflict = inputEngine.execute(
+                    requestWithInput(43, "projects:item/shared-input"), competitor);
+            assert conflict.outcome()
+                    == TransactionAuditResult.Outcome.INPUT_CONFLICT;
+            assert competitor.calls.isEmpty();
+            firstInput.release.countDown();
+            assert future.get(5, TimeUnit.SECONDS).outcome()
+                    == TransactionAuditResult.Outcome.COMMITTED;
+        } finally {
+            firstInput.release.countDown();
+            inputExecutor.shutdownNow();
+        }
+
+        TransactionEngine terminalSlotEngine = new TransactionEngine(2, 1, CLOCK);
+        FakeParticipant terminalBlocking = new FakeParticipant();
+        terminalBlocking.blockAt = TransactionStage.VALIDATE;
+        var terminalExecutor = Executors.newSingleThreadExecutor();
+        try {
+            var first = terminalExecutor.submit(() -> terminalSlotEngine.execute(
+                    request(44), terminalBlocking));
+            assert terminalBlocking.entered.await(5, TimeUnit.SECONDS);
+            FakeParticipant noReservedTerminalSlot = new FakeParticipant();
+            TransactionAuditResult limited = terminalSlotEngine.execute(
+                    request(45), noReservedTerminalSlot);
+            assert limited.outcome()
+                    == TransactionAuditResult.Outcome.TERMINAL_LIMIT;
+            assert noReservedTerminalSlot.calls.isEmpty();
+            terminalBlocking.release.countDown();
+            assert first.get(5, TimeUnit.SECONDS).outcome()
+                    == TransactionAuditResult.Outcome.COMMITTED;
+        } finally {
+            terminalBlocking.release.countDown();
+            terminalExecutor.shutdownNow();
         }
     }
 
@@ -217,12 +327,21 @@ public final class TrackDTransactionFoundationTest {
             var stopFuture = stopExecutor.submit(
                     () -> stopEngine.execute(request(51), stopParticipant));
             assert stopParticipant.entered.await(5, TimeUnit.SECONDS);
-            stopEngine.close();
-            stopEngine.close();
+            var closeExecutor = Executors.newSingleThreadExecutor();
+            var closeFuture = closeExecutor.submit(() -> {
+                stopEngine.close();
+                return null;
+            });
+            Thread.sleep(25);
+            assert !closeFuture.isDone() : "close must drain active rollback";
             stopParticipant.release.countDown();
+            closeFuture.get(5, TimeUnit.SECONDS);
+            closeExecutor.shutdownNow();
+            stopEngine.close();
             assert stopFuture.get(5, TimeUnit.SECONDS).outcome()
                     == TransactionAuditResult.Outcome.ROLLED_BACK;
             assert stopParticipant.rollbackCount == 1;
+            assert stopEngine.activeCount() == 0;
             assert stopEngine.execute(request(52), new FakeParticipant()).outcome()
                     == TransactionAuditResult.Outcome.CLOSED;
         } finally {
@@ -253,6 +372,50 @@ public final class TrackDTransactionFoundationTest {
         assert recoveryReplay.replayed();
         assert recoveryParticipant.rollbackCount == 1
                 : "Recovery retry must not roll back twice";
+
+        TransactionEngine failedRecoveryEngine = new TransactionEngine(1, 2, CLOCK);
+        FakeParticipant failedRecoveryParticipant = new FakeParticipant();
+        failedRecoveryParticipant.rollbackFails = true;
+        TransactionRecoveryRecord failedRecoveryRecord =
+                new TransactionRecoveryRecord(
+                        request(55), new ReservationToken("failed-recovery"),
+                        TransactionStage.PERSIST,
+                        Optional.of(failedRecoveryParticipant.output));
+        TransactionAuditResult failedRecovery = failedRecoveryEngine.recover(
+                failedRecoveryRecord, failedRecoveryParticipant);
+        assert failedRecovery.outcome()
+                == TransactionAuditResult.Outcome.ROLLBACK_FAILED;
+        assert failedRecovery.reason().contains("recovery-rollback=rollback-failed");
+        assert failedRecoveryEngine.recover(
+                failedRecoveryRecord, failedRecoveryParticipant).replayed();
+        assert failedRecoveryParticipant.rollbackCount == 1;
+
+        TransactionEngine concurrentRecoveryEngine =
+                new TransactionEngine(2, 4, CLOCK);
+        FakeParticipant concurrentRecovery = new FakeParticipant();
+        concurrentRecovery.blockRollback = true;
+        TransactionRecoveryRecord concurrentRecord = new TransactionRecoveryRecord(
+                request(54), new ReservationToken("concurrent-recovery"),
+                TransactionStage.PERSIST, Optional.of(concurrentRecovery.output));
+        var recoveryExecutor = Executors.newSingleThreadExecutor();
+        try {
+            var firstRecovery = recoveryExecutor.submit(() ->
+                    concurrentRecoveryEngine.recover(
+                            concurrentRecord, concurrentRecovery));
+            assert concurrentRecovery.rollbackEntered.await(5, TimeUnit.SECONDS);
+            TransactionAuditResult duplicateRecovery =
+                    concurrentRecoveryEngine.recover(
+                            concurrentRecord, concurrentRecovery);
+            assert duplicateRecovery.outcome()
+                    == TransactionAuditResult.Outcome.DUPLICATE_ACTIVE;
+            concurrentRecovery.rollbackRelease.countDown();
+            assert firstRecovery.get(5, TimeUnit.SECONDS).outcome()
+                    == TransactionAuditResult.Outcome.ROLLED_BACK;
+            assert concurrentRecovery.rollbackCount == 1;
+        } finally {
+            concurrentRecovery.rollbackRelease.countDown();
+            recoveryExecutor.shutdownNow();
+        }
     }
 
     private static void gatheringNodesReserveCancelRespawnAndCleanUp() {
@@ -287,6 +450,8 @@ public final class TrackDTransactionFoundationTest {
         registry.close();
         assert registry.size() == 0;
         assert node.snapshot().closed();
+        assert node.snapshot().state() == GatheringNode.State.CLOSED;
+        assert node.snapshot().reservation().isEmpty();
         assert !node.reserve(uuid(73), player);
     }
 
@@ -313,9 +478,15 @@ public final class TrackDTransactionFoundationTest {
     }
 
     private static TransactionRequest request(int seed) {
+        return requestWithInput(seed, "projects:item/test-" + seed);
+    }
+
+    private static TransactionRequest requestWithInput(int seed, String inputId) {
         return new TransactionRequest(
                 uuid(seed), uuid(1_000 + seed),
-                "projects:craft/test-" + seed, seed);
+                "projects:operation/craft", "projects:craft/test-" + seed, seed,
+                1,
+                List.of(new TransactionRequest.InputRevision(inputId, seed)));
     }
 
     private static UUID uuid(int seed) {
@@ -364,6 +535,10 @@ public final class TrackDTransactionFoundationTest {
                 new OutputProposal("projects:test-output", 1, false);
         private final CountDownLatch entered = new CountDownLatch(1);
         private final CountDownLatch release = new CountDownLatch(1);
+        private final CountDownLatch rollbackEntered = new CountDownLatch(1);
+        private final CountDownLatch rollbackRelease = new CountDownLatch(1);
+        private final ConcurrentHashMap<UUID, TransactionAuditResult> terminals =
+                new ConcurrentHashMap<>();
         private TransactionParticipant.Validation validation =
                 TransactionParticipant.Validation.allow(
                         InventoryCapacityProposal.reservedInventory(1));
@@ -371,6 +546,16 @@ public final class TrackDTransactionFoundationTest {
         private TransactionStage blockAt;
         private int rollbackCount;
         private boolean rollbackFails;
+        private boolean blockRollback;
+        private boolean commitThrowsAfterRecord;
+        private InventoryCapacityProposal reservedCapacity;
+
+        @Override
+        public Optional<TransactionAuditResult> findTerminal(
+                TransactionRequest request
+        ) {
+            return Optional.ofNullable(terminals.get(request.requestId()));
+        }
 
         @Override
         public Validation validate(TransactionRequest request) {
@@ -379,8 +564,12 @@ public final class TrackDTransactionFoundationTest {
         }
 
         @Override
-        public ReservationToken reserve(TransactionRequest request) {
+        public ReservationToken reserve(
+                TransactionRequest request,
+                InventoryCapacityProposal capacityProposal
+        ) {
             stage(TransactionStage.RESERVE);
+            reservedCapacity = capacityProposal;
             return new ReservationToken("reservation-" + request.requestId());
         }
 
@@ -408,12 +597,23 @@ public final class TrackDTransactionFoundationTest {
         }
 
         @Override
-        public void commit(
+        public TransactionAuditResult commit(
                 TransactionRequest request,
                 ReservationToken token,
-                OutputProposal output
+                OutputProposal output,
+                TransactionAuditResult proposedCommittedResult
         ) {
             stage(TransactionStage.COMMIT);
+            terminals.put(request.requestId(), proposedCommittedResult);
+            if (commitThrowsAfterRecord) {
+                throw new IllegalStateException("post-commit-failure");
+            }
+            return proposedCommittedResult;
+        }
+
+        @Override
+        public void recordTerminal(TransactionAuditResult terminalResult) {
+            terminals.putIfAbsent(terminalResult.requestId(), terminalResult);
         }
 
         @Override
@@ -424,6 +624,18 @@ public final class TrackDTransactionFoundationTest {
                 OutputProposal output
         ) {
             rollbackCount++;
+            if (blockRollback) {
+                rollbackEntered.countDown();
+                try {
+                    if (!rollbackRelease.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("rollback-timeout");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(
+                            "rollback-interrupted", exception);
+                }
+            }
             if (rollbackFails) throw new IllegalStateException("rollback-failed");
         }
 

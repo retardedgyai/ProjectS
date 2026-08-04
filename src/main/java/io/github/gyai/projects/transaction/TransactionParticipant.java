@@ -6,9 +6,15 @@ import java.util.Objects;
 import java.util.Optional;
 
 public interface TransactionParticipant {
+    /** Returns a durable terminal record retained for safe request retries. */
+    Optional<TransactionAuditResult> findTerminal(TransactionRequest request);
+
     Validation validate(TransactionRequest request);
 
-    ReservationToken reserve(TransactionRequest request);
+    ReservationToken reserve(
+            TransactionRequest request,
+            InventoryCapacityProposal capacityProposal
+    );
 
     void consume(TransactionRequest request, ReservationToken token);
 
@@ -20,11 +26,20 @@ public interface TransactionParticipant {
             OutputProposal output
     );
 
-    void commit(
+    /**
+     * Atomically exposes the output and persists the proposed committed result.
+     * A returned result must equal the proposal. Implementations that throw after
+     * persisting must make the committed result visible through {@link #findTerminal}.
+     */
+    TransactionAuditResult commit(
             TransactionRequest request,
             ReservationToken token,
-            OutputProposal output
+            OutputProposal output,
+            TransactionAuditResult proposedCommittedResult
     );
+
+    /** Persists a rollback or uncertainty result before the request may be retried. */
+    void recordTerminal(TransactionAuditResult terminalResult);
 
     void rollback(
             TransactionRequest request,

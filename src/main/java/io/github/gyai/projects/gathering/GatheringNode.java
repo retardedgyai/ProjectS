@@ -80,6 +80,8 @@ public final class GatheringNode implements AutoCloseable {
         if (closed) return;
         closed = true;
         reservation = null;
+        depletedAt = null;
+        state = State.CLOSED;
     }
 
     private boolean matches(UUID reservationId) {
@@ -91,7 +93,8 @@ public final class GatheringNode implements AutoCloseable {
     public enum State {
         AVAILABLE,
         RESERVED,
-        DEPLETED
+        DEPLETED,
+        CLOSED
     }
 
     public record Reservation(UUID reservationId, UUID playerId) {
