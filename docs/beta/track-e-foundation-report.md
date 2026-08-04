@@ -44,8 +44,11 @@ validation result and cannot receive probability. Material quantities are
 positive, currency cost is a non-negative `long`, and no production policy or
 probability is present.
 
-`EnhancementResolver` accepts injected unit-interval randomness. Equal fixture
-seed and input produce equal proposals. +30, broken sources, policy-level
+Every outcome also requires a complete explicit `EnhancementTransition` with a
+validated target level and broken state. The resolver never infers `+1`, `-1`,
+or a break transition from an outcome name. `EnhancementResolver` accepts
+injected unit-interval randomness. Equal fixture seed and input produce equal
+proposals. +30, broken sources, policy-level
 mismatch, missing instance identity, and invalid RNG values are rejected or
 isolated without changing the source item.
 

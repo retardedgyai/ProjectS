@@ -33,7 +33,7 @@ public final class TrackEFoundationTest {
         Map<EnhancementOutcome, Double> distribution = distribution(.5, .2, .2, .1);
         EnhancementPolicy policy = new EnhancementPolicy(
                 new EnhancementPolicyRevision("projects:fixture-enhancement", 7), 10,
-                distribution,
+                distribution, transitions(10),
                 new OperationResourcePlan(
                         List.of(new OperationResourcePlan.MaterialCost(
                                 "projects:enhancement-stone", 2)), 50));
@@ -48,15 +48,42 @@ public final class TrackEFoundationTest {
                 attempt, policy, new SplittableRandom(91)::nextDouble);
         assert first.equals(second);
         assert first.outcome() != EnhancementOutcome.REJECTED;
+        EnhancementTransition selected = policy.transitions().get(first.outcome());
+        assert first.mutation().orElseThrow().proposedItem().enhancementLevel()
+                == selected.targetLevel();
+        assert first.mutation().orElseThrow().proposedItem().broken() == selected.broken();
         assert attempt.source().enhancementLevel() == 10 : "source mutated";
         expectUnsupported(() -> policy.probabilities().put(EnhancementOutcome.SUCCESS, 1.0));
         expectIllegal(() -> new EnhancementPolicy(
-                policy.revision(), 10, distribution(.5, .2, .2, .2), policy.costs()));
+                policy.revision(), 10, distribution(.5, .2, .2, .2),
+                transitions(10), policy.costs()));
         expectIllegal(() -> new EnhancementPolicy(
                 policy.revision(), 10,
-                distribution(Double.NaN, 0, 0, 1), policy.costs()));
+                distribution(Double.NaN, 0, 0, 1), transitions(10), policy.costs()));
+        expectIllegal(() -> new EnhancementPolicy(
+                policy.revision(), 10, distribution,
+                Map.of(EnhancementOutcome.SUCCESS, new EnhancementTransition(11, false)),
+                policy.costs()));
+        expectIllegal(() -> new EnhancementTransition(31, false));
+        EnumMap<EnhancementOutcome, EnhancementTransition> invalid =
+                new EnumMap<>(transitions(10));
+        invalid.put(EnhancementOutcome.DOWNGRADE, new EnhancementTransition(11, false));
+        expectIllegal(() -> new EnhancementPolicy(
+                policy.revision(), 10, distribution, invalid, policy.costs()));
         expectIllegal(() -> new OperationResourcePlan(List.of(), -1));
         expectIllegal(() -> resolver.resolve(attempt, policy, () -> Double.POSITIVE_INFINITY));
+
+        EnhancementPolicy custom = new EnhancementPolicy(
+                new EnhancementPolicyRevision("projects:fixture-custom-transition", 1),
+                10, distribution(1, 0, 0, 0), Map.of(
+                EnhancementOutcome.SUCCESS, new EnhancementTransition(14, false),
+                EnhancementOutcome.NO_CHANGE, new EnhancementTransition(10, false),
+                EnhancementOutcome.DOWNGRADE, new EnhancementTransition(3, false),
+                EnhancementOutcome.BROKEN, new EnhancementTransition(7, true)),
+                OperationResourcePlan.none());
+        EnhancementProposal customResult = resolver.resolve(attempt, custom, () -> 0);
+        assert customResult.mutation().orElseThrow().proposedItem().enhancementLevel() == 14
+                : "resolver inferred +1 instead of honoring policy transition";
     }
 
     private static void maximumLevelIsRejectedWithoutRng() {
@@ -66,7 +93,7 @@ public final class TrackEFoundationTest {
                         false, uuid(11), false), 8, extensions());
         EnhancementPolicy fixture = new EnhancementPolicy(
                 new EnhancementPolicyRevision("projects:fixture-max", 1), 29,
-                distribution(1, 0, 0, 0), OperationResourcePlan.none());
+                distribution(1, 0, 0, 0), transitions(29), OperationResourcePlan.none());
         AtomicInteger rolls = new AtomicInteger();
         var preparation = new EnhancementTransactionAdapter().prepare(
                 maximum, fixture, () -> { rolls.incrementAndGet(); return 0; });
@@ -278,6 +305,18 @@ public final class TrackEFoundationTest {
                 EnhancementOutcome.NO_CHANGE, noChange,
                 EnhancementOutcome.DOWNGRADE, downgrade,
                 EnhancementOutcome.BROKEN, broken);
+    }
+
+    private static Map<EnhancementOutcome, EnhancementTransition> transitions(int current) {
+        return Map.of(
+                EnhancementOutcome.SUCCESS,
+                new EnhancementTransition(Math.min(30, current + 1), false),
+                EnhancementOutcome.NO_CHANGE,
+                new EnhancementTransition(current, false),
+                EnhancementOutcome.DOWNGRADE,
+                new EnhancementTransition(Math.max(0, current - 1), false),
+                EnhancementOutcome.BROKEN,
+                new EnhancementTransition(current, true));
     }
 
     private static UUID uuid(int seed) { return new UUID(0, seed); }

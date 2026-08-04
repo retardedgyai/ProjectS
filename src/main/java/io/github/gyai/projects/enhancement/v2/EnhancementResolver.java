@@ -34,15 +34,11 @@ public final class EnhancementResolver {
             throw new IllegalArgumentException("RNG value must be finite in [0,1)");
         }
         EnhancementOutcome outcome = select(policy, roll);
-        int nextLevel = switch (outcome) {
-            case SUCCESS -> source.enhancementLevel() + 1;
-            case DOWNGRADE -> Math.max(0, source.enhancementLevel() - 1);
-            default -> source.enhancementLevel();
-        };
-        boolean broken = outcome == EnhancementOutcome.BROKEN || source.broken();
+        EnhancementTransition transition = policy.transitions().get(outcome);
         EquipmentItemV1 replacement = EquipmentItems.replaceMutableState(
                 source, source.tier(), source.itemLevel(), source.quality(),
-                source.modSlots(), nextLevel, broken, source.binding());
+                source.modSlots(), transition.targetLevel(), transition.broken(),
+                source.binding());
         var sourceId = source.instanceId().orElseThrow(() ->
                 new IllegalArgumentException("enhancement source requires instance identity"));
         EquipmentMutationProposal mutation = new EquipmentMutationProposal(

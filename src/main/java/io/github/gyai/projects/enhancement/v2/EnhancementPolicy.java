@@ -10,6 +10,7 @@ public record EnhancementPolicy(
         EnhancementPolicyRevision revision,
         int currentLevel,
         Map<EnhancementOutcome, Double> probabilities,
+        Map<EnhancementOutcome, EnhancementTransition> transitions,
         OperationResourcePlan costs
 ) {
     private static final double DISTRIBUTION_EPSILON = 1.0e-12;
@@ -37,6 +38,52 @@ public record EnhancementPolicy(
             throw new IllegalArgumentException("probability distribution must total 1 without REJECTED");
         }
         probabilities = Map.copyOf(copy);
+        EnumMap<EnhancementOutcome, EnhancementTransition> transitionCopy =
+                new EnumMap<>(EnhancementOutcome.class);
+        if (transitions != null) transitionCopy.putAll(transitions);
+        if (transitionCopy.containsKey(EnhancementOutcome.REJECTED)) {
+            throw new IllegalArgumentException("REJECTED cannot define a transition");
+        }
+        for (EnhancementOutcome outcome : new EnhancementOutcome[]{
+                EnhancementOutcome.SUCCESS, EnhancementOutcome.NO_CHANGE,
+                EnhancementOutcome.DOWNGRADE, EnhancementOutcome.BROKEN}) {
+            EnhancementTransition transition = transitionCopy.get(outcome);
+            if (transition == null) {
+                throw new IllegalArgumentException("missing transition for " + outcome);
+            }
+            validateTransition(currentLevel, outcome, transition);
+        }
+        transitions = Map.copyOf(transitionCopy);
         costs = Objects.requireNonNull(costs, "costs");
+    }
+
+    private static void validateTransition(
+            int currentLevel,
+            EnhancementOutcome outcome,
+            EnhancementTransition transition
+    ) {
+        switch (outcome) {
+            case SUCCESS -> {
+                if (transition.broken() || transition.targetLevel() <= currentLevel) {
+                    throw new IllegalArgumentException("SUCCESS must increase level without breaking");
+                }
+            }
+            case NO_CHANGE -> {
+                if (transition.broken() || transition.targetLevel() != currentLevel) {
+                    throw new IllegalArgumentException("NO_CHANGE must preserve level and unbroken state");
+                }
+            }
+            case DOWNGRADE -> {
+                if (transition.broken() || transition.targetLevel() > currentLevel) {
+                    throw new IllegalArgumentException("DOWNGRADE cannot increase level or break");
+                }
+            }
+            case BROKEN -> {
+                if (!transition.broken()) {
+                    throw new IllegalArgumentException("BROKEN must set broken state");
+                }
+            }
+            case REJECTED -> throw new IllegalArgumentException("REJECTED has no transition");
+        }
     }
 }
