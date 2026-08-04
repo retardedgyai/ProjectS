@@ -89,7 +89,8 @@ val combatDamageFoundationTest by tasks.registering(JavaExec::class) {
 
 val damageCalculatorCharacterizationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
-    classpath = sourceSets.test.get().runtimeClasspath
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
     mainClass.set(
         "io.github.gyai.projects.combat.damage.DamageCalculatorCharacterizationTest")
     jvmArgs("-ea")
@@ -108,6 +109,14 @@ val attackMetadataAdapterTest by tasks.registering(JavaExec::class) {
             sourceSets.main.get().compileClasspath
     mainClass.set(
         "io.github.gyai.projects.combat.damage.AttackMetadataAdapterTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordShadowParityTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordShadowParityTest")
     jvmArgs("-ea")
 }
 
@@ -132,5 +141,6 @@ tasks.named("check") {
     dependsOn(damageCalculatorCharacterizationTest)
     dependsOn(damageSnapshotTest)
     dependsOn(attackMetadataAdapterTest)
+    dependsOn(starterSwordShadowParityTest)
     dependsOn(mobEditorFoundationTest)
 }

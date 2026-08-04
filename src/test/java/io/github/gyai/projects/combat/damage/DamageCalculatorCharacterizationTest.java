@@ -1,7 +1,16 @@
 package io.github.gyai.projects.combat.damage;
 
 import io.github.gyai.projects.combat.stat.StatCalculator;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -17,6 +26,7 @@ public final class DamageCalculatorCharacterizationTest {
         characterizeCriticals();
         characterizeShieldAndLifeSteal();
         characterizeSafetyAndDeterminism();
+        characterizeReentryTracking();
     }
 
     private static void characterizeDamageKindsAndTypes() {
@@ -280,6 +290,81 @@ public final class DamageCalculatorCharacterizationTest {
         assert DamageEventApplicationPolicy.replacesModifier("ARMOR");
         assert DamageEventApplicationPolicy.replacesModifier("RESISTANCE");
         assert !DamageEventApplicationPolicy.replacesModifier("ABSORPTION");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void characterizeReentryTracking() {
+        try {
+            DamageService service = allocateWithoutConstructor(DamageService.class);
+            UUID attackerId = UUID.randomUUID();
+            UUID targetId = UUID.randomUUID();
+            Player attacker = entityProxy(Player.class, attackerId);
+            LivingEntity target = entityProxy(LivingEntity.class, targetId);
+
+            Class<?> keyType = Class.forName(
+                    DamageService.class.getName() + "$DamageKey");
+            Constructor<?> keyConstructor = keyType.getDeclaredConstructor(
+                    UUID.class, UUID.class);
+            keyConstructor.setAccessible(true);
+            Object key = keyConstructor.newInstance(attackerId, targetId);
+
+            Field applyingField = DamageService.class.getDeclaredField("applying");
+            applyingField.setAccessible(true);
+            applyingField.set(service, new HashMap<>());
+            Map<Object, Deque<DamageResult>> applying =
+                    (Map<Object, Deque<DamageResult>>) applyingField.get(service);
+            DamageResult outer = DamageCalculator.calculate(input(
+                    DamageType.PHYSICAL, DamageMode.PVE,
+                    DamageKind.NORMAL_ATTACK,
+                    0, 10, 0, 0, false, 1.75,
+                    0, 0, 0, 0, new double[0], 1,
+                    0, 100, 0, 1));
+            DamageResult nested = DamageCalculator.calculate(input(
+                    DamageType.PHYSICAL, DamageMode.PVE,
+                    DamageKind.NORMAL_ATTACK,
+                    0, 20, 0, 0, false, 1.75,
+                    0, 0, 0, 0, new double[0], 1,
+                    0, 100, 0, 1));
+            Deque<DamageResult> stack = new ArrayDeque<>();
+            applying.put(key, stack);
+
+            stack.push(outer);
+            assert service.isApplying(attacker, target);
+            assert service.currentCalculation(attacker, target).equals(outer);
+            stack.push(nested);
+            assert service.currentCalculation(attacker, target).equals(nested);
+            stack.pop();
+            assert service.currentCalculation(attacker, target).equals(outer);
+            stack.pop();
+            applying.remove(key);
+            assert !service.isApplying(attacker, target);
+            assert service.currentCalculation(attacker, target) == null;
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Unable to characterize reentry tracking", exception);
+        }
+    }
+
+    private static <T> T allocateWithoutConstructor(Class<T> type)
+            throws ReflectiveOperationException {
+        Class<?> unsafeType = Class.forName("sun.misc.Unsafe");
+        Field singleton = unsafeType.getDeclaredField("theUnsafe");
+        singleton.setAccessible(true);
+        Object unsafe = singleton.get(null);
+        return type.cast(unsafeType.getMethod("allocateInstance", Class.class)
+                .invoke(unsafe, type));
+    }
+
+    private static <T> T entityProxy(Class<T> type, UUID id) {
+        Object proxy = Proxy.newProxyInstance(
+                type.getClassLoader(), new Class<?>[]{type},
+                (ignored, method, arguments) -> {
+                    if (method.getName().equals("getUniqueId")) return id;
+                    if (method.getName().equals("toString")) return type.getSimpleName();
+                    if (method.getName().equals("hashCode")) return System.identityHashCode(ignored);
+                    if (method.getName().equals("equals")) return ignored == arguments[0];
+                    throw new UnsupportedOperationException(method.toString());
+                });
+        return type.cast(proxy);
     }
 
     private static DamageCalculator.Input input(
