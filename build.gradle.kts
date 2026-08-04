@@ -282,6 +282,73 @@ val trackDTransactionFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val fireElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.fire.FireElementEngineTest")
+    jvmArgs("-ea")
+}
+
+val iceElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.ice.IceElementEngineTest")
+    jvmArgs("-ea")
+}
+
+val lightningElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.lightning.LightningElementEngineTest")
+    jvmArgs("-ea")
+}
+
+val equipmentAndModFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.equipment.EquipmentAndModFoundationTest")
+    jvmArgs("-ea")
+}
+
+val legacyItemCompatibilityTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.item.compatibility.LegacyItemCompatibilityTest")
+    jvmArgs("-ea")
+}
+
+val playerProgressDomainTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.player.progress.PlayerProgressDomainTest")
+    jvmArgs("-ea")
+}
+
+val playerProgressRepositoryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerProgressRepositoryTest")
+    jvmArgs("-ea")
+}
+
+val playerPersistenceCoordinatorTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerPersistenceCoordinatorTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -315,4 +382,12 @@ tasks.named("check") {
     dependsOn(schemaVersionRegistryTest)
     dependsOn(betaContractPresenceTest)
     dependsOn(trackDTransactionFoundationTest)
+    dependsOn(fireElementEngineTest)
+    dependsOn(iceElementEngineTest)
+    dependsOn(lightningElementEngineTest)
+    dependsOn(equipmentAndModFoundationTest)
+    dependsOn(legacyItemCompatibilityTest)
+    dependsOn(playerProgressDomainTest)
+    dependsOn(playerProgressRepositoryTest)
+    dependsOn(playerPersistenceCoordinatorTest)
 }
