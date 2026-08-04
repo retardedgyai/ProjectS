@@ -121,6 +121,42 @@ val starterSwordShadowParityTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val damageShadowValidationTrackerTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowValidationTrackerTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowRuntimeSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowRuntimeSafetyTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowCommandTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowCommandTest")
+    jvmArgs("-ea")
+}
+
+val damageShadowExportTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageShadowExportTest")
+    jvmArgs("-ea")
+}
+
 val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -143,5 +179,9 @@ tasks.named("check") {
     dependsOn(damageSnapshotTest)
     dependsOn(attackMetadataAdapterTest)
     dependsOn(starterSwordShadowParityTest)
+    dependsOn(damageShadowValidationTrackerTest)
+    dependsOn(damageShadowRuntimeSafetyTest)
+    dependsOn(damageShadowCommandTest)
+    dependsOn(damageShadowExportTest)
     dependsOn(mobEditorFoundationTest)
 }
