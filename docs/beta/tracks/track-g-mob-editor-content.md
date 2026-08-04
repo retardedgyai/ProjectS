@@ -49,3 +49,9 @@ good revision as a new revision.
 
 Report start SHA, v1 compatibility proof, v2 schema/fields, dependencies, validation/revision/atomicity, content decisions, commits/tests/CI/Paper evidence, flag, rollback/history, final status.
 
+## Implementation status
+
+The disabled Track G foundation is documented in
+`docs/beta/track-g-mob-editor-v2-foundation.md`. Runtime activation and
+production Mob/Boss content remain out of scope.
+
