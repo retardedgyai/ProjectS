@@ -8,15 +8,38 @@ import java.util.Objects;
 
 /** Pure command decision layer; Bukkit permission and message delivery stay outside. */
 public final class DamageShadowCommandService {
-    private static final String USAGE =
+    private static final String STARTER_USAGE =
             "使用法: /projects damage-shadow "
                     + "<status|enable|disable|reset|summary|export>";
     private final DamageShadowValidationController controller;
+    private final String subjectLabel;
+    private final String usage;
+    private final String messagePrefix;
 
     public DamageShadowCommandService(
             DamageShadowValidationController controller
     ) {
         this.controller = Objects.requireNonNull(controller, "controller");
+        subjectLabel = "starter_sword";
+        usage = STARTER_USAGE;
+        messagePrefix = "";
+    }
+
+    public DamageShadowCommandService(
+            DamageShadowValidationController controller,
+            String subjectLabel,
+            String subjectArgument
+    ) {
+        this.controller = Objects.requireNonNull(controller, "controller");
+        if (subjectLabel == null || subjectLabel.isBlank()
+                || subjectArgument == null || subjectArgument.isBlank()) {
+            throw new IllegalArgumentException(
+                    "subject label and argument must not be blank");
+        }
+        this.subjectLabel = subjectLabel;
+        usage = "使用法: /projects damage-shadow " + subjectArgument
+                + " <status|enable|disable|reset|summary|export>";
+        messagePrefix = subjectLabel + " ";
     }
 
     public Response execute(String action) {
@@ -27,30 +50,32 @@ public final class DamageShadowCommandService {
             case "enable" -> {
                 controller.enable();
                 yield new Response(true, List.of(
-                        "starter_sword shadow検証を有効化し、新しいセッションを開始しました。",
+                        subjectLabel + " shadow検証を有効化し、新しいセッションを開始しました。",
                         "実ダメージはlegacy経路のままです。"));
             }
             case "disable" -> {
                 DamageShadowValidationSnapshot snapshot = controller.disable();
                 yield new Response(true, List.of(
-                        "starter_sword shadow検証を無効化しました。",
+                        subjectLabel + " shadow検証を無効化しました。",
                         compactSummary(snapshot)));
             }
             case "reset" -> {
                 controller.reset();
                 yield new Response(true, List.of(
-                        "damage shadow検証の集計を初期化しました。"));
+                        messagePrefix
+                                + "damage shadow検証の集計を初期化しました。"));
             }
             case "summary" -> summary();
             case "export" -> export();
-            default -> new Response(false, List.of(USAGE));
+            default -> new Response(false, List.of(usage));
         };
     }
 
     private Response status() {
         DamageShadowValidationSnapshot snapshot = controller.snapshot();
         return new Response(true, List.of(
-                "damage shadow: " + (snapshot.enabled() ? "有効" : "無効"),
+                messagePrefix + "damage shadow: "
+                        + (snapshot.enabled() ? "有効" : "無効"),
                 compactSummary(snapshot),
                 "maxAbs=%s maxRel=%s startedAt=%s".formatted(
                         snapshot.maximumAbsoluteError(),
@@ -76,11 +101,11 @@ public final class DamageShadowCommandService {
         try {
             Path exported = controller.export();
             return new Response(true, List.of(
-                    "damage shadow検証結果を保存しました: "
+                    messagePrefix + "damage shadow検証結果を保存しました: "
                             + exported.toAbsolutePath()));
         } catch (IOException exception) {
             return new Response(false, List.of(
-                    "damage shadow検証結果の保存に失敗しました: "
+                    messagePrefix + "damage shadow検証結果の保存に失敗しました: "
                             + exception.getClass().getSimpleName()));
         }
     }

@@ -31,10 +31,16 @@ public final class DamageShadowExportTest {
             Instant exportedAt = Instant.parse("2026-08-04T03:04:05Z");
             Path first = exporter.export(directory, snapshot, exportedAt);
             Path second = exporter.export(directory, snapshot, exportedAt);
+            DamageShadowValidationExporter spinExporter =
+                    new DamageShadowValidationExporter(
+                            "spin-slash-shadow");
+            Path spin = spinExporter.export(directory, snapshot, exportedAt);
 
             assert !first.equals(second);
             assert first.getFileName().toString().startsWith(
                     "starter-sword-shadow-");
+            assert spin.getFileName().toString().startsWith(
+                    "spin-slash-shadow-");
             String yaml = Files.readString(first);
             assert yaml.contains("schema-version: 1");
             assert yaml.contains("comparisons: 4");
@@ -50,6 +56,19 @@ public final class DamageShadowExportTest {
             assert yaml.contains("shadow-breakdown:");
             assert yaml.contains("numeric-differences:");
             assert count(yaml, "  - timestamp:") == 2;
+            assert Files.readString(first, java.nio.charset.StandardCharsets.UTF_8)
+                    .equals(yaml);
+            for (String invalid : new String[]{
+                    "../escape", "spin/slash", "spin\\slash",
+                    ".", "Spin-Slash", "spin--slash"}) {
+                boolean rejected = false;
+                try {
+                    new DamageShadowValidationExporter(invalid);
+                } catch (IllegalArgumentException expected) {
+                    rejected = true;
+                }
+                assert rejected : invalid;
+            }
         } finally {
             deleteRecursively(directory);
         }

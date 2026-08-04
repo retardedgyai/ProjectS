@@ -5,15 +5,9 @@ import io.github.gyai.projects.combat.stat.StatCalculator;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 
 public final class DamageShadowComparator {
     public static final double DEFAULT_EPSILON = 0.000_001;
-    private static final Set<AttackTag> STARTER_SWORD_TAGS = Set.of(
-            AttackTag.NORMAL_ATTACK,
-            AttackTag.MELEE,
-            AttackTag.PHYSICAL);
-
     private DamageShadowComparator() {
     }
 
@@ -32,8 +26,9 @@ public final class DamageShadowComparator {
         if (snapshot == null) {
             throw new IllegalArgumentException("snapshot must not be null");
         }
-        return compareStarterSword(
-                legacy, snapshot.calculate(), snapshot, epsilon);
+        return compare(
+                legacy, snapshot.calculate(), snapshot,
+                DamageShadowExpectation.STARTER_SWORD, epsilon);
     }
 
     public static DamageShadowComparison compareStarterSword(
@@ -51,9 +46,53 @@ public final class DamageShadowComparator {
             DamageCalculationSnapshot snapshot,
             double epsilon
     ) {
-        if (legacy == null || shadow == null || snapshot == null) {
+        return compare(
+                legacy, shadow, snapshot,
+                DamageShadowExpectation.STARTER_SWORD, epsilon);
+    }
+
+    public static DamageShadowComparison compare(
+            DamageResult legacy,
+            DamageCalculationSnapshot snapshot,
+            DamageShadowExpectation expectation
+    ) {
+        return compare(legacy, snapshot, expectation, DEFAULT_EPSILON);
+    }
+
+    public static DamageShadowComparison compare(
+            DamageResult legacy,
+            DamageCalculationSnapshot snapshot,
+            DamageShadowExpectation expectation,
+            double epsilon
+    ) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("snapshot must not be null");
+        }
+        return compare(
+                legacy, snapshot.calculate(), snapshot, expectation, epsilon);
+    }
+
+    public static DamageShadowComparison compare(
+            DamageResult legacy,
+            DamageResult shadow,
+            DamageCalculationSnapshot snapshot,
+            DamageShadowExpectation expectation
+    ) {
+        return compare(
+                legacy, shadow, snapshot, expectation, DEFAULT_EPSILON);
+    }
+
+    public static DamageShadowComparison compare(
+            DamageResult legacy,
+            DamageResult shadow,
+            DamageCalculationSnapshot snapshot,
+            DamageShadowExpectation expectation,
+            double epsilon
+    ) {
+        if (legacy == null || shadow == null || snapshot == null
+                || expectation == null) {
             throw new IllegalArgumentException(
-                    "legacy, shadow, and snapshot must not be null");
+                    "legacy, shadow, snapshot, and expectation must not be null");
         }
         if (!Double.isFinite(epsilon) || epsilon <= 0.0) {
             throw new IllegalArgumentException("epsilon must be positive and finite");
@@ -64,7 +103,8 @@ public final class DamageShadowComparator {
         compare(numeric, "preCriticalOffenseDamage",
                 preCriticalDamage(legacy),
                 snapshot.preCriticalOffenseDamage(), epsilon);
-        if (legacy.critical() != shadow.critical()) {
+        if (legacy.critical() != shadow.critical()
+                || legacy.critical() != snapshot.critical()) {
             context.add("criticalResult");
         }
         compare(numeric, "criticalMultiplier",
@@ -93,22 +133,24 @@ public final class DamageShadowComparator {
                 legacy.shieldDamage(), shadow.shieldDamage(), epsilon);
         compare(numeric, "healthDamage",
                 legacy.healthDamage(), shadow.healthDamage(), epsilon);
+        compare(numeric, "lifeStealHealing",
+                legacy.lifeStealHealing(), shadow.lifeStealHealing(), epsilon);
         compare(numeric, "finalRoundedDamage",
                 legacy.finalRoundedDamage(), shadow.finalRoundedDamage(), epsilon);
 
-        if (snapshot.damageType() != DamageType.PHYSICAL) {
+        if (snapshot.damageType() != expectation.damageType()) {
             context.add("damageType");
         }
-        if (snapshot.damageKind() != DamageKind.NORMAL_ATTACK) {
+        if (snapshot.damageKind() != expectation.damageKind()) {
             context.add("damageKind");
         }
-        if (snapshot.mode() != DamageMode.PVE) {
+        if (snapshot.mode() != expectation.damageMode()) {
             context.add("damageMode");
         }
-        if (!snapshot.attackMetadata().tags().containsAll(STARTER_SWORD_TAGS)) {
+        if (!snapshot.attackMetadata().tags().equals(expectation.exactTags())) {
             context.add("attackTags");
         }
-        if (!snapshot.attackMetadata().elements().equals(ElementProfile.EMPTY)) {
+        if (!snapshot.attackMetadata().elements().equals(expectation.elements())) {
             context.add("elements");
         }
         return new DamageShadowComparison(

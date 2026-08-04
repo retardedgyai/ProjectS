@@ -16,6 +16,21 @@ public final class DamageShadowValidationExporter {
     private static final DateTimeFormatter FILE_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                     .withZone(ZoneId.systemDefault());
+    private final String fileStem;
+
+    public DamageShadowValidationExporter() {
+        this("starter-sword-shadow");
+    }
+
+    public DamageShadowValidationExporter(String fileStem) {
+        if (fileStem == null
+                || fileStem.length() > 64
+                || !fileStem.matches("[a-z0-9]+(?:-[a-z0-9]+)*")) {
+            throw new IllegalArgumentException(
+                    "fileStem must be a lowercase safe slug");
+        }
+        this.fileStem = fileStem;
+    }
 
     public Path export(
             Path directory,
@@ -25,7 +40,7 @@ public final class DamageShadowValidationExporter {
         Files.createDirectories(directory);
         Path target = uniqueTarget(directory, exportedAt);
         Path temporary = Files.createTempFile(
-                directory, ".starter-sword-shadow-", ".tmp");
+                directory, "." + fileStem + "-", ".tmp");
         try {
             Files.writeString(
                     temporary,
@@ -129,13 +144,17 @@ public final class DamageShadowValidationExporter {
         return yaml.toString();
     }
 
-    private static Path uniqueTarget(Path directory, Instant exportedAt)
+    private Path uniqueTarget(Path directory, Instant exportedAt)
             throws IOException {
-        String base = "starter-sword-shadow-"
+        String base = fileStem + "-"
                 + FILE_TIMESTAMP.format(exportedAt);
         for (int suffix = 0; suffix <= 999; suffix++) {
             String name = base + (suffix == 0 ? "" : "-" + suffix) + ".yml";
             Path candidate = directory.resolve(name);
+            if (!candidate.normalize().getParent().equals(
+                    directory.normalize())) {
+                throw new IOException("Export target escaped directory");
+            }
             if (!Files.exists(candidate)) {
                 return candidate;
             }

@@ -5,6 +5,7 @@ import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlType;
 import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
+import io.github.gyai.projects.combat.damage.DamageShadowCommandRouter;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
@@ -35,7 +36,7 @@ public class ProjectCommand implements CommandExecutor {
     private final CrowdControlManager crowdControlManager;
     private final StatusEffectManager statusEffectManager;
     private final PlayerManager playerManager;
-    private final DamageShadowCommandService damageShadowCommandService;
+    private final DamageShadowCommandRouter damageShadowCommandRouter;
     private final StarterSwordRouteCommandService damageRouteCommandService;
 
     public ProjectCommand(
@@ -50,6 +51,25 @@ public class ProjectCommand implements CommandExecutor {
             DamageShadowCommandService damageShadowCommandService,
             StarterSwordRouteCommandService damageRouteCommandService
     ) {
+        this(itemManager, dummyManager, devMenuManager, enhancementListener,
+                monsterManager, crowdControlManager, statusEffectManager,
+                playerManager, damageShadowCommandService, null,
+                damageRouteCommandService);
+    }
+
+    public ProjectCommand(
+            ItemManager itemManager,
+            TrainingDummyManager dummyManager,
+            DevMenuManager devMenuManager,
+            EnhancementListener enhancementListener,
+            MonsterManager monsterManager,
+            CrowdControlManager crowdControlManager,
+            StatusEffectManager statusEffectManager,
+            PlayerManager playerManager,
+            DamageShadowCommandService damageShadowCommandService,
+            DamageShadowCommandService spinSlashShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService
+    ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
         this.devMenuManager = devMenuManager;
@@ -58,7 +78,8 @@ public class ProjectCommand implements CommandExecutor {
         this.crowdControlManager = crowdControlManager;
         this.statusEffectManager = statusEffectManager;
         this.playerManager = playerManager;
-        this.damageShadowCommandService = damageShadowCommandService;
+        damageShadowCommandRouter = new DamageShadowCommandRouter(
+                damageShadowCommandService, spinSlashShadowCommandService);
         this.damageRouteCommandService = damageRouteCommandService;
     }
 
@@ -146,8 +167,8 @@ public class ProjectCommand implements CommandExecutor {
             return true;
         }
         DamageShadowCommandService.Response response =
-                damageShadowCommandService.execute(
-                        args.length >= 2 ? args[1] : "status");
+                damageShadowCommandRouter.execute(
+                        java.util.Arrays.copyOfRange(args, 1, args.length));
         String color = response.success() ? "§e" : "§c";
         for (String message : response.messages()) {
             sender.sendMessage(color + message);

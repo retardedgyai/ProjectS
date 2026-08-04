@@ -1,6 +1,6 @@
 # ProjectS current code audit
 
-監査日: 2026-08-04
+監査日: 2026-08-05（SpinSlash shadow追補）
 監査基準: `agent/boss-telegraphs` の `799cffc9c4f709eeb5e6ad989eef8017685916f6` と、`origin/main` の `4b8801d` をマージした状態
 
 ## 監査範囲と前提
@@ -50,6 +50,12 @@
 | Warrior遅延・splash等 | `WarriorEffectManager` → `DamageService`または`Player.damage` | 複数のUUID map/task | 大部分は共通化済みだが、遅延自己ダメージ等に直接適用が残る。 |
 
 `DamageService.applying`はattacker/target UUIDの組をキーにしたstackで、共通適用中のBukkit eventを識別する。`finally`で解除するため通常例外には耐えるが、同じtickのlistener順序とdeprecated `DamageModifier` APIに強く依存する。
+
+2026-08-05追補: Warriorでは`spin_slash`一経路だけがexact metadata
+`SKILL / MELEE / PHYSICAL`を持つ。独立したshadow controllerがlegacy計算後の
+criticalを再利用してpure snapshotを比較するが、実適用は従来のDamageService
+結果だけである。他Warrior skill、Painter、Scout、Boss、Mob Editor Mobは今回
+移行していない。
 
 ## データ保存経路
 

@@ -57,6 +57,13 @@ public record DamageShadowNumericReport(
                 legacy.shieldDamage(), shadow.shieldDamage());
         builder.add("healthDamage",
                 legacy.healthDamage(), shadow.healthDamage());
+        // Keep the established aggregate denominator stable for parity
+        // sessions, while still reporting lifesteal when it diverges.
+        if (Double.compare(
+                legacy.lifeStealHealing(), shadow.lifeStealHealing()) != 0) {
+            builder.add("lifeStealHealing",
+                    legacy.lifeStealHealing(), shadow.lifeStealHealing());
+        }
         builder.add("finalRoundedDamage",
                 legacy.finalRoundedDamage(), shadow.finalRoundedDamage());
         return builder.build();
@@ -101,9 +108,14 @@ public record DamageShadowNumericReport(
         private double maximumAbsolute;
         private double maximumRelative;
         private double sum;
+        private long count;
 
         private void add(String name, double legacy, double shadow) {
             if (!Double.isFinite(legacy) || !Double.isFinite(shadow)) {
+                maximumAbsolute = Double.MAX_VALUE;
+                maximumRelative = Double.MAX_VALUE;
+                sum = Double.MAX_VALUE;
+                count = count == Long.MAX_VALUE ? Long.MAX_VALUE : count + 1;
                 return;
             }
             double absolute = Math.abs(legacy - shadow);
@@ -120,12 +132,13 @@ public record DamageShadowNumericReport(
             maximumAbsolute = Math.max(maximumAbsolute, absolute);
             maximumRelative = Math.max(maximumRelative, relative);
             sum = saturatedAdd(sum, absolute);
+            count = count == Long.MAX_VALUE ? Long.MAX_VALUE : count + 1;
         }
 
         private DamageShadowNumericReport build() {
             return new DamageShadowNumericReport(
                     values, maximumAbsolute, maximumRelative,
-                    sum, values.size());
+                    sum, count);
         }
 
         private static double saturatedAdd(double left, double right) {

@@ -66,6 +66,7 @@ import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.damage.StarterSwordDamageShadow;
 import io.github.gyai.projects.combat.damage.BukkitDamageShadowRuntimeContextResolver;
 import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
+import io.github.gyai.projects.combat.damage.DamageShadowDispatcher;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationController;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationExporter;
 import io.github.gyai.projects.combat.damage.DamageShadowValidationTracker;
@@ -75,6 +76,7 @@ import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteCommandService;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
+import io.github.gyai.projects.combat.damage.SpinSlashDamageShadow;
 import io.github.gyai.projects.lifecycle.ShutdownSequence;
 
 import java.time.Clock;
@@ -104,6 +106,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private TelegraphManager telegraphManager;
     private DamageService damageService;
     private StarterSwordDamageShadow starterSwordDamageShadow;
+    private SpinSlashDamageShadow spinSlashDamageShadow;
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
     private ShutdownSequence shutdownSequence;
@@ -146,6 +149,13 @@ public final class ProjectSPlugin extends JavaPlugin {
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
         Clock damageShadowClock = Clock.systemUTC();
+        BukkitDamageShadowRuntimeContextResolver damageShadowContextResolver =
+                new BukkitDamageShadowRuntimeContextResolver(
+                        trainingDummyManager,
+                        monsterManager,
+                        enhancementManager,
+                        itemManager,
+                        damageShadowClock);
         DamageShadowValidationController damageShadowController =
                 new DamageShadowValidationController(
                         getConfig().getBoolean(
@@ -162,16 +172,40 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new StarterSwordDamageShadow(
                         damageService,
                         damageShadowController,
-                        new BukkitDamageShadowRuntimeContextResolver(
-                                trainingDummyManager,
-                                monsterManager,
-                                enhancementManager,
-                                itemManager,
-                                damageShadowClock),
+                        damageShadowContextResolver,
                         debugEnabled,
                         getLogger());
         DamageShadowCommandService damageShadowCommandService =
                 new DamageShadowCommandService(damageShadowController);
+        DamageShadowValidationController spinSlashShadowController =
+                new DamageShadowValidationController(
+                        getConfig().getBoolean(
+                                "combat.damage-foundation.warrior-spin-slash-shadow-enabled",
+                                false),
+                        new DamageShadowValidationTracker(),
+                        new DamageShadowValidationExporter(
+                                "spin-slash-shadow"),
+                        getDataFolder().toPath()
+                                .resolve("debug")
+                                .resolve("damage-shadow")
+                                .resolve("spin-slash"),
+                        damageShadowClock,
+                        getLogger());
+        spinSlashDamageShadow = new SpinSlashDamageShadow(
+                damageService,
+                spinSlashShadowController,
+                damageShadowContextResolver,
+                debugEnabled,
+                getLogger());
+        DamageShadowCommandService spinSlashShadowCommandService =
+                new DamageShadowCommandService(
+                        spinSlashShadowController,
+                        "spin_slash",
+                        "spin-slash");
+        DamageShadowDispatcher damageShadowDispatcher =
+                new DamageShadowDispatcher(
+                        damageService::apply,
+                        java.util.List.of(spinSlashDamageShadow));
         StarterSwordRouteController damageRouteController =
                 new StarterSwordRouteController(
                         getConfig().getBoolean(
@@ -209,7 +243,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "classes.warrior.maximum-spirit-healing-per-hit", 1.0));
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
-                warriorCombatManager, balanceTuningManager, damageService);
+                warriorCombatManager, balanceTuningManager,
+                damageShadowDispatcher);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
                 trainingDummyManager, skillManager, damageService);
@@ -390,6 +425,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                     enhancementListener, monsterManager,
                     crowdControlManager, statusEffectManager,
                     playerManager, damageShadowCommandService,
+                    spinSlashShadowCommandService,
                     damageRouteCommandService));
         }
 
@@ -453,6 +489,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 damageService, DamageService::clear);
         sequence.addIfPresent("starterSwordDamageShadow.close",
                 starterSwordDamageShadow, StarterSwordDamageShadow::close);
+        sequence.addIfPresent("spinSlashDamageShadow.close",
+                spinSlashDamageShadow, SpinSlashDamageShadow::close);
         sequence.addIfPresent("painterSkillExecutor.clearAll",
                 painterSkillExecutor, PainterSkillExecutor::clearAll);
         sequence.addIfPresent("painterPassiveManager.clear",

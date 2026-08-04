@@ -6,6 +6,7 @@ combat:
   damage-foundation:
     starter-sword-authoritative-enabled: false
     starter-sword-shadow-enabled: false
+    warrior-spin-slash-shadow-enabled: false
 classes:
   warrior:
     fighting-spirit-retention-seconds: 10.0
