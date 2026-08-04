@@ -13,7 +13,7 @@ public final class StarterSwordRouteTracker {
     private long newRouteFailureCount;
     private long newRouteAppliedCount;
     private long legacyAppliedCount;
-    private long doubleApplicationPreventionCount;
+    private long applicationBoundaryCompletedCount;
     private long authoritativeShadowMatchCount;
     private long authoritativeShadowMismatchCount;
     private final EnumMap<StarterSwordRouteDecision, Long> decisionCounts =
@@ -31,7 +31,7 @@ public final class StarterSwordRouteTracker {
         newRouteFailureCount = 0;
         newRouteAppliedCount = 0;
         legacyAppliedCount = 0;
-        doubleApplicationPreventionCount = 0;
+        applicationBoundaryCompletedCount = 0;
         authoritativeShadowMatchCount = 0;
         authoritativeShadowMismatchCount = 0;
         decisionCounts.clear();
@@ -64,8 +64,8 @@ public final class StarterSwordRouteTracker {
             boolean authoritative,
             boolean attempted
     ) {
-        doubleApplicationPreventionCount = increment(
-                doubleApplicationPreventionCount);
+        applicationBoundaryCompletedCount = increment(
+                applicationBoundaryCompletedCount);
         if (!attempted) {
             return;
         }
@@ -99,7 +99,7 @@ public final class StarterSwordRouteTracker {
                 newRouteFailureCount,
                 newRouteAppliedCount,
                 legacyAppliedCount,
-                doubleApplicationPreventionCount,
+                applicationBoundaryCompletedCount,
                 authoritativeShadowMatchCount,
                 authoritativeShadowMismatchCount,
                 decisionCounts.get(StarterSwordRouteDecision.LEGACY_CRITICAL),

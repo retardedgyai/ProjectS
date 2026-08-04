@@ -13,7 +13,7 @@ public record StarterSwordRouteSnapshot(
         long newRouteFailureCount,
         long newRouteAppliedCount,
         long legacyAppliedCount,
-        long doubleApplicationPreventionCount,
+        long applicationBoundaryCompletedCount,
         long authoritativeShadowMatchCount,
         long authoritativeShadowMismatchCount,
         long criticalFallbackCount,

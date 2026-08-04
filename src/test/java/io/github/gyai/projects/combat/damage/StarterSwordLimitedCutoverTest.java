@@ -52,7 +52,7 @@ public final class StarterSwordLimitedCutoverTest {
         assert metrics.newAuthoritativeCount() == 1;
         assert metrics.newRouteAppliedCount() == 1;
         assert metrics.legacyAppliedCount() == 0;
-        assert metrics.doubleApplicationPreventionCount() == 1;
+        assert metrics.applicationBoundaryCompletedCount() == 1;
     }
 
     private static void unvalidatedConditionsUseLegacyOnly() {

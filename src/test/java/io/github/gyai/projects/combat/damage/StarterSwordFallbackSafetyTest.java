@@ -62,6 +62,6 @@ public final class StarterSwordFallbackSafetyTest {
         StarterSwordRouteSnapshot metrics = controller.snapshot();
         assert metrics.decisionCounts().get(expected) == 1;
         assert metrics.newRouteFailureCount() == 1;
-        assert metrics.doubleApplicationPreventionCount() == 1;
+        assert metrics.applicationBoundaryCompletedCount() == 1;
     }
 }
