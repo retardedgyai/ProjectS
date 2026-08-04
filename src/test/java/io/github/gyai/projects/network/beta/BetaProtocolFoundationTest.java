@@ -199,13 +199,13 @@ public final class BetaProtocolFoundationTest {
                 new BetaRateLimiter(32, clock),
                 (ignored, ignoredCommand) -> BetaCommandAuthorization.Decision.allow(), 32);
         int[] calls = {0};
-        BetaCommandResult accepted = router.route(context, command, (ignored, delivered) -> {
+        BetaCommandResult accepted = router.route(context, command, decoder(), (ignored, delivered) -> {
             calls[0]++;
             return new BetaCommandResult(BetaCommandResult.Status.ACCEPTED,
-                    delivered.idempotencyRequestId(), "", true);
+                    delivered.requestId(), "", true);
         });
         assert accepted.status() == BetaCommandResult.Status.ACCEPTED;
-        assert router.route(context, command, (ignored, delivered) -> {
+        assert router.route(context, command, decoder(), (ignored, delivered) -> {
             calls[0]++;
             throw new AssertionError("duplicate must not reach destination");
         }).status() == BetaCommandResult.Status.DUPLICATE;
@@ -215,17 +215,17 @@ public final class BetaProtocolFoundationTest {
                 BetaCommandContext.CommandClass.READ);
         BetaCommandEnvelope deniedCommand = new BetaCommandEnvelope(
                 command.message(), 3, 8, UUID.randomUUID());
-        assert router.route(denied, deniedCommand, (a, b) -> null).status()
+        assert router.route(denied, deniedCommand, decoder(), (a, b) -> null).status()
                 == BetaCommandResult.Status.PERMISSION_DENIED;
         BetaCommandEnvelope stale = new BetaCommandEnvelope(
                 command.message(), 3, 7, UUID.randomUUID());
-        assert router.route(context, stale, (a, b) -> null).status()
+        assert router.route(context, stale, decoder(), (a, b) -> null).status()
                 == BetaCommandResult.Status.STALE_REVISION;
         BetaCommandEnvelope wrongSession = new BetaCommandEnvelope(
                 new BetaMessageEnvelope(1, BetaMessageKind.COMMAND,
                         BetaCapabilityId.CRAFTING, 1, UUID.randomUUID(), new byte[0]),
                 3, 8, UUID.randomUUID());
-        assert router.route(context, wrongSession, (a, b) -> null).status()
+        assert router.route(context, wrongSession, decoder(), (a, b) -> null).status()
                 == BetaCommandResult.Status.CAPABILITY_DENIED;
         BetaRateLimiter limiter = new BetaRateLimiter(4, clock);
         assert limiter.tryAcquire("player", new BetaRateLimitPolicy(1, 2));
@@ -235,6 +235,13 @@ public final class BetaProtocolFoundationTest {
         assert limiter.tryAcquire("player", new BetaRateLimitPolicy(1, 2));
         router.close();
         router.close();
+    }
+
+    private static BetaCommandDecoder decoder() {
+        return envelope -> BetaCommandDecoder.DecodeResult.success(new BetaDecodedCommand(
+                envelope.message().capabilityId(), "projects:test-command",
+                envelope.idempotencyRequestId(), envelope.playerSessionRevision(),
+                envelope.targetContentRevision(), Map.of(), List.of()));
     }
 
     private static void compatibilityMatrixHasSafeFallbacks() {

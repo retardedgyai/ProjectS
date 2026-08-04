@@ -50,7 +50,9 @@ bounded idempotency result retention and injected token-bucket limits:
 - persistent mutations: 2 per second, burst 4;
 - Mob Editor save/apply: 1 per second, burst 2.
 
-Client display state never enters a producer domain mutation directly. Track G
+Raw packet bytes are decoded by an injected `BetaCommandDecoder` into a bounded
+`BetaDecodedCommand` before a producer port is called. Client display state and
+raw packet input never enter a producer domain mutation directly. Track G
 integration uses only `MobEditorDisplayPort` and `MobEditorCommandPort`; no Track
 G model is copied here.
 

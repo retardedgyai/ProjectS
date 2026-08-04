@@ -26,10 +26,12 @@ public final class BetaCommandRouter implements AutoCloseable {
     public synchronized BetaCommandResult route(
             BetaCommandContext context,
             BetaCommandEnvelope command,
+            BetaCommandDecoder decoder,
             BetaCommandPort destination
     ) {
         java.util.Objects.requireNonNull(context);
         java.util.Objects.requireNonNull(command);
+        java.util.Objects.requireNonNull(decoder);
         java.util.Objects.requireNonNull(destination);
         String key = context.playerId() + ":" + command.idempotencyRequestId();
         BetaCommandResult previous = terminalResults.get(key);
@@ -73,7 +75,21 @@ public final class BetaCommandRouter implements AutoCloseable {
         if (!rateLimiter.tryAcquire(rateKey, policy)) {
             return result(key, BetaCommandResult.Status.RATE_LIMITED, command, "Rate limit exceeded", false);
         }
-        BetaCommandResult delivered = destination.handle(context, command);
+        BetaCommandDecoder.DecodeResult decoded;
+        try {
+            decoded = decoder.decode(command);
+        } catch (RuntimeException exception) {
+            decoded = BetaCommandDecoder.DecodeResult.failure("Command decoder failed");
+        }
+        if (decoded == null || !decoded.successful()
+                || decoded.command().capabilityId() != command.message().capabilityId()
+                || !decoded.command().requestId().equals(command.idempotencyRequestId())
+                || decoded.command().playerSessionRevision() != command.playerSessionRevision()
+                || decoded.command().targetContentRevision() != command.targetContentRevision()) {
+            return result(key, BetaCommandResult.Status.MALFORMED, command,
+                    decoded == null ? "Command decoder unavailable" : decoded.detail(), true);
+        }
+        BetaCommandResult delivered = destination.handle(context, decoded.command());
         if (delivered == null || !delivered.requestId().equals(command.idempotencyRequestId())) {
             return result(key, BetaCommandResult.Status.MALFORMED, command, "Invalid destination result", true);
         }
