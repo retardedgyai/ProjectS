@@ -108,6 +108,12 @@ public final class MobV2FoundationTest {
         MobDefinitionV2Validator validator = new MobDefinitionV2Validator(allResolved(), policy);
         MobDefinitionV2 value = valid("test_boss", 0);
         assert validator.validate(value).valid();
+        assert !validator.validate(new MobDefinitionV2(2, "bad/id", value.revision(),
+                value.display(), value.entityType(), value.category(), value.attributes(),
+                value.attacks(), value.skills(), value.phases(), value.dropReferences(),
+                value.spawnRules(), value.weaknesses(), value.fireCategory(),
+                value.iceCategory(), value.rewardReferences(),
+                value.participationPolicyReference(), value.extensions())).valid();
         assert value.attacks().getFirst().metadata().tags().equals(
                 Set.of(AttackTag.SKILL, AttackTag.MELEE, AttackTag.PHYSICAL));
         assert value.attacks().getFirst().metadata().elements().equals(ElementProfile.EMPTY);

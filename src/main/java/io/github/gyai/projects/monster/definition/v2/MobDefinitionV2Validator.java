@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 
 public final class MobDefinitionV2Validator {
     private static final Pattern ID = Pattern.compile("[a-z0-9][a-z0-9._:/-]{0,127}");
+    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{0,127}");
     private final MobReferenceResolvers resolvers;
     private final MobDefinitionV2Policy policy;
 
@@ -36,7 +37,10 @@ public final class MobDefinitionV2Validator {
         if (definition.schemaVersion() != MobDefinitionV2.SCHEMA_VERSION) {
             return result(Status.UNKNOWN_VERSION, "unsupported schema version");
         }
-        id(definition.mobId(), "mobId", invalid);
+        if (!MOB_ID.matcher(definition.mobId()).matches()
+                || definition.mobId().contains("..")) {
+            invalid.add("invalid mobId: " + definition.mobId());
+        }
         string(definition.display().name(), "display name", invalid);
         id(definition.entityType().toLowerCase(java.util.Locale.ROOT), "entity type", invalid);
         map(definition.attributes(), "attributes", invalid);
