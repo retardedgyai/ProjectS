@@ -157,6 +157,42 @@ val damageShadowExportTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val starterSwordRoutePolicyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordRoutePolicyTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordLimitedCutoverTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordLimitedCutoverTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordFallbackSafetyTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordFallbackSafetyTest")
+    jvmArgs("-ea")
+}
+
+val starterSwordAuthoritativeShadowTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordAuthoritativeShadowTest")
+    jvmArgs("-ea")
+}
+
 val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -183,5 +219,9 @@ tasks.named("check") {
     dependsOn(damageShadowRuntimeSafetyTest)
     dependsOn(damageShadowCommandTest)
     dependsOn(damageShadowExportTest)
+    dependsOn(starterSwordRoutePolicyTest)
+    dependsOn(starterSwordLimitedCutoverTest)
+    dependsOn(starterSwordFallbackSafetyTest)
+    dependsOn(starterSwordAuthoritativeShadowTest)
     dependsOn(mobEditorFoundationTest)
 }
