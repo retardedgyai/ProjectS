@@ -26,6 +26,7 @@ public final class DamageRequest {
     private final double pvpMultiplier;
     private final double[] additionalDamageReductions;
     private final DamageOffenseSnapshot offenseSnapshot;
+    private final AttackMetadata attackMetadata;
 
     private DamageRequest(Builder builder) {
         attacker = Objects.requireNonNull(builder.attacker, "attacker");
@@ -54,6 +55,8 @@ public final class DamageRequest {
         pvpMultiplier = finite(builder.pvpMultiplier, "pvpMultiplier");
         additionalDamageReductions = builder.additionalDamageReductions.clone();
         offenseSnapshot = builder.offenseSnapshot;
+        attackMetadata = builder.attackMetadata == null
+                ? AttackMetadata.EMPTY : builder.attackMetadata;
         for (double reduction : additionalDamageReductions) {
             finite(reduction, "additionalDamageReduction");
         }
@@ -85,6 +88,7 @@ public final class DamageRequest {
         return additionalDamageReductions.clone();
     }
     public DamageOffenseSnapshot offenseSnapshot() { return offenseSnapshot; }
+    public AttackMetadata attackMetadata() { return attackMetadata; }
 
     private static double finite(double value, String name) {
         if (!Double.isFinite(value)) {
@@ -114,6 +118,7 @@ public final class DamageRequest {
         private double pvpMultiplier = 1.0;
         private double[] additionalDamageReductions = new double[0];
         private DamageOffenseSnapshot offenseSnapshot;
+        private AttackMetadata attackMetadata = AttackMetadata.EMPTY;
 
         private Builder(Player attacker, LivingEntity target) {
             this.attacker = attacker;
@@ -157,6 +162,10 @@ public final class DamageRequest {
         }
         public Builder offenseSnapshot(DamageOffenseSnapshot value) {
             offenseSnapshot = value;
+            return this;
+        }
+        public Builder attackMetadata(AttackMetadata value) {
+            attackMetadata = value == null ? AttackMetadata.EMPTY : value;
             return this;
         }
         public DamageRequest build() { return new DamageRequest(this); }

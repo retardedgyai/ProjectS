@@ -36,6 +36,7 @@ public final class DamageService implements Listener {
     private final ItemManager itemManager;
     private final EnhancementManager enhancementManager;
     private final TrainingDummyManager dummyManager;
+    private final BukkitDamageSnapshotResolver snapshotResolver;
     private final Map<DamageKey, Deque<DamageResult>> applying = new HashMap<>();
     private final CriticalHitResolver criticalResolver =
             new CriticalHitResolver(MAX_CRITICAL_CAST_CACHE);
@@ -52,6 +53,8 @@ public final class DamageService implements Listener {
         this.itemManager = itemManager;
         this.enhancementManager = enhancementManager;
         this.dummyManager = dummyManager;
+        snapshotResolver = new BukkitDamageSnapshotResolver(
+                playerManager, itemManager, enhancementManager);
     }
 
     public DamageResult calculate(DamageRequest request) {
@@ -247,6 +250,14 @@ public final class DamageService implements Listener {
             Function<LivingEntity, MobStatsDefinition> resolver
     ) {
         mobStatsResolver = resolver == null ? ignored -> null : resolver;
+        snapshotResolver.setMobStatsResolver(resolver);
+    }
+
+    DamageCalculationSnapshot resolveSnapshot(
+            DamageRequest request,
+            boolean critical
+    ) {
+        return snapshotResolver.resolve(request, critical);
     }
 
     private DamageApplicationResult applyCalculated(
