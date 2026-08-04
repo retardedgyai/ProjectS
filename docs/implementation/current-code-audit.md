@@ -117,6 +117,20 @@ Gradle `check`へ以下のassertベースJavaExecが接続されている。
 
 `test`タスク自体にはJUnit test discoveryがなく、`failOnNoDiscoveredTests=false`である。Paper serverを起動せずに純粋部分、packet、YAML repositoryを検証する方式である。
 
+## クールダウン回復速度0スタート
+
+`COOLDOWN_RECOVERY_PERCENT`は装備、MOD、パッシブ等から得る追加Statであり、新規`PlayerData`と`Stats.reset()`後の値は0とする。旧コードにあった全プレイヤー共通の隠し30%短縮は廃止し、互換用の基礎回復速度も持たせない。計算式は`baseCooldown / (1 + recoveryPercent)`であるため、0スタートではbase cooldownがそのまま実効値になる。既存スキルの操作感が変わることは意図した仕様変更として受け入れ、base cooldownの再調整は別のバランス作業とする。
+
+| skill ID | 現在のbase CD | 旧30%短縮時 | 新仕様0%時 | 差分 |
+|---|---:|---:|---:|---:|
+| `spin_slash` | 8.0秒 | 5.6秒 | 8.0秒 | +2.4秒 |
+| `armor_break` | 6.0秒 | 4.2秒 | 6.0秒 | +1.8秒 |
+| `warrior_charge` | 10.0秒 | 7.0秒 | 10.0秒 | +3.0秒 |
+| `indomitable_spirit` | 20.0秒 | 14.0秒 | 20.0秒 | +6.0秒 |
+| `end_war_strike` | 45.0秒 | 31.5秒 | 45.0秒 | +13.5秒 |
+
+旧名`PlayerData.getCooldownReduction()`は外部バイナリ／ソース互換のためだけに残す。返す値は短縮率ではなく回復速度Statであり、内部コードは`getCooldownRecoveryPercent()`だけを使用する。
+
 ## 壊れやすい箇所
 
 1. `ProjectSPlugin`の手動配線・listener/channel登録順。

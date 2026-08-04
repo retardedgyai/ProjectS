@@ -46,7 +46,11 @@ public class PlayerData {
         return stats.get(StatType.COOLDOWN_RECOVERY_PERCENT);
     }
 
-    /** @deprecated Cooldowns now use recovery speed rather than reduction. */
+    /**
+     * @deprecated This name remains only for binary and source compatibility.
+     * The returned value is the cooldown recovery speed stat, not a cooldown
+     * reduction rate. New code must use {@link #getCooldownRecoveryPercent()}.
+     */
     @Deprecated
     public double getCooldownReduction() {
         return getCooldownRecoveryPercent();
