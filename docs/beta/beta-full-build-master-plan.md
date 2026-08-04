@@ -87,7 +87,7 @@ Tracks may develop concurrently against interfaces, but integration order is gov
 6. Keep legacy readers until migration fixtures, restart tests, and rollback tests pass.
 7. Do not change existing IDs, PDC keys, channel names, Mob schema v1, or legacy enhancement fields.
 
-`SchemaVersions` records only safely known versions. `mob-definition=1` is known; player, equipment, MOD, recipe, and aggregate client schema versions require an owner decision before persistence is implemented.
+`SchemaVersions` records only approved versions. Wave 1 approves player-data, equipment-item, mod-definition, recipe-definition, and existing mob-definition as version 1. The aggregate client protocol remains an owner decision. Legacy data is not v1 by implication and is never rewritten on read.
 
 ## Test strategy
 

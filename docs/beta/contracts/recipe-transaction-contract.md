@@ -2,7 +2,7 @@
 
 ## Scope
 
-This contract covers refine, craft, Tier promotion, enhancement, repair, reward claim, quest reward, and a future market-facing transaction boundary. Concrete recipes, times, costs, probabilities, and refund rates are `REQUIRES_BALANCE_DATA` or `REQUIRES_OWNER_DECISION`.
+This contract covers refine, craft, Tier promotion, enhancement, repair, reward claim, quest reward, and a future market-facing transaction boundary. Wave 1 defines `recipe-definition` schema version 1. Concrete recipes, times, costs, probabilities, and refund rates are `REQUIRES_BALANCE_DATA` or `REQUIRES_OWNER_DECISION`.
 
 ## Required order
 

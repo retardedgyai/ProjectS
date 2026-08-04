@@ -91,12 +91,13 @@ Frozen attribute modifier IDs include `projects:enhancement_attack_speed`, `proj
 
 ## Schema IDs
 
-- `player-data` — version `REQUIRES_OWNER_DECISION`; no persisted schema exists.
-- `equipment-item` — version `REQUIRES_OWNER_DECISION`; legacy PDC is unversioned.
-- `mod-definition` — version `REQUIRES_OWNER_DECISION`; no persisted schema exists.
-- `recipe-definition` — version `REQUIRES_OWNER_DECISION`; no persisted schema exists.
+- `player-data` — version `1`; first new per-player UTF-8 YAML schema.
+- `equipment-item` — version `1`; legacy PDC is unversioned/read-only and is not automatically rewritten.
+- `mod-definition` — version `1`; first new definition schema.
+- `recipe-definition` — version `1`; first new definition schema.
 - `mob-definition` — current supported version `1`, matching `MobDefinition.SCHEMA_VERSION`.
 - `client-protocol` — version `REQUIRES_OWNER_DECISION`; existing packets are independently versioned (including HUD v2 and several v1 packets).
 
 Unknown IDs or versions are isolated and preserved; they never silently fall back to a different schema.
+Downgrade is forbidden. Schema v1 registration alone does not authorize a migration writer.
 

@@ -27,7 +27,7 @@ public final class SchemaVersionRegistryTest {
     }
 
     private static void knownVersionsArePositiveAndImmutable() {
-        assert !SchemaVersions.knownVersions().isEmpty();
+        assert SchemaVersions.knownVersions().size() == 5;
         SchemaVersions.knownVersions().forEach((schema, version) -> {
             assert schema != null;
             assert version != null && version > 0;
@@ -42,11 +42,14 @@ public final class SchemaVersionRegistryTest {
                 .orElseThrow() == 1;
         assert SchemaVersions.isSupported(SchemaId.MOB_DEFINITION, 1);
         assert !SchemaVersions.isSupported(SchemaId.MOB_DEFINITION, 2);
+        assert SchemaVersions.currentVersion(SchemaId.PLAYER_DATA).orElseThrow() == 1;
+        assert SchemaVersions.currentVersion(SchemaId.EQUIPMENT_ITEM).orElseThrow() == 1;
+        assert SchemaVersions.currentVersion(SchemaId.MOD_DEFINITION).orElseThrow() == 1;
+        assert SchemaVersions.currentVersion(SchemaId.RECIPE_DEFINITION).orElseThrow() == 1;
     }
 
     private static void unresolvedSchemasAreExplicit() {
-        EnumSet<SchemaId> expected = EnumSet.allOf(SchemaId.class);
-        expected.remove(SchemaId.MOB_DEFINITION);
+        EnumSet<SchemaId> expected = EnumSet.of(SchemaId.CLIENT_PROTOCOL);
         assert SchemaVersions.requiresOwnerDecision().equals(expected);
         for (SchemaId unresolved : expected) {
             assert SchemaVersions.currentVersion(unresolved).isEmpty();

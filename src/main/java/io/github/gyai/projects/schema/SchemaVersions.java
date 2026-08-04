@@ -8,6 +8,10 @@ import java.util.OptionalInt;
 import java.util.Set;
 
 public final class SchemaVersions {
+    public static final int PLAYER_DATA = 1;
+    public static final int EQUIPMENT_ITEM = 1;
+    public static final int MOD_DEFINITION = 1;
+    public static final int RECIPE_DEFINITION = 1;
     public static final int MOB_DEFINITION = 1;
 
     private static final Map<SchemaId, Integer> KNOWN = knownVersionsInternal();
@@ -43,6 +47,10 @@ public final class SchemaVersions {
 
     private static Map<SchemaId, Integer> knownVersionsInternal() {
         EnumMap<SchemaId, Integer> versions = new EnumMap<>(SchemaId.class);
+        versions.put(SchemaId.PLAYER_DATA, validateVersion(PLAYER_DATA));
+        versions.put(SchemaId.EQUIPMENT_ITEM, validateVersion(EQUIPMENT_ITEM));
+        versions.put(SchemaId.MOD_DEFINITION, validateVersion(MOD_DEFINITION));
+        versions.put(SchemaId.RECIPE_DEFINITION, validateVersion(RECIPE_DEFINITION));
         versions.put(SchemaId.MOB_DEFINITION, validateVersion(MOB_DEFINITION));
         return Collections.unmodifiableMap(versions);
     }

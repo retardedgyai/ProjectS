@@ -3,7 +3,7 @@
 - **Branch:** `codex/beta-track-a-player-progression-persistence`
 - **Worktree:** `beta-track-a-player-progression-persistence`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** record `integration/beta-full-build` HEAD after Phase 0 merges (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** exact `WAVE_1_BASE_SHA` after the Wave 1 owner-decision PR merges.
 - **PR base:** `integration/beta-full-build`
 
 ## Scope
@@ -36,7 +36,7 @@ Unit/property: bounds, finite quantities, immutable maps/sets, revision ordering
 
 ## Merge prerequisites and rollback
 
-Phase 0 merged; player schema version owner decision before writes; all save failure injections pass; no temporary state persists. Rollback disables flags, stops writes, restores backup, and uses the legacy/in-memory path. Never downgrade a record in place.
+Phase 0 and Wave 1 owner decisions merged; use player-data v1 and the approved YAML boundary; all save failure injections pass; no temporary state persists. Rollback disables flags, stops writes, restores backup, and uses the legacy/in-memory path. Never downgrade a record in place.
 
 ## Completion report
 
