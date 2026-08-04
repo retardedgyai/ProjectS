@@ -158,7 +158,27 @@ public final class DamageService implements Listener {
             DamageRequest request,
             Consumer<DamageResult> calculationObserver
     ) {
-        DamageResult calculated = calculate(request);
+        return apply(request, calculationObserver, null);
+    }
+
+    public DamageApplicationResult apply(
+            DamageRequest request,
+            Consumer<DamageResult> calculationObserver,
+            Consumer<RuntimeException> calculationFailureObserver
+    ) {
+        DamageResult calculated;
+        try {
+            calculated = calculate(request);
+        } catch (RuntimeException exception) {
+            if (calculationFailureObserver != null) {
+                try {
+                    calculationFailureObserver.accept(exception);
+                } catch (RuntimeException ignored) {
+                    // Validation must never replace the original combat failure.
+                }
+            }
+            throw exception;
+        }
         return observeThenApply(
                 calculated,
                 calculationObserver,
@@ -171,7 +191,11 @@ public final class DamageService implements Listener {
             Function<DamageResult, T> legacyApplier
     ) {
         if (calculationObserver != null) {
-            calculationObserver.accept(legacyResult);
+            try {
+                calculationObserver.accept(legacyResult);
+            } catch (RuntimeException ignored) {
+                // Observational validation must not cancel legacy application.
+            }
         }
         return legacyApplier.apply(legacyResult);
     }

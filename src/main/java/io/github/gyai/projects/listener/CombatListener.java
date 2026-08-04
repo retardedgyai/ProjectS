@@ -95,14 +95,7 @@ public class CombatListener implements Listener {
                 .coefficient(1.0)
                 .attackMetadata(STARTER_SWORD_METADATA)
                 .build();
-        if (starterSwordDamageShadow.enabled()) {
-            damageService.apply(
-                    request,
-                    legacy -> starterSwordDamageShadow.compareSafely(
-                            request, legacy));
-        } else {
-            damageService.apply(request);
-        }
+        starterSwordDamageShadow.apply(request);
     }
 
     @EventHandler(ignoreCancelled = true)

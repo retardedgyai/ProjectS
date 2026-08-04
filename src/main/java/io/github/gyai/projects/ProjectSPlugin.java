@@ -64,6 +64,13 @@ import io.github.gyai.projects.skill.warrior.WarriorUltimateSkills;
 import io.github.gyai.projects.dev.HardControlTestTool;
 import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.damage.StarterSwordDamageShadow;
+import io.github.gyai.projects.combat.damage.BukkitDamageShadowRuntimeContextResolver;
+import io.github.gyai.projects.combat.damage.DamageShadowCommandService;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationController;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationExporter;
+import io.github.gyai.projects.combat.damage.DamageShadowValidationTracker;
+
+import java.time.Clock;
 
 public final class ProjectSPlugin extends JavaPlugin {
     private PlayerManager playerManager;
@@ -88,6 +95,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MonsterManager monsterManager;
     private TelegraphManager telegraphManager;
     private DamageService damageService;
+    private StarterSwordDamageShadow starterSwordDamageShadow;
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
 
@@ -127,14 +135,32 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
-        StarterSwordDamageShadow starterSwordDamageShadow =
-                new StarterSwordDamageShadow(
-                        damageService,
+        Clock damageShadowClock = Clock.systemUTC();
+        DamageShadowValidationController damageShadowController =
+                new DamageShadowValidationController(
                         getConfig().getBoolean(
                                 "combat.damage-foundation.starter-sword-shadow-enabled",
                                 false),
+                        new DamageShadowValidationTracker(),
+                        new DamageShadowValidationExporter(),
+                        getDataFolder().toPath()
+                                .resolve("debug")
+                                .resolve("damage-shadow"),
+                        damageShadowClock,
+                        getLogger());
+        starterSwordDamageShadow =
+                new StarterSwordDamageShadow(
+                        damageService,
+                        damageShadowController,
+                        new BukkitDamageShadowRuntimeContextResolver(
+                                trainingDummyManager,
+                                monsterManager,
+                                enhancementManager,
+                                damageShadowClock),
                         debugEnabled,
                         getLogger());
+        DamageShadowCommandService damageShadowCommandService =
+                new DamageShadowCommandService(damageShadowController);
         mobEditorManager = new MobEditorManager(
                 this, monsterManager, itemManager, damageService);
         mobEditorChannel = new MobEditorChannel(
@@ -337,7 +363,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                     itemManager, trainingDummyManager, devMenuManager,
                     enhancementListener, monsterManager,
                     crowdControlManager, statusEffectManager,
-                    playerManager));
+                    playerManager, damageShadowCommandService));
         }
 
         getLogger().info("ProjectS has started!");
@@ -426,6 +452,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
         if (damageService != null) {
             damageService.clear();
+        }
+        if (starterSwordDamageShadow != null) {
+            starterSwordDamageShadow.close();
         }
         if (painterSkillExecutor != null) painterSkillExecutor.clearAll();
         if (painterPassiveManager != null) painterPassiveManager.clear();

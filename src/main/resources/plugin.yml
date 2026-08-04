@@ -8,7 +8,7 @@ description: ProjectS MMO Plugin
 commands:
   projects:
     description: ProjectSの動作確認コマンド
-    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|dev|devmenu]
+    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|damage-shadow|dev|devmenu]
 
 permissions:
   projects.dev:
