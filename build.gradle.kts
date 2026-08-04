@@ -274,6 +274,33 @@ val betaContractPresenceTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val playerProgressDomainTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.player.progress.PlayerProgressDomainTest")
+    jvmArgs("-ea")
+}
+
+val playerProgressRepositoryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerProgressRepositoryTest")
+    jvmArgs("-ea")
+}
+
+val playerPersistenceCoordinatorTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.persistence.player.PlayerPersistenceCoordinatorTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -306,4 +333,7 @@ tasks.named("check") {
     dependsOn(featureFlagServiceTest)
     dependsOn(schemaVersionRegistryTest)
     dependsOn(betaContractPresenceTest)
+    dependsOn(playerProgressDomainTest)
+    dependsOn(playerProgressRepositoryTest)
+    dependsOn(playerPersistenceCoordinatorTest)
 }
