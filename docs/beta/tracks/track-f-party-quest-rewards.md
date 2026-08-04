@@ -3,12 +3,17 @@
 - **Branch:** `codex/beta-track-f-party-quest-rewards`
 - **Worktree:** `beta-track-f-party-quest-rewards`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** the Wave 2 owner-decisions merge commit (`WAVE_2_BASE_SHA`).
 - **PR base:** `integration/beta-full-build`
 
 ## Scope
 
 Party invite/accept/leave/leader/reconnect/chat/HP summary, participation events, versioned quest state structures, endgame unlock marker, idempotent reward claims, and nearby-XP boundary once distance rules are approved.
+
+The authoritative foundation semantics are fixed by
+`docs/beta/wave-2-owner-decisions.md`. Party state is temporary and production
+size, time, distance, share, quest-content, and reward values remain unapproved
+policy inputs.
 
 ## Out of scope
 
@@ -36,7 +41,10 @@ Invite expiry/rate limits, leader transfer, quit/reconnect, disband, cross-world
 
 ## Merge prerequisites and rollback
 
-A persistence merged; participation/reward contracts agreed with C/G/D; distance/content/reward values approved before activation. Rollback flags false, preserve committed quest/claim records, clear transient parties, and return to solo legacy flow.
+A persistence and the Wave 2 owner-decisions PR merged; participation/reward
+ports agree with C/G/D public boundaries; distance/content/reward values require
+approval before activation. Rollback flags false, preserve committed quest/claim
+records, clear transient parties, and return to solo legacy flow.
 
 ## Completion report
 
