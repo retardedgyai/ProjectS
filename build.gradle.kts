@@ -253,6 +253,27 @@ val shutdownSequenceTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val featureFlagServiceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.feature.FeatureFlagServiceTest")
+    jvmArgs("-ea")
+}
+
+val schemaVersionRegistryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.schema.SchemaVersionRegistryTest")
+    jvmArgs("-ea")
+}
+
+val betaContractPresenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.beta.BetaContractPresenceTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -282,4 +303,7 @@ tasks.named("check") {
     dependsOn(damageShadowCommandRoutingTest)
     dependsOn(mobEditorFoundationTest)
     dependsOn(shutdownSequenceTest)
+    dependsOn(featureFlagServiceTest)
+    dependsOn(schemaVersionRegistryTest)
+    dependsOn(betaContractPresenceTest)
 }
