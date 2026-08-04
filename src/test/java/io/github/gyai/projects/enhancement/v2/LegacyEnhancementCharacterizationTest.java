@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 
 public final class LegacyEnhancementCharacterizationTest {
     private LegacyEnhancementCharacterizationTest() { }
@@ -30,17 +31,20 @@ public final class LegacyEnhancementCharacterizationTest {
             assert result.valid();
             assert result.view().orElseThrow().enhancementLevel().orElseThrow() == level;
             assert Arrays.equals(before, fixture.serialized()) : "legacy read wrote level " + level;
-            var presentation = characterization.describe(level, false, 3.5, -0.2);
+            var presentation = LegacyFixtureCharacterization.describe(
+                    level, false, 3.5, -0.2);
             assert presentation.displayPrefix().equals(
                     level == 0 ? "" : "§6[+" + level + "] ");
             assert presentation.loreFacts().getFirst().equals("強化値: +" + level + " / +30");
-            assert characterization.materialCost(level) == Math.max(1, (level + 4) / 5);
-            assert characterization.repairCost(level) == Math.max(1, (level + 4) / 5);
+            assert LegacyFixtureCharacterization.materialCost(level)
+                    == Math.max(1, (level + 4) / 5);
+            assert LegacyFixtureCharacterization.repairCost(level)
+                    == Math.max(1, (level + 4) / 5);
         }
-        assert characterization.successChancePercent(5) == 100.0;
-        assert characterization.successChancePercent(30) == 1.0;
-        assert characterization.breakChancePercent(14) == 0.0;
-        assert characterization.breakChancePercent(30) == 50.0;
+        assert LegacyFixtureCharacterization.successChancePercent(5) == 100.0;
+        assert LegacyFixtureCharacterization.successChancePercent(30) == 1.0;
+        assert LegacyFixtureCharacterization.breakChancePercent(14) == 0.0;
+        assert LegacyFixtureCharacterization.breakChancePercent(30) == 50.0;
     }
 
     private static void brokenBonusesKeysAndTypesAreCharacterized() {
@@ -67,17 +71,15 @@ public final class LegacyEnhancementCharacterizationTest {
     private static void loreAttributeFailureAndFlagDisabledBehaviorAreFixed() {
         LegacyEnhancementCharacterization characterization =
                 new LegacyEnhancementCharacterization();
-        var normal = characterization.describe(10, false, 2.0, 0.0);
+        var normal = LegacyFixtureCharacterization.describe(10, false, 2.0, 0.0);
         assert normal.loreFacts().contains("攻撃倍率: 1.4");
         assert normal.loreFacts().contains("強化攻撃速度: 0.08");
         assert normal.attackSpeedAttributePresent();
         assert !normal.zeroAttackPowerWhileBroken();
-        assert normal.failureBehavior()
-                == LegacyEnhancementCharacterization.FailureBehavior.NO_CHANGE_OR_BROKEN;
-        assert normal.flagDisabledBehavior()
-                == LegacyEnhancementCharacterization.FlagDisabledBehavior.LEGACY_MANAGER_AND_LISTENER;
+        assert normal.failureBehavior() == FailureBehavior.NO_CHANGE_OR_BROKEN;
+        assert normal.flagDisabledBehavior() == FlagDisabledBehavior.LEGACY_MANAGER_AND_LISTENER;
 
-        var broken = characterization.describe(10, true, 2.0, 0.0);
+        var broken = LegacyFixtureCharacterization.describe(10, true, 2.0, 0.0);
         assert broken.displayPrefix().equals("§4[破損] §6[+10] ");
         assert !broken.attackSpeedAttributePresent();
         assert broken.zeroAttackPowerWhileBroken();
@@ -120,4 +122,53 @@ public final class LegacyEnhancementCharacterizationTest {
             return values.toString().getBytes(StandardCharsets.UTF_8);
         }
     }
+
+    /** Test-only copy of deployed legacy formulas; it is not a v2 policy. */
+    private static final class LegacyFixtureCharacterization {
+        private static int materialCost(int targetLevel) {
+            return Math.max(1, (targetLevel + 4) / 5);
+        }
+        private static int repairCost(int level) {
+            return Math.max(1, (level + 4) / 5);
+        }
+        private static double successChancePercent(int targetLevel) {
+            if (targetLevel <= 5) return 100.0;
+            if (targetLevel <= 10) return 95.0 - (targetLevel - 6) * 7.5;
+            if (targetLevel <= 15) return 55.0 - (targetLevel - 11) * 5.0;
+            if (targetLevel <= 20) return 30.0 - (targetLevel - 16) * 4.0;
+            if (targetLevel <= 25) return 10.0 - (targetLevel - 21) * 1.5;
+            return 3.0 - (targetLevel - 26) * 0.5;
+        }
+        private static double breakChancePercent(int currentLevel) {
+            if (currentLevel < 15) return 0.0;
+            return Math.min(50.0, 5.0 + (currentLevel - 15) * 3.0);
+        }
+        private static LegacyPresentation describe(
+                int level, boolean broken, double attackPowerBonus,
+                double attackSpeedBonus) {
+            String prefix = (broken ? "§4[破損] " : "")
+                    + (level > 0 ? "§6[+" + level + "] " : "");
+            return new LegacyPresentation(
+                    prefix,
+                    List.of(
+                            "強化値: +" + level + " / +30",
+                            "攻撃倍率: " + (1.0 + level * 0.04),
+                            "強化攻撃速度: " + (level * 0.008),
+                            "武器攻撃力調整: " + attackPowerBonus,
+                            "武器攻撃速度調整: " + attackSpeedBonus),
+                    !broken && level * 0.008 + attackSpeedBonus != 0.0,
+                    broken, FailureBehavior.NO_CHANGE_OR_BROKEN,
+                    FlagDisabledBehavior.LEGACY_MANAGER_AND_LISTENER);
+        }
+    }
+
+    private record LegacyPresentation(
+            String displayPrefix, List<String> loreFacts,
+            boolean attackSpeedAttributePresent, boolean zeroAttackPowerWhileBroken,
+            FailureBehavior failureBehavior, FlagDisabledBehavior flagDisabledBehavior) {
+        private LegacyPresentation { loreFacts = List.copyOf(loreFacts); }
+    }
+
+    private enum FailureBehavior { NO_CHANGE_OR_BROKEN }
+    private enum FlagDisabledBehavior { LEGACY_MANAGER_AND_LISTENER }
 }

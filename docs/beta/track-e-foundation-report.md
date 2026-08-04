@@ -29,7 +29,8 @@ The unchanged legacy keys and value types are characterized as:
 
 The legacy display prefix, enhancement lore facts, attack-speed attribute
 presence, broken zero-attack behavior, material/repair cost boundaries,
-success curve, break curve, and failure behavior are fixtures only. With
+success curve, break curve, and failure behavior exist only in the test fixture;
+the main-source adapter exposes no numeric policy or default factory. With
 `ENHANCEMENT_V2=false`, `EnhancementManager` and `EnhancementListener` remain
 the active behavior. No existing item is interpreted as equipment v1 or
 rewritten.
