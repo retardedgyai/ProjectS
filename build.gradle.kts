@@ -194,6 +194,14 @@ val starterSwordAuthoritativeShadowTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val starterSwordRouteCommandServiceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.StarterSwordRouteCommandServiceTest")
+    jvmArgs("-ea")
+}
+
 val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -231,6 +239,7 @@ tasks.named("check") {
     dependsOn(starterSwordLimitedCutoverTest)
     dependsOn(starterSwordFallbackSafetyTest)
     dependsOn(starterSwordAuthoritativeShadowTest)
+    dependsOn(starterSwordRouteCommandServiceTest)
     dependsOn(mobEditorFoundationTest)
     dependsOn(shutdownSequenceTest)
 }

@@ -60,8 +60,8 @@ public final class StarterSwordRouteCommandService {
         StarterSwordRouteSnapshot snapshot = controller.snapshot();
         return new Response(true, List.of(
                 compact(snapshot),
-                "newFailures=%d newApplied=%d legacyApplied=%d "
-                        + "applicationBoundaryCompleted=%d"
+                ("newFailures=%d newApplied=%d legacyApplied=%d "
+                        + "applicationBoundaryCompleted=%d")
                         .formatted(
                                 snapshot.newRouteFailureCount(),
                                 snapshot.newRouteAppliedCount(),
