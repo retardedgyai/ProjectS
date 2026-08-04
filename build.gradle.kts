@@ -274,6 +274,30 @@ val betaContractPresenceTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val fireElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.fire.FireElementEngineTest")
+    jvmArgs("-ea")
+}
+
+val iceElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.ice.IceElementEngineTest")
+    jvmArgs("-ea")
+}
+
+val lightningElementEngineTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.element.lightning.LightningElementEngineTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -306,4 +330,7 @@ tasks.named("check") {
     dependsOn(featureFlagServiceTest)
     dependsOn(schemaVersionRegistryTest)
     dependsOn(betaContractPresenceTest)
+    dependsOn(fireElementEngineTest)
+    dependsOn(iceElementEngineTest)
+    dependsOn(lightningElementEngineTest)
 }
