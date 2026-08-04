@@ -1,5 +1,11 @@
 package io.github.gyai.projects.item.compatibility;
 
+import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -9,6 +15,7 @@ public final class LegacyItemCompatibilityTest {
         readOnlyPdcFixture();
         malformedValuesAreIsolated();
         inventoryRoundTripDoesNotCreateIdentity();
+        bukkitItemStackReadDoesNotMutateBytesOrPdc();
     }
 
     private static void readOnlyPdcFixture() {
@@ -63,6 +70,25 @@ public final class LegacyItemCompatibilityTest {
         }
     }
 
+    private static void bukkitItemStackReadDoesNotMutateBytesOrPdc() {
+        LinkedHashMap<String, Object> pdc = new LinkedHashMap<>();
+        pdc.put("projects:item_id", "starter_sword");
+        pdc.put("projects:enhancement_level", 9);
+        pdc.put("projects:weapon_broken", (byte) 1);
+        pdc.put("projects:weapon_attack_power_bonus", 3.0d);
+        pdc.put("projects:weapon_attack_speed_bonus", 0.2d);
+        FakeItemStack item = new FakeItemStack(pdc);
+        byte[] before = item.serializeAsBytes();
+        Map<String, Object> pdcBefore = Map.copyOf(pdc);
+        LegacyPdcSource source = new BukkitLegacyPdcSource(
+                item, "projects", ignored -> "minecraft:iron_sword");
+        LegacyItemReadResult result = new LegacyItemCompatibilityReader().read(source);
+        assert result.valid();
+        assert result.view().orElseThrow().enhancementLevel().orElseThrow() == 9;
+        assert Arrays.equals(before, item.serializeAsBytes());
+        assert pdc.equals(pdcBefore) : "Bukkit PDC changed during read";
+    }
+
     private static final class Fixture implements LegacyPdcSource {
         private final String material;
         private final LinkedHashMap<String, Object> values = new LinkedHashMap<>();
@@ -86,4 +112,50 @@ public final class LegacyItemCompatibilityTest {
         }
     }
 
+    private static final class FakeItemStack extends ItemStack {
+        private final LinkedHashMap<String, Object> values;
+        private final ItemMeta meta;
+        private FakeItemStack(LinkedHashMap<String, Object> values) {
+            super();
+            this.values = values;
+            PersistentDataContainer data = (PersistentDataContainer) Proxy.newProxyInstance(
+                    PersistentDataContainer.class.getClassLoader(),
+                    new Class<?>[]{PersistentDataContainer.class},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("get") && args != null && args.length == 2) {
+                            return values.get(((NamespacedKey) args[0]).toString());
+                        }
+                        if (method.getName().equals("toString")) return values.toString();
+                        return primitiveDefault(method.getReturnType());
+                    });
+            meta = (ItemMeta) Proxy.newProxyInstance(
+                    ItemMeta.class.getClassLoader(), new Class<?>[]{ItemMeta.class},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("getPersistentDataContainer")) return data;
+                        if (method.getName().equals("clone")) return proxy;
+                        if (method.getName().equals("toString")) return values.toString();
+                        return primitiveDefault(method.getReturnType());
+                    });
+        }
+        @Override public ItemMeta getItemMeta() { return meta; }
+        @Override public byte[] serializeAsBytes() {
+            StringBuilder result = new StringBuilder();
+            values.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry ->
+                    result.append(entry.getKey()).append('=').append(entry.getValue()).append('\n'));
+            return result.toString().getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    private static Object primitiveDefault(Class<?> type) {
+        if (!type.isPrimitive()) return null;
+        if (type == boolean.class) return false;
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0F;
+        if (type == double.class) return 0D;
+        if (type == char.class) return '\0';
+        return null;
+    }
 }
