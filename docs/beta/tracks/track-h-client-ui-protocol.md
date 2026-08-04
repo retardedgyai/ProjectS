@@ -3,12 +3,15 @@
 - **Branch:** `codex/beta-track-h-client-ui-protocol`
 - **Worktree:** `beta-track-h-client-ui-protocol`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** the merge commit containing `wave-3-owner-decisions.md`; Track G and H must record the same `WAVE_3_BASE_SHA`.
 - **PR base:** `integration/beta-full-build` for server; client changes use a separately reviewed client branch/PR.
 
 ## Scope
 
-Owner-approved capability handshake, versioned bounded server snapshots for HUD/party/elements/equipment/crafting/enhancement/Mob Editor v2, old-client fallback, unknown packet handling, permissions/rate limits, and lifecycle cleanup. Scaffolding may begin early; payload integration merges last.
+Aggregate protocol v1 with the owner-approved additive channels and canonical
+payload-v1 capabilities; bounded server snapshots for HUD/party/elements/
+equipment/crafting/enhancement/Mob Editor v2; old-client fallback, unknown
+packet handling, permissions/rate limits, and lifecycle cleanup.
 
 ## Out of scope
 
@@ -20,7 +23,7 @@ Owned server package: `network` and final small lifecycle/channel registration c
 
 ## Public interfaces and dependencies
 
-Consume immutable display snapshots and commands from A-G. Publish capability/session state and decoded commands only; server revalidates every mutation. Existing channels remain. Aggregate protocol/channel IDs require owner approval.
+Consume immutable display snapshots and commands from A-G. Publish capability/session state and decoded commands only; server revalidates every mutation. Existing channels remain. New channels are `projects:beta_caps_v1`, `projects:beta_ack_v1`, `projects:beta_state_v1`, and `projects:beta_command_v1`.
 
 ## Feature flags
 

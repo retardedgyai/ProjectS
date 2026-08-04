@@ -81,7 +81,18 @@ All live under the YAML `features` section and default to false. Existing damage
 - `projects:telegraph_v1`
 - `projects:telegraph_hello_v1`
 
-Channel names and their current payload versions are frozen. A future global capability-handshake channel is `REQUIRES_OWNER_DECISION`; do not repurpose a feature-specific hello channel.
+Channel names and their current payload versions are frozen. Wave 3 adds, without
+renaming or repurposing existing channels:
+
+- `projects:beta_caps_v1`
+- `projects:beta_ack_v1`
+- `projects:beta_state_v1`
+- `projects:beta_command_v1`
+
+Canonical Beta capabilities are `projects:hud`, `projects:party`,
+`projects:elements`, `projects:equipment`, `projects:crafting`,
+`projects:enhancement`, and `projects:mob-editor-v2`; their Wave 3 payload
+version is `1`.
 
 ## Existing PDC and attribute IDs
 
@@ -95,8 +106,8 @@ Frozen attribute modifier IDs include `projects:enhancement_attack_speed`, `proj
 - `equipment-item` — version `1`; legacy PDC is unversioned/read-only and is not automatically rewritten.
 - `mod-definition` — version `1`; first new definition schema.
 - `recipe-definition` — version `1`; first new definition schema.
-- `mob-definition` — current supported version `1`, matching `MobDefinition.SCHEMA_VERSION`.
-- `client-protocol` — version `REQUIRES_OWNER_DECISION`; existing packets are independently versioned (including HUD v2 and several v1 packets).
+- `mob-definition` — current write version `2`, supported read versions `1` and `2`; legacy `MobDefinition.SCHEMA_VERSION` remains `1`.
+- `client-protocol` — aggregate version `1`; existing independently versioned packets remain unchanged.
 
 Unknown IDs or versions are isolated and preserved; they never silently fall back to a different schema.
 Downgrade is forbidden. Schema v1 registration alone does not authorize a migration writer.

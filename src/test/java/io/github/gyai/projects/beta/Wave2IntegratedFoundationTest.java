@@ -31,6 +31,7 @@ import io.github.gyai.projects.equipment.operation.TierPromotionService;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureKey;
 import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.monster.editor.MobDefinition;
 import io.github.gyai.projects.participation.EncounterId;
 import io.github.gyai.projects.participation.ParticipationEvent;
 import io.github.gyai.projects.participation.ParticipationKey;
@@ -102,9 +103,13 @@ public final class Wave2IntegratedFoundationTest {
         assert SchemaVersions.EQUIPMENT_ITEM == 1;
         assert SchemaVersions.MOD_DEFINITION == 1;
         assert SchemaVersions.RECIPE_DEFINITION == 1;
-        assert SchemaVersions.MOB_DEFINITION == 1;
-        assert SchemaVersions.currentVersion(SchemaId.CLIENT_PROTOCOL).isEmpty();
-        assert SchemaVersions.requiresOwnerDecision().contains(SchemaId.CLIENT_PROTOCOL);
+        assert MobDefinition.SCHEMA_VERSION == 1;
+        assert SchemaVersions.MOB_DEFINITION == 2;
+        assert SchemaVersions.supportedReadVersions(SchemaId.MOB_DEFINITION)
+                .equals(Set.of(1, 2));
+        assert SchemaVersions.CLIENT_PROTOCOL == 1;
+        assert SchemaVersions.currentVersion(SchemaId.CLIENT_PROTOCOL)
+                .orElseThrow() == 1;
 
         FeatureFlagService flags = new FeatureFlagService();
         for (FeatureKey key : List.of(
