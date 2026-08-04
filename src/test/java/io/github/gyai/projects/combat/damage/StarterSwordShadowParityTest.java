@@ -4,6 +4,7 @@ import io.github.gyai.projects.combat.stat.StatCalculator;
 
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class StarterSwordShadowParityTest {
     private StarterSwordShadowParityTest() {
@@ -29,7 +30,6 @@ public final class StarterSwordShadowParityTest {
         assert disabled.evaluationCount() == 0;
 
         AtomicInteger shadowCalculations = new AtomicInteger();
-        AtomicInteger applications = new AtomicInteger();
         DamageShadowEvaluator enabled = new DamageShadowEvaluator(true);
         DamageShadowComparison parity = enabled.evaluateStarterSword(
                 legacy,
@@ -40,8 +40,30 @@ public final class StarterSwordShadowParityTest {
         assert parity.matches();
         assert shadowCalculations.get() == 1;
         assert enabled.evaluationCount() == 1;
-        // The evaluator only observes results and has no application callback.
-        assert applications.get() == 0;
+
+        DamageResult differentShadow = snapshot(swordMetadata, 101).calculate();
+        AtomicReference<DamageResult> observed = new AtomicReference<>();
+        AtomicReference<DamageResult> applied = new AtomicReference<>();
+        AtomicInteger applications = new AtomicInteger();
+        DamageResult applicationResult = DamageService.observeThenApply(
+                legacy,
+                result -> {
+                    observed.set(result);
+                    // A different shadow result is deliberately produced but
+                    // cannot replace the legacy value supplied to the applier.
+                    DamageShadowComparator.compareStarterSword(
+                            result, snapshot(swordMetadata, 101));
+                },
+                result -> {
+                    applications.incrementAndGet();
+                    applied.set(result);
+                    return result;
+                });
+        assert observed.get() == legacy;
+        assert applied.get() == legacy;
+        assert applicationResult == legacy;
+        assert applied.get() != differentShadow;
+        assert applications.get() == 1;
 
         assert parity.snapshot().damageType() == DamageType.PHYSICAL;
         assert parity.snapshot().damageKind() == DamageKind.NORMAL_ATTACK;

@@ -114,7 +114,8 @@ val attackMetadataAdapterTest by tasks.registering(JavaExec::class) {
 
 val starterSwordShadowParityTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
-    classpath = sourceSets.test.get().runtimeClasspath
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
     mainClass.set(
         "io.github.gyai.projects.combat.damage.StarterSwordShadowParityTest")
     jvmArgs("-ea")

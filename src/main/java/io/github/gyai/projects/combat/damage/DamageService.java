@@ -159,10 +159,21 @@ public final class DamageService implements Listener {
             Consumer<DamageResult> calculationObserver
     ) {
         DamageResult calculated = calculate(request);
+        return observeThenApply(
+                calculated,
+                calculationObserver,
+                result -> applyCalculated(request, result));
+    }
+
+    static <T> T observeThenApply(
+            DamageResult legacyResult,
+            Consumer<DamageResult> calculationObserver,
+            Function<DamageResult, T> legacyApplier
+    ) {
         if (calculationObserver != null) {
-            calculationObserver.accept(calculated);
+            calculationObserver.accept(legacyResult);
         }
-        return applyCalculated(request, calculated);
+        return legacyApplier.apply(legacyResult);
     }
 
     private DamageApplicationResult applyCalculated(
