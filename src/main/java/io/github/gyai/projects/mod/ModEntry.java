@@ -26,5 +26,6 @@ public record ModEntry(
         Objects.requireNonNull(source, "source");
         if (slotIndex < 0 || slotIndex > 3) throw new IllegalArgumentException("slotIndex must be 0..3");
     }
+    public String schemaId() { return SchemaId.MOD_DEFINITION.id(); }
     @Override public boolean effectEnabled() { return true; }
 }

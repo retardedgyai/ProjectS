@@ -96,10 +96,13 @@ public final class EquipmentAndModFoundationTest {
         assert !ModValidation.validate(entry, null, EquipmentSlot.WEAPON).valid();
 
         byte[] opaque = {1, 2, 3};
-        UnknownModEntry unknown = new UnknownModEntry(0, 99, opaque);
+        UnknownModEntry unknown = new UnknownModEntry(
+                0, "mod-definition", 99, "future:unrecognized", opaque);
         opaque[0] = 9;
         assert unknown.payload()[0] == 1;
         assert !unknown.effectEnabled();
+        assert unknown.schemaVersion() == 99;
+        assert unknown.modId().equals("future:unrecognized");
         assert ModValidation.validate(unknown, definition, EquipmentSlot.WEAPON)
                 .contribution().isEmpty();
         assertThrows(IllegalArgumentException.class, () -> new UnknownModEntry(
