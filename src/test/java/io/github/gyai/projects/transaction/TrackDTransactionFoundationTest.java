@@ -149,6 +149,15 @@ public final class TrackDTransactionFoundationTest {
         assert result.reason().equals("inventory-full");
         assert full.calls.equals(List.of(TransactionStage.VALIDATE));
         assert full.rollbackCount == 0;
+
+        FakeParticipant rollbackFailure = new FakeParticipant();
+        rollbackFailure.failAt = TransactionStage.PRODUCE;
+        rollbackFailure.rollbackFails = true;
+        TransactionAuditResult rollbackFailed = engine.execute(
+                request(31), rollbackFailure);
+        assert rollbackFailed.outcome()
+                == TransactionAuditResult.Outcome.ROLLBACK_FAILED;
+        assert rollbackFailed.reason().contains("rollback=rollback-failed");
     }
 
     private static void activeConflictsAndBoundsAreEnforced() throws Exception {
@@ -361,6 +370,7 @@ public final class TrackDTransactionFoundationTest {
         private TransactionStage failAt;
         private TransactionStage blockAt;
         private int rollbackCount;
+        private boolean rollbackFails;
 
         @Override
         public Validation validate(TransactionRequest request) {
@@ -414,6 +424,7 @@ public final class TrackDTransactionFoundationTest {
                 OutputProposal output
         ) {
             rollbackCount++;
+            if (rollbackFails) throw new IllegalStateException("rollback-failed");
         }
 
         private void stage(TransactionStage stage) {

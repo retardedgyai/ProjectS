@@ -111,6 +111,8 @@ public final class TransactionEngine implements AutoCloseable {
                         message(exception), clock.instant());
             }
             String reason = message(exception);
+            TransactionAuditResult.Outcome outcome =
+                    TransactionAuditResult.Outcome.ROLLED_BACK;
             try {
                 participant.rollback(
                         request,
@@ -118,11 +120,11 @@ public final class TransactionEngine implements AutoCloseable {
                         transaction.lastCompleted(),
                         transaction.output);
             } catch (RuntimeException rollbackFailure) {
+                outcome = TransactionAuditResult.Outcome.ROLLBACK_FAILED;
                 reason = bounded(reason + "; rollback=" + message(rollbackFailure));
             }
             return transaction.result(
-                    TransactionAuditResult.Outcome.ROLLED_BACK,
-                    reason, clock.instant());
+                    outcome, reason, clock.instant());
         } finally {
             active.remove(request.requestId(), transaction);
         }

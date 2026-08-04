@@ -47,6 +47,7 @@ public record TransactionAuditResult(
         COMMITTED,
         REJECTED,
         ROLLED_BACK,
+        ROLLBACK_FAILED,
         REPLAY_CONFLICT,
         DUPLICATE_ACTIVE,
         ACTIVE_LIMIT,
