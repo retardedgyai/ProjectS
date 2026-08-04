@@ -274,6 +274,22 @@ val betaContractPresenceTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val equipmentAndModFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.equipment.EquipmentAndModFoundationTest")
+    jvmArgs("-ea")
+}
+
+val legacyItemCompatibilityTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.item.compatibility.LegacyItemCompatibilityTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -306,4 +322,6 @@ tasks.named("check") {
     dependsOn(featureFlagServiceTest)
     dependsOn(schemaVersionRegistryTest)
     dependsOn(betaContractPresenceTest)
+    dependsOn(equipmentAndModFoundationTest)
+    dependsOn(legacyItemCompatibilityTest)
 }
