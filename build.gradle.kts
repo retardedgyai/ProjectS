@@ -87,6 +87,14 @@ val combatDamageFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val damageCalculatorCharacterizationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set(
+        "io.github.gyai.projects.combat.damage.DamageCalculatorCharacterizationTest")
+    jvmArgs("-ea")
+}
+
 val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -105,5 +113,6 @@ tasks.named("check") {
     dependsOn(telegraphFoundationTest)
     dependsOn(statFoundationTest)
     dependsOn(combatDamageFoundationTest)
+    dependsOn(damageCalculatorCharacterizationTest)
     dependsOn(mobEditorFoundationTest)
 }
