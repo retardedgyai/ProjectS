@@ -41,11 +41,14 @@ public final class RewardClaimService {
                             delivery.deliver(request), "delivery receipt");
                 } catch (RuntimeException failure) {
                     return new RewardClaimResult(request.key(),
-                            RewardClaimResult.Status.PERSIST_FAILURE,
-                            "delivery=" + bounded(failure), false, false,
+                            RewardClaimResult.Status.COMMIT_UNCERTAIN,
+                            "delivery-boundary=" + bounded(failure), true, false,
                             clock.instant());
                 }
-                boolean terminal = retryPolicy.terminal(receipt);
+                boolean terminal = receipt.status() == RewardDeliveryReceipt.Status.DELIVERED
+                        || receipt.status()
+                        == RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN
+                        || retryPolicy.terminal(receipt);
                 return new RewardClaimResult(
                         request.key(), map(receipt.status()), receipt.reason(), terminal,
                         false, clock.instant());

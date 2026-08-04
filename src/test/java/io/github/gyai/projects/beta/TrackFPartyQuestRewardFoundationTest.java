@@ -378,13 +378,19 @@ public final class TrackFPartyQuestRewardFoundationTest {
         assert retryableCalls.get() == 2
                 : "Full-inventory retry semantics must come from policy, not Track F defaults";
 
+        AtomicInteger throwingDeliveryCalls = new AtomicInteger();
         RewardClaimService deliveryFailure = new RewardClaimService(
                 new DurableFakeClaimStore(4), ignored -> {
+                    throwingDeliveryCalls.incrementAndGet();
                     throw new IllegalStateException("delivery-port-failure");
                 }, receipt -> true, clock);
-        RewardClaimResult deliveryFailureResult = deliveryFailure.claim(claim(950));
-        assert deliveryFailureResult.status() == RewardClaimResult.Status.PERSIST_FAILURE;
-        assert !deliveryFailureResult.terminal();
+        RewardClaimRequest throwingRequest = claim(950);
+        RewardClaimResult deliveryFailureResult = deliveryFailure.claim(throwingRequest);
+        assert deliveryFailureResult.status() == RewardClaimResult.Status.COMMIT_UNCERTAIN;
+        assert deliveryFailureResult.terminal();
+        assert deliveryFailure.claim(throwingRequest).replayed();
+        assert throwingDeliveryCalls.get() == 1
+                : "Unknown delivery boundary must never be retried as safe";
 
         RewardClaimStore failingLookup = new RewardClaimStore() {
             @Override
@@ -406,6 +412,11 @@ public final class TrackFPartyQuestRewardFoundationTest {
                 }, receipt -> true, clock).claim(claim(951));
         assert storeFailure.status() == RewardClaimResult.Status.CLAIM_STORE_FAILURE;
         assert !storeFailure.terminal();
+
+        assertMandatoryTerminalIgnoresHostileRetryPolicy(
+                RewardDeliveryReceipt.Status.DELIVERED, 952, clock);
+        assertMandatoryTerminalIgnoresHostileRetryPolicy(
+                RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN, 953, clock);
     }
 
     private static void rewardDeliveryUsesStableTrackDTransactions() {
@@ -504,6 +515,24 @@ public final class TrackFPartyQuestRewardFoundationTest {
         assert service.claim(request).status() == expected;
         assert service.claim(request).replayed();
         assert calls.get() == 1;
+    }
+
+    private static void assertMandatoryTerminalIgnoresHostileRetryPolicy(
+            RewardDeliveryReceipt.Status deliveryStatus,
+            int seed,
+            Clock clock
+    ) {
+        AtomicInteger calls = new AtomicInteger();
+        RewardClaimService service = new RewardClaimService(
+                new DurableFakeClaimStore(4), ignored -> {
+                    calls.incrementAndGet();
+                    return new RewardDeliveryReceipt(deliveryStatus, "fixture", true);
+                }, receipt -> false, clock);
+        RewardClaimRequest request = claim(seed);
+        assert service.claim(request).terminal();
+        assert service.claim(request).replayed();
+        assert calls.get() == 1
+                : "Caller policy cannot make delivered/uncertain claims retryable";
     }
 
     private static PartyPolicy policy(int size, int parties, int invites, int rate) {
