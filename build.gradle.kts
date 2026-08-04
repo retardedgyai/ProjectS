@@ -364,6 +364,15 @@ val wave2OwnerDecisionContractTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val trackFPartyQuestRewardFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.TrackFPartyQuestRewardFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -407,4 +416,5 @@ tasks.named("check") {
     dependsOn(playerPersistenceCoordinatorTest)
     dependsOn(wave1IntegratedFoundationTest)
     dependsOn(wave2OwnerDecisionContractTest)
+    dependsOn(trackFPartyQuestRewardFoundationTest)
 }
