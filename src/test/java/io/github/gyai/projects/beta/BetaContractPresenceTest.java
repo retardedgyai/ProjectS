@@ -15,6 +15,7 @@ public final class BetaContractPresenceTest {
             "docs/beta/dependency-graph.md",
             "docs/beta/canonical-ids.md",
             "docs/beta/acceptance-matrix.md",
+            "docs/beta/wave-1-owner-decisions.md",
             "docs/beta/contracts/player-data-contract.md",
             "docs/beta/contracts/item-metadata-contract.md",
             "docs/beta/contracts/mod-contract.md",

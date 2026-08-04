@@ -2,7 +2,7 @@
 
 ## Definition
 
-A MOD is data, not a dedicated Java class. The complete catalog, weights, and balance values are `REQUIRES_BALANCE_DATA`. The `mod-definition` schema version is `REQUIRES_OWNER_DECISION`.
+A MOD is data, not a dedicated Java class. Wave 1 defines `mod-definition` schema version 1. The complete catalog, weights, and balance values are `REQUIRES_BALANCE_DATA`.
 
 | Field | Contract |
 | --- | --- |

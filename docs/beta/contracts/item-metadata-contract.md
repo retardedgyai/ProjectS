@@ -4,7 +4,7 @@
 
 Existing items are identified by the unchanged PDC `projects:item_id`. Existing enhancement PDC keys remain authoritative for legacy fields until a tested writer migration explicitly commits a new representation. Merely reading an item must never rewrite it.
 
-The `equipment-item` schema number is `REQUIRES_OWNER_DECISION` because current items have no overall schema field. Track B first implements a read-only migration view.
+Wave 1 defines the first new `equipment-item` schema as version 1. Current items still have no overall schema field and are not v1 by implication. Track B implements only a read-only legacy migration view; a migration writer is forbidden.
 
 ## Equipment metadata
 
@@ -17,7 +17,7 @@ The `equipment-item` schema number is `REQUIRES_OWNER_DECISION` because current 
 | Tier | `t1`, `t2`, or `t3` |
 | ILv | 1-45 and inside the Tier band; equip requirement equals ILv |
 | rarity | `common`, `uncommon`, `rare`, `epic` |
-| quality | Validated value/grade; scale and probability are `REQUIRES_OWNER_DECISION` |
+| quality | Explicit `UNSPECIFIED` or a future validated value/grade; no numeric default, scale, or probability is defined |
 | base roll | Immutable rolled base-stat entries with canonical stat ID and finite value |
 | MOD slots | Exactly the capacity implied by rarity; occupied plus empty slots |
 | MOD entries | Slot index, MOD ID, Rank, rolled finite value, definition revision/source |
@@ -44,5 +44,5 @@ The UUID supports duplicate detection but is not proof of ownership. Server-side
 
 ## Legacy migration view
 
-The view reads existing item ID, weapon definition, enhancement level/broken flag, and adjustment PDC without modifying the stack. Defaults for legacy Tier, ILv, rarity, quality, binding, and MOD capacity are `REQUIRES_OWNER_DECISION`; until decided the item remains legacy-compatible and cannot be silently promoted to v2. A committed migration writes new data atomically, retains required legacy keys, and is covered by byte/PDC fixtures and rollback.
+The view reads existing item ID, weapon definition, enhancement level/broken flag, and adjustment PDC without modifying the stack. Defaults for legacy Tier, ILv, rarity, quality, binding, and MOD capacity remain undecided; until decided the item remains legacy-compatible and cannot be silently promoted to v1. Wave 1 must not implement the migration writer. Reading, lore rendering, or inventory scanning cannot create an instance UUID.
 

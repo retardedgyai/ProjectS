@@ -3,7 +3,7 @@
 - **Branch:** `codex/beta-track-d-gathering-refining-crafting`
 - **Worktree:** `beta-track-d-gathering-refining-crafting`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** exact `WAVE_1_BASE_SHA` after the Wave 1 owner-decision PR merges.
 - **PR base:** `integration/beta-full-build`
 
 ## Scope

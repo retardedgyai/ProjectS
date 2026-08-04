@@ -2,7 +2,9 @@
 
 ## Boundary
 
-Player persistence is a versioned, Bukkit-free aggregate keyed by player UUID. Runtime services consume immutable snapshots and commands; they do not retain or serialize Bukkit `Player`/entity/world objects. No player schema is currently persisted, so the first schema number is `REQUIRES_OWNER_DECISION`.
+Player persistence is a versioned, Bukkit-free aggregate keyed by player UUID. Runtime services consume immutable snapshots and commands; they do not retain or serialize Bukkit `Player`/entity/world objects. Wave 1 defines `player-data` schema version 1.
+
+V1 stores one UTF-8 YAML file per UUID at `plugins/ProjectS/data/players/<uuid>.yml`. Experience, currency values, profession mastery progress, and revision use non-negative `long` values. XP curves, currency catalogs, and mastery curves remain outside the schema implementation.
 
 ## Persistent candidates
 
@@ -46,7 +48,7 @@ On reconnect these values start from their normal runtime defaults. A track may 
 1. Capture an immutable domain snapshot on the main-thread boundary where Bukkit state is involved.
 2. Validate all IDs, quantities, finite values, invariants, and revision.
 3. Serialize and write a temporary file/transaction row off the main thread.
-4. Flush and atomically replace/commit.
+4. Flush, preserve the previous backup, and atomically replace/commit.
 5. Publish the new saved revision only after commit succeeds.
 
 Only one write per player/revision may commit. Coalesce newer dirty snapshots without allowing an older completion to overwrite a newer revision.
@@ -59,4 +61,6 @@ Only one write per player/revision may commit. Coalesce newer dirty snapshots wi
 ## Failure and rollback
 
 Repository failure must not silently reset a player to level 1 or overwrite source data. Persistence-backed gameplay remains disabled or read-only, the error is rate-limited/logged, and operators restore the backup or repair the quarantined record. Duplicate save requests are idempotent by player ID plus revision/request ID.
+
+Unknown or corrupt YAML is moved/copied to a bounded quarantine path without replacing the source with defaults. A completion with an older revision than the current committed or queued revision is stale and cannot commit.
 

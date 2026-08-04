@@ -3,7 +3,7 @@
 - **Branch:** `codex/beta-track-b-equipment-item-mods`
 - **Worktree:** `beta-track-b-equipment-item-mods`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** exact `WAVE_1_BASE_SHA` after the Wave 1 owner-decision PR merges.
 - **PR base:** `integration/beta-full-build`
 
 ## Scope
@@ -36,7 +36,7 @@ PDC byte/value fixtures for every existing item/enhancement key, no-write-on-rea
 
 ## Merge prerequisites and rollback
 
-Phase 0 merged; schema number and legacy defaults approved before any writer; existing PDC fixtures unchanged. Rollback disables both flags and selects the legacy reader; restore item backup for committed migration failures.
+Phase 0 and Wave 1 owner decisions merged; v1 pure models are allowed, but legacy defaults/writer remain forbidden; existing PDC fixtures unchanged. Rollback disables both flags and selects the legacy reader; restore item backup for committed migration failures.
 
 ## Completion report
 
