@@ -14,7 +14,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public final class HeadDefinitionRepository {
-    private static final int MAX_DEFINITIONS = 1_024;
+    static final int MAX_DEFINITIONS = 1_024;
+    static final long MAX_DEFINITION_FILE_BYTES = 1_048_576L;
     private final Path directory;
     private final HeadDefinitionValidator validator;
     private final Consumer<String> warningSink;
@@ -35,9 +36,9 @@ public final class HeadDefinitionRepository {
         int rejected = 0;
         try {
             Files.createDirectories(directory);
-            try (var paths = Files.list(directory)) {
-                for (Path path : paths.filter(value -> value.getFileName().toString()
-                        .endsWith(".yml")).sorted().toList()) {
+            List<Path> paths = DefinitionReloadGuard.yamlFiles(
+                    directory, MAX_DEFINITIONS, MAX_DEFINITION_FILE_BYTES);
+            for (Path path : paths) {
                     try {
                         HeadDefinition definition = read(path);
                         String fileId = path.getFileName().toString();
@@ -55,7 +56,6 @@ public final class HeadDefinitionRepository {
                         warningSink.accept(path.getFileName() + "を拒否しました: "
                                 + exception.getMessage());
                     }
-                }
             }
             if (rejected > 0) {
                 return new MobDefinitionRepository.LoadResult(
@@ -66,6 +66,8 @@ public final class HeadDefinitionRepository {
             return new MobDefinitionRepository.LoadResult(
                     true, loaded.size(), rejected, "Head定義を再読み込みしました");
         } catch (IOException exception) {
+            warningSink.accept("Head定義の読み込みを拒否しました: "
+                    + exception.getMessage());
             return new MobDefinitionRepository.LoadResult(
                     false, definitions.size(), rejected,
                     "Head定義の読み込みに失敗しました: " + exception.getMessage());
@@ -76,6 +78,9 @@ public final class HeadDefinitionRepository {
         ValidationResult validation = validator.validate(draft);
         if (!validation.valid()) return SaveResult.failure(validation.message());
         HeadDefinition current = definitions.get(draft.id());
+        if (current == null && definitions.size() >= MAX_DEFINITIONS) {
+            return SaveResult.failure("Head定義は最大1024件です");
+        }
         long currentRevision = current == null ? 0 : current.revision();
         if (currentRevision != expectedRevision) {
             return SaveResult.conflict("Head定義のrevisionが競合しました");

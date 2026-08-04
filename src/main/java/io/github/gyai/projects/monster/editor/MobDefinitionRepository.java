@@ -16,7 +16,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public final class MobDefinitionRepository {
-    private static final int MAX_DEFINITIONS = 1_024;
+    static final int MAX_DEFINITIONS = 1_024;
+    static final long MAX_DEFINITION_FILE_BYTES = 1_048_576L;
     private final Path directory;
     private final MobDefinitionValidator validator;
     private final Consumer<String> warningSink;
@@ -37,9 +38,9 @@ public final class MobDefinitionRepository {
         int rejected = 0;
         try {
             Files.createDirectories(directory);
-            try (var paths = Files.list(directory)) {
-                for (Path path : paths.filter(value -> value.getFileName().toString()
-                        .endsWith(".yml")).sorted().toList()) {
+            List<Path> paths = DefinitionReloadGuard.yamlFiles(
+                    directory, MAX_DEFINITIONS, MAX_DEFINITION_FILE_BYTES);
+            for (Path path : paths) {
                     try {
                         MobDefinition definition = read(path);
                         String fileId = path.getFileName().toString();
@@ -59,7 +60,6 @@ public final class MobDefinitionRepository {
                         warningSink.accept(path.getFileName() + "を拒否しました: "
                                 + exception.getMessage());
                     }
-                }
             }
             if (rejected > 0) {
                 return new LoadResult(false, definitions.size(), rejected,
@@ -68,6 +68,8 @@ public final class MobDefinitionRepository {
             definitions = Map.copyOf(loaded);
             return new LoadResult(true, loaded.size(), rejected, "再読み込みしました");
         } catch (IOException exception) {
+            warningSink.accept("Mob定義の読み込みを拒否しました: "
+                    + exception.getMessage());
             return new LoadResult(false, definitions.size(), rejected,
                     "Mob定義の読み込みに失敗しました: " + exception.getMessage());
         }

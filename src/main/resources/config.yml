@@ -299,6 +299,8 @@ telegraphs:
   display-range: 64.0
   fallback-server-particles: true
   maximum-active-per-player: 32
+  maximum-active-global: 512
+  maximum-active-per-source: 32
   ground-search-up: 3
   ground-search-down: 3
   warning-phase-threshold: 0.30

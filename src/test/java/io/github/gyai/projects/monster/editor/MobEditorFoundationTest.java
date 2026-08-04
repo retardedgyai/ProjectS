@@ -113,6 +113,18 @@ public final class MobEditorFoundationTest {
         assert repository.save(valid, 0).revisionConflict();
         assert repository.reload().success();
         assert repository.get(valid.id()).equals(firstSave.definition());
+        DefinitionReloadGuard.validateCount(
+                MobDefinitionRepository.MAX_DEFINITIONS,
+                MobDefinitionRepository.MAX_DEFINITIONS);
+        assertThrowsIo(() -> DefinitionReloadGuard.validateCount(
+                MobDefinitionRepository.MAX_DEFINITIONS + 1,
+                MobDefinitionRepository.MAX_DEFINITIONS));
+        DefinitionReloadGuard.validateFileSize(
+                MobDefinitionRepository.MAX_DEFINITION_FILE_BYTES,
+                MobDefinitionRepository.MAX_DEFINITION_FILE_BYTES);
+        assertThrowsIo(() -> DefinitionReloadGuard.validateFileSize(
+                MobDefinitionRepository.MAX_DEFINITION_FILE_BYTES + 1,
+                MobDefinitionRepository.MAX_DEFINITION_FILE_BYTES));
         Files.copy(directory.resolve(valid.id() + ".yml"),
                 directory.resolve("duplicate.yml"));
         assert repository.reload().rejected() == 1;
@@ -129,6 +141,7 @@ public final class MobEditorFoundationTest {
                 valid.appearance(), valid.entityType());
         assert !repository.save(blocked, 0).success();
         assert Files.readString(rejectedFile).equals(rejectedContents);
+        assert repository.get(valid.id()).equals(firstSave.definition());
 
         String textureJson = "{\"textures\":{\"SKIN\":{\"url\":"
                 + "\"https://textures.minecraft.net/texture/abc\"}}}";
@@ -162,6 +175,18 @@ public final class MobEditorFoundationTest {
         assert headRepository.reload().success();
         var firstHeadSave = headRepository.create(head);
         assert firstHeadSave.success() && firstHeadSave.definition().revision() == 1;
+        DefinitionReloadGuard.validateCount(
+                HeadDefinitionRepository.MAX_DEFINITIONS,
+                HeadDefinitionRepository.MAX_DEFINITIONS);
+        assertThrowsIo(() -> DefinitionReloadGuard.validateCount(
+                HeadDefinitionRepository.MAX_DEFINITIONS + 1,
+                HeadDefinitionRepository.MAX_DEFINITIONS));
+        DefinitionReloadGuard.validateFileSize(
+                HeadDefinitionRepository.MAX_DEFINITION_FILE_BYTES,
+                HeadDefinitionRepository.MAX_DEFINITION_FILE_BYTES);
+        assertThrowsIo(() -> DefinitionReloadGuard.validateFileSize(
+                HeadDefinitionRepository.MAX_DEFINITION_FILE_BYTES + 1,
+                HeadDefinitionRepository.MAX_DEFINITION_FILE_BYTES));
         assert !headRepository.create(head.withRevision(1)).success();
         assert headRepository.save(firstHeadSave.definition(), 0).revisionConflict();
         Path rejectedHeadFile = headDirectory.resolve("blocked_head.yml");
@@ -173,6 +198,12 @@ public final class MobEditorFoundationTest {
                 "", texture, "", List.of(), false, "");
         assert !headRepository.create(blockedHead).success();
         assert Files.readString(rejectedHeadFile).equals(rejectedHeadContents);
+        assert headRepository.get(head.id()).equals(firstHeadSave.definition());
+        Files.delete(rejectedHeadFile);
+        Path rejectedHeadDirectory = headDirectory.resolve("directory.yml");
+        Files.createDirectory(rejectedHeadDirectory);
+        assert !headRepository.reload().success();
+        assert headRepository.get(head.id()).equals(firstHeadSave.definition());
 
         ByteArrayOutputStream packetBytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(packetBytes)) {

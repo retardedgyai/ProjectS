@@ -5,6 +5,7 @@ import io.github.gyai.projects.combat.telegraph.TelegraphOperation;
 import io.github.gyai.projects.combat.telegraph.TelegraphRequest;
 import io.github.gyai.projects.combat.telegraph.TelegraphTimeline;
 import io.github.gyai.projects.combat.telegraph.TelegraphViewerPolicy;
+import io.github.gyai.projects.combat.telegraph.TelegraphCapacityPolicy;
 import io.github.gyai.projects.network.TelegraphPacket;
 import org.bukkit.Color;
 import org.bukkit.Location;
@@ -55,6 +56,7 @@ public final class TelegraphManager
 
     private final JavaPlugin plugin;
     private final Settings settings;
+    private final TelegraphCapacityPolicy capacityPolicy;
     private final Map<UUID, TelegraphInstance> active =
             new LinkedHashMap<>();
     private final Map<UUID, ViewerState> viewerStates =
@@ -68,6 +70,9 @@ public final class TelegraphManager
         this.plugin = Objects.requireNonNull(
                 plugin, "plugin");
         settings = Settings.load(plugin);
+        capacityPolicy = new TelegraphCapacityPolicy(
+                settings.maximumActiveGlobal(),
+                settings.maximumActivePerSource());
     }
 
     public void start() {
@@ -120,6 +125,7 @@ public final class TelegraphManager
                         source.getUniqueId(),
                         source.getEntityId(),
                         request);
+        enforceCapacity(source.getUniqueId());
         active.put(id, instance);
         if (settings.enabled()) {
             broadcast(
@@ -129,6 +135,19 @@ public final class TelegraphManager
                     false);
         }
         return id;
+    }
+
+    private void enforceCapacity(UUID sourceId) {
+        List<TelegraphCapacityPolicy.ActiveEntry> entries = active.values().stream()
+                .map(instance -> new TelegraphCapacityPolicy.ActiveEntry(
+                        instance.id(), instance.sourceId()))
+                .toList();
+        for (UUID id : capacityPolicy.evictionsBeforeInsert(entries, sourceId)) {
+            TelegraphInstance instance = active.get(id);
+            if (instance == null) continue;
+            cancel(id, TelegraphInstance.CancellationReason.CAPACITY_LIMIT);
+            remove(instance, plugin.getServer().getCurrentTick());
+        }
     }
 
     public Optional<TelegraphInstance> get(UUID id) {
@@ -728,6 +747,8 @@ public final class TelegraphManager
             double displayRange,
             boolean fallbackServerParticles,
             int maximumActivePerPlayer,
+            int maximumActiveGlobal,
+            int maximumActivePerSource,
             int groundSearchUp,
             int groundSearchDown,
             double warningPhaseThreshold,
@@ -755,6 +776,16 @@ public final class TelegraphManager
                                             + "maximum-active-per-player",
                                     32),
                             1, 64),
+                    Math.clamp(
+                            plugin.getConfig().getInt(
+                                    root + "maximum-active-global",
+                                    512),
+                            1, 4_096),
+                    Math.clamp(
+                            plugin.getConfig().getInt(
+                                    root + "maximum-active-per-source",
+                                    32),
+                            1, 256),
                     Math.clamp(
                             plugin.getConfig().getInt(
                                     root + "ground-search-up",

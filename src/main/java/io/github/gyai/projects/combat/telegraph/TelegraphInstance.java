@@ -178,6 +178,7 @@ public final class TelegraphInstance {
         TARGET_INVALID,
         WORLD_CHANGED,
         EXPIRED,
+        CAPACITY_LIMIT,
         PLUGIN_STOP
     }
 }

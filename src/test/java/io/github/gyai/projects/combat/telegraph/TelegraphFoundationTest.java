@@ -4,6 +4,7 @@ import io.github.gyai.projects.network.TelegraphPacket;
 import io.github.gyai.projects.monster.boss.ChargeRuntimeGuard;
 
 import java.util.UUID;
+import java.util.List;
 
 public final class TelegraphFoundationTest {
     private TelegraphFoundationTest() {
@@ -116,6 +117,8 @@ public final class TelegraphFoundationTest {
                 15);
         assert !cancelled.detonate();
 
+        capacityPolicyIsDeterministic();
+
         TelegraphPacket packet = TelegraphPacket.from(
                 TelegraphOperation.CREATE,
                 1,
@@ -198,6 +201,55 @@ public final class TelegraphFoundationTest {
                 TelegraphInstance.TrackingMode.FIXED,
                 null,
                 3));
+    }
+
+    private static void capacityPolicyIsDeterministic() {
+        UUID sourceA = UUID.randomUUID();
+        UUID sourceB = UUID.randomUUID();
+        UUID oldestA = UUID.randomUUID();
+        UUID newestA = UUID.randomUUID();
+        UUID oldestB = UUID.randomUUID();
+        TelegraphCapacityPolicy policy = new TelegraphCapacityPolicy(3, 2);
+
+        assert policy.evictionsBeforeInsert(List.of(
+                entry(oldestA, sourceA)), sourceA).isEmpty();
+        assert policy.evictionsBeforeInsert(List.of(
+                entry(oldestA, sourceA), entry(newestA, sourceA)), sourceA)
+                .equals(List.of(oldestA));
+        assert policy.evictionsBeforeInsert(List.of(
+                entry(oldestA, sourceA), entry(oldestB, sourceB)), sourceB)
+                .isEmpty();
+        assert policy.evictionsBeforeInsert(List.of(
+                entry(oldestA, sourceA),
+                entry(oldestB, sourceB),
+                entry(newestA, sourceA)), sourceB)
+                .equals(List.of(oldestA));
+
+        TelegraphInstance evicted = new TelegraphInstance(
+                UUID.randomUUID(), sourceA, 20,
+                request(TelegraphInstance.TrackingMode.FIXED, null));
+        assert evicted.cancel(
+                TelegraphInstance.CancellationReason.CAPACITY_LIMIT, 20);
+        TelegraphPacket cancelPacket = TelegraphPacket.from(
+                TelegraphOperation.CANCEL, 2, 20, evicted);
+        assert cancelPacket.snapshot().cancelled();
+        assert cancelPacket.snapshot().cancellationReason()
+                == TelegraphInstance.CancellationReason.CAPACITY_LIMIT;
+
+        TelegraphCapacityPolicy largePolicy =
+                new TelegraphCapacityPolicy(512, 32);
+        List<TelegraphCapacityPolicy.ActiveEntry> bulk =
+                java.util.stream.IntStream.range(0, 512)
+                        .mapToObj(ignored -> entry(UUID.randomUUID(), UUID.randomUUID()))
+                        .toList();
+        assert largePolicy.evictionsBeforeInsert(bulk, sourceA).size() == 1;
+    }
+
+    private static TelegraphCapacityPolicy.ActiveEntry entry(
+            UUID id,
+            UUID sourceId
+    ) {
+        return new TelegraphCapacityPolicy.ActiveEntry(id, sourceId);
     }
 
     private static TelegraphRequest request(
