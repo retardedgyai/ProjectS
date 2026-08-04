@@ -24,7 +24,7 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
     private final LinkedHashMap<UUID, MutableSession> sessions =
             new LinkedHashMap<>(16, 0.75f, true);
     private long nextRevision = 1;
-    private boolean featureEnabled;
+    private boolean globallyEnabled;
     private boolean closed;
 
     public BetaCapabilitySessionService(BetaCapabilityPolicy policy, Clock clock) {
@@ -39,11 +39,11 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
     ) {
         requirePlayer(playerId);
         if (closed) return Optional.empty();
-        featureEnabled = clientBetaUiEnabled;
-        if (!featureEnabled) {
+        if (!clientBetaUiEnabled) {
             sessions.remove(playerId);
             return Optional.empty();
         }
+        globallyEnabled = true;
         expire();
         var capabilities = policy.advertisedCapabilities().stream()
                 .filter(value -> availability != null
@@ -69,7 +69,7 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
     ) {
         requirePlayer(playerId);
         if (closed) return AcknowledgeStatus.CLOSED;
-        if (!featureEnabled) return AcknowledgeStatus.FEATURE_DISABLED;
+        if (!globallyEnabled) return AcknowledgeStatus.FEATURE_DISABLED;
         expire();
         MutableSession session = sessions.get(playerId);
         if (session == null) return AcknowledgeStatus.UNKNOWN_SESSION;
@@ -106,7 +106,7 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
 
     public synchronized BetaCapabilitySnapshot snapshot(UUID playerId) {
         requirePlayer(playerId);
-        if (closed || !featureEnabled) return BetaCapabilitySnapshot.oldClient(playerId);
+        if (closed || !globallyEnabled) return BetaCapabilitySnapshot.oldClient(playerId);
         expire();
         MutableSession session = sessions.get(playerId);
         if (session == null) return BetaCapabilitySnapshot.oldClient(playerId);
@@ -125,7 +125,7 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
 
     public synchronized void reload(BetaCapabilityPolicy replacement, boolean enabled) {
         policy = java.util.Objects.requireNonNull(replacement);
-        featureEnabled = enabled;
+        globallyEnabled = enabled;
         sessions.clear();
     }
 
@@ -142,7 +142,7 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
     public synchronized void close() {
         if (closed) return;
         closed = true;
-        featureEnabled = false;
+        globallyEnabled = false;
         sessions.clear();
     }
 

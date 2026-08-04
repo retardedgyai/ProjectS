@@ -22,6 +22,9 @@ public final class BetaProtocolFoundationTest {
         malformedPacketsFailClosed();
         snapshotsAreBoundedAndFinite();
         capabilityLifecycleIsEphemeralAndExact();
+        capabilitySessionsAreIsolatedAcrossPlayers();
+        capabilityPolicyRejectsDuplicates();
+        capabilitySnapshotsFailFast();
         commandBoundaryRevalidatesAndDeduplicates();
         compatibilityMatrixHasSafeFallbacks();
         protocolApiIsPureJava();
@@ -178,6 +181,70 @@ public final class BetaProtocolFoundationTest {
         service.close();
         service.close();
         assert service.advertise(player, true, (ignored, id) -> true).isEmpty();
+    }
+
+    private static void capabilitySessionsAreIsolatedAcrossPlayers() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-08-05T00:00:00Z"));
+        BetaCapabilityPolicy policy = new BetaCapabilityPolicy(
+                4, Duration.ofMinutes(1),
+                List.of(BetaCapabilityDescriptor.v1(BetaCapabilityId.HUD)));
+        BetaCapabilitySessionService service = new BetaCapabilitySessionService(policy, clock);
+        UUID playerA = UUID.randomUUID();
+        UUID playerB = UUID.randomUUID();
+        BetaCapabilityAdvertisement advertisementB = service.advertise(
+                playerB, true, (ignored, id) -> true).orElseThrow();
+        BetaCapabilityAcknowledgement acknowledgementB = new BetaCapabilityAcknowledgement(
+                1, advertisementB.sessionId(), advertisementB.advertisementRevision(),
+                advertisementB.capabilities());
+        assert service.acknowledge(playerB, acknowledgementB, (ignored, id) -> true)
+                == BetaCapabilitySessionService.AcknowledgeStatus.ACCEPTED;
+        assert service.snapshot(playerB).supports(BetaCapabilityId.HUD, 1);
+
+        assert service.advertise(playerA, false, (ignored, id) -> true).isEmpty();
+        assert service.snapshot(playerA).oldClient();
+        assert service.snapshot(playerB).supports(BetaCapabilityId.HUD, 1);
+        assert service.acknowledge(playerB, acknowledgementB, (ignored, id) -> true)
+                == BetaCapabilitySessionService.AcknowledgeStatus.ACCEPTED;
+
+        service.reload(policy, false);
+        assert service.activeSessionCount() == 0;
+        assert service.snapshot(playerA).oldClient();
+        assert service.snapshot(playerB).oldClient();
+        assert service.acknowledge(playerB, acknowledgementB, (ignored, id) -> true)
+                == BetaCapabilitySessionService.AcknowledgeStatus.FEATURE_DISABLED;
+        service.close();
+    }
+
+    private static void capabilityPolicyRejectsDuplicates() {
+        assertThrows(() -> new BetaCapabilityPolicy(
+                4, Duration.ofMinutes(1),
+                List.of(BetaCapabilityDescriptor.v1(BetaCapabilityId.HUD),
+                        new BetaCapabilityDescriptor(BetaCapabilityId.HUD, 2))));
+    }
+
+    private static void capabilitySnapshotsFailFast() {
+        UUID player = UUID.randomUUID();
+        Instant expiry = Instant.parse("2026-08-05T00:01:00Z");
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                null, UUID.randomUUID(), 1, Map.of(), expiry, false));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, UUID.randomUUID(), -1, Map.of(), expiry, false));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, null, 1, Map.of(), expiry, false));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, UUID.randomUUID(), 1, Map.of(), null, false));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, UUID.randomUUID(), 1,
+                Map.of(BetaCapabilityId.HUD, 0), expiry, false));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, null, 0, Map.of(BetaCapabilityId.HUD, 1), null, true));
+        assertThrows(() -> new BetaCapabilitySnapshot(
+                player, UUID.randomUUID(), 0, Map.of(), null, true));
+        assert BetaCapabilitySnapshot.oldClient(player).oldClient();
+        assert new BetaCapabilitySnapshot(
+                player, UUID.randomUUID(), 1,
+                Map.of(BetaCapabilityId.HUD, 1), expiry, false)
+                .supports(BetaCapabilityId.HUD, 1);
     }
 
     private static void commandBoundaryRevalidatesAndDeduplicates() {

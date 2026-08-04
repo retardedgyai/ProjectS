@@ -27,5 +27,11 @@ public record BetaCapabilityPolicy(
         if (advertisedCapabilities.size() > BetaCapabilityId.values().length) {
             throw new IllegalArgumentException("Too many capabilities");
         }
+        if (advertisedCapabilities.stream()
+                .map(BetaCapabilityDescriptor::id)
+                .distinct()
+                .count() != advertisedCapabilities.size()) {
+            throw new IllegalArgumentException("Duplicate capability IDs");
+        }
     }
 }

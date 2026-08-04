@@ -36,8 +36,11 @@ revision. Acknowledgement requires the exact aggregate version, session,
 revision, canonical capability, payload version, producer availability,
 permission, and visibility decision. Sessions are bounded and expire. Reconnect,
 quit adapters, reload, disable, and idempotent close have explicit clear methods.
-With the feature flag false the service advertises nothing and treats the
-connection as an old client.
+An advertisement call with the feature unavailable removes only that player's
+session and treats that connection as an old client; it cannot disable another
+player's acknowledged session. A successful enabled advertisement establishes
+the globally enabled runtime state, while `reload(policy, false)` is the explicit
+global disable boundary and clears all sessions.
 
 ## Command authority
 
