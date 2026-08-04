@@ -144,7 +144,7 @@ public final class FireElementEngine {
         requireTime(cutoffMillis, "cutoffMillis");
         int before = states.size();
         states.entrySet().removeIf(entry ->
-                entry.getValue().lastUpdatedAtMillis() < cutoffMillis);
+                entry.getValue().lastFireInputAtMillis() < cutoffMillis);
         return before - states.size();
     }
 
@@ -281,6 +281,13 @@ public final class FireElementEngine {
         return value;
     }
 
+    private static double finitePositive(double value, String name) {
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalArgumentException(name + " must be positive and finite");
+        }
+        return value;
+    }
+
     public record Policy(
             int maximumStacks,
             int detonationStackThreshold,
@@ -357,7 +364,7 @@ public final class FireElementEngine {
             profile = Objects.requireNonNull(profile, "profile");
             contributorId = Objects.requireNonNull(contributorId, "contributorId");
             school = Objects.requireNonNull(school, "school");
-            burnValue = finiteNonNegative(burnValue, "burnValue");
+            burnValue = finitePositive(burnValue, "burnValue");
             fireAttributeValue = finiteNonNegative(
                     fireAttributeValue, "fireAttributeValue");
             requireTime(occurredAtMillis, "occurredAtMillis");

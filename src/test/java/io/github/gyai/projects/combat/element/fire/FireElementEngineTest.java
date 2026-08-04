@@ -88,10 +88,6 @@ public final class FireElementEngineTest {
         close(1, event.centerMultiplier());
         close(.6, event.nearbyMultiplier());
         close(25, event.centerDamage());
-
-        var followup = engine.apply(hit("heavy", NORMAL, PLAYER_A,
-                ElementAttackSchool.PHYSICAL, 0, 10, 1));
-        assert followup.detonation().isEmpty();
     }
 
     private static void decayHonorsFiveSecondHoldThenFractionAndStacks() {
@@ -132,6 +128,13 @@ public final class FireElementEngineTest {
         expectUnsupported(() -> contributorRejected.state().contributions().clear());
         assert engine.removeInactiveBefore(3) == 1;
         assert engine.snapshot().isEmpty();
+
+        FireElementEngine evaluated = engine(1, 1);
+        evaluated.apply(hit("old-input", NORMAL, PLAYER_A,
+                ElementAttackSchool.PHYSICAL, 30, 1, 0));
+        evaluated.advanceDecay("old-input", 5_000);
+        assert evaluated.removeInactiveBefore(1) == 1
+                : "decay evaluation must not refresh the last fire input time";
     }
 
     private static void rejectsInvalidNumbers() {
@@ -139,6 +142,8 @@ public final class FireElementEngineTest {
                 ElementTargetCategory.NORMAL, Double.NaN));
         expectIllegal(() -> hit("x", NORMAL, PLAYER_A,
                 ElementAttackSchool.PHYSICAL, -1, 1, 0));
+        expectIllegal(() -> hit("x", NORMAL, PLAYER_A,
+                ElementAttackSchool.PHYSICAL, 0, 1, 0));
         expectIllegal(() -> hit("x", NORMAL, PLAYER_A,
                 ElementAttackSchool.PHYSICAL, 1, Double.POSITIVE_INFINITY, 0));
     }
