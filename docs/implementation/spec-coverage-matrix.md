@@ -16,8 +16,8 @@
 | TRUE damage | 設計に正式採用記述なし | `DamageType.TRUE`、`DamageCalculator` | `BLOCKED_BY_DESIGN` | 2 | 高: 既存Mob/API互換 | 既存TRUE回帰、正式対象外にする場合のadapter |
 | 通常攻撃・skill・DoT・反射区分 | `mod-system.md`、`ice-system.md` | `DamageKind`、`SkillDamageService` | `PARTIAL` | 1-2 | 中: critical/lifesteal policy | 各kindのcritical、lifesteal、凍結増幅対象 |
 | SECONDARY/自動発生区分 | `ice-system.md` | `DamageKind` | `BLOCKED_BY_DESIGN` | 2 | 中 | 追撃・連鎖・爆燃の区分と増幅除外 |
-| 攻撃タグ | `mod-system.md`、`ice-system.md` | 既存の型付き攻撃tagなし | `NOT_IMPLEMENTED` | 1-2 | 低（未接続metadata）/高（接続時） | 複数tag、不変性、SHATTER直接攻撃判定 |
-| 共通damage純粋計算 | `mod-system.md` | `DamageCalculator`、`StatCalculator` | `PARTIAL` | 1 | 中 | 決定性、finite、負数、array defensive copy |
+| 攻撃タグ | `mod-system.md`、`ice-system.md` | `AttackMetadata`、`WarriorAttackMetadata` | `PARTIAL` | 1-2 | 低（限定metadata）/高（接続時） | starter swordとSpinSlashのみ接続。他skillはEMPTY、完全一致と不変性を回帰test |
+| 共通damage純粋計算 | `mod-system.md` | `DamageCalculator`、`DamageCalculationSnapshot`、`DamageShadowComparator` | `PARTIAL` | 1-2 | 中 | starter swordとSpinSlashのlegacy/pure parity、finite、epsilon、array defensive copy |
 | attacker Stat snapshot | `status-effects.md`、`ice-system.md` | `DamageOffenseSnapshot`、`Stats.snapshot` | `PARTIAL` | 2-3 | 高: DoT/共有貢献の時点差 | 発生時Stat固定、遅延damage二重強化防止 |
 | target defense snapshot | `mod-system.md` | `DamageService`内の一時計算のみ | `NOT_IMPLEMENTED` | 2-3 | 高 | Player/Mob別snapshot、物理/魔法防御 |
 | damage breakdown/計算step | `ice-system.md` | `DamageResult`のflat field群 | `PARTIAL` | 2 | 中: 表示・集計互換 | 各計算層、属性別、critical前後、penetration前後 |

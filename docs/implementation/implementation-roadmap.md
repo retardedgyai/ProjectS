@@ -30,6 +30,14 @@
 
 ## Phase 2: 既存damage経路への互換adapter
 
+進捗（2026-08-05）:
+
+- starter sword通常攻撃は限定authoritative切替まで完了。
+- Warrior `spin_slash`だけは`SKILL / MELEE / PHYSICAL` metadataと、legacyを
+  一回だけ適用する非authoritative shadow検証経路まで追加。
+- 他Warrior skillは`AttackMetadata.EMPTY`のまま。SpinSlash authoritative化は
+  実サーバー比較の合格後に別Phaseで判断する。
+
 前提となる設計判断:
 
 - TRUE damageの正式扱い。
@@ -41,8 +49,8 @@
 
 1. Bukkit非依存attacker/target snapshotと型付きbreakdownを追加。
 2. 現在の`DamageRequest`からpure inputへ変換するadapterを`DamageService`内部へ追加。
-3. sword通常攻撃だけgolden test付きで新内部経路へ切替。
-4. Warrior skill、Painterを一系統ずつ移行。
+3. sword通常攻撃だけgolden test付きで新内部経路へ切替（完了）。
+4. Warrior skill、Painterを一系統ずつ移行（SpinSlash shadowまで進行）。
 5. ScoutとBossは別commitで最後に移行。projectile/event semanticsを保持する。
 
 rollback: 各経路のfeature switchまたは旧adapter呼び出しへ戻せる構造にする。
