@@ -39,3 +39,12 @@ Legend: **R** required before enabling; **C** conditionally required when the fe
 
 Track PRs may merge into integration with pure tests and flags false. A feature may be enabled on integration only after every applicable **R** cell passes. A main/public release additionally requires a full vertical-loop run, restart/reconnect round trip, migration backup/restore rehearsal, old-client/old-data compatibility, and zero unresolved BLOCKER/HIGH findings.
 
+## Wave 2 foundation gate
+
+Track E and Track F may open Draft PRs when their pure public boundaries,
+failure injection, idempotency, bounds, and Bukkit-free API tests pass while all
+associated flags remain false. This gate does not satisfy the Paper manual,
+multiplayer, persistence activation, balance approval, or public-enable cells.
+Both Tracks must start from the same `WAVE_2_BASE_SHA` created by merging
+`wave-2-owner-decisions.md`; neither Track is automatically merged.
+

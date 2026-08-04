@@ -3,12 +3,16 @@
 - **Branch:** `codex/beta-track-e-enhancement-tier-repair`
 - **Worktree:** `beta-track-e-enhancement-tier-repair`
 - **Contract lineage SHA:** `8ba653a8dc3f604dc23a142cca5f5a88f51682a9`
-- **Actual branch start SHA:** integration HEAD after Phase 0 (`REQUIRES_INTEGRATION_MERGE`).
+- **Actual branch start SHA:** the Wave 2 owner-decisions merge commit (`WAVE_2_BASE_SHA`).
 - **PR base:** `integration/beta-full-build`
 
 ## Scope
 
 Characterize existing +0..+30 enhancement/PDC behavior, adapt it to the equipment view, implement pure promotion/repair proposals and atomic operations after balance decisions, preserve repaired item identity/quality/MOD/crafter/name/enhancement, and use same-Tier/type unenhanced repair input.
+
+The authoritative foundation semantics are fixed by
+`docs/beta/wave-2-owner-decisions.md`. Production probabilities, fees,
+materials, and carry/reset choices remain unapproved policy inputs.
 
 ## Out of scope
 
@@ -36,7 +40,10 @@ Fixtures for +0..+30, broken/unbroken, attack/speed bonus PDC, lore/attribute be
 
 ## Merge prerequisites and rollback
 
-B and D merged; every probability/cost/break threshold owner-approved and versioned before runtime use. Rollback flags false and legacy enhancement remains; restore pre-migration item backup, never reset enhancement to zero.
+B and D merged; the Wave 2 owner-decisions PR merged; every production
+probability/cost/break threshold owner-approved and versioned before runtime
+use. Rollback flags false and legacy enhancement remains; no migration writer is
+introduced and enhancement is never reset to zero.
 
 ## Completion report
 
