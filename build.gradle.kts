@@ -349,6 +349,14 @@ val playerPersistenceCoordinatorTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val wave1IntegratedFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.beta.Wave1IntegratedFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -390,4 +398,5 @@ tasks.named("check") {
     dependsOn(playerProgressDomainTest)
     dependsOn(playerProgressRepositoryTest)
     dependsOn(playerPersistenceCoordinatorTest)
+    dependsOn(wave1IntegratedFoundationTest)
 }
