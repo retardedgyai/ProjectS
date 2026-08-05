@@ -108,6 +108,17 @@ public final class BetaActivationFoundationTest {
         expectIllegal(() -> new BetaRuntimeDependencyResolver().resolve(
                 List.of(first, duplicate)));
 
+        BetaRuntimeModule missingDescriptor = new FakeModule(
+                BetaRuntimeModuleId.COMBAT_ELEMENTS, Set.of(), Set.of(),
+                BetaMutationPolicy.READ_ONLY, true, Set.of(), List.of()) {
+            @Override
+            public BetaRuntimeModuleDescriptor descriptor() {
+                return null;
+            }
+        };
+        expectIllegal(() -> new BetaRuntimeDependencyResolver().resolve(
+                List.of(missingDescriptor)));
+
         FakeModule a = module(BetaRuntimeModuleId.EQUIPMENT,
                 Set.of(BetaRuntimeModuleId.PLAYER_PERSISTENCE), List.of());
         FakeModule b = module(BetaRuntimeModuleId.PLAYER_PERSISTENCE,
@@ -409,7 +420,7 @@ public final class BetaActivationFoundationTest {
         }
     }
 
-    private static final class FakeModule implements BetaRuntimeModule {
+    private static class FakeModule implements BetaRuntimeModule {
         private final BetaRuntimeModuleDescriptor descriptor;
         private final List<String> events;
         private BetaRuntimeModuleState state = BetaRuntimeModuleState.NOT_INSTALLED;

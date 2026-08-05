@@ -20,7 +20,7 @@ public final class BetaRuntimeDependencyResolver {
                     throw new IllegalArgumentException("Duplicate module ID: " + module.id());
                 }
                 BetaRuntimeModuleDescriptor descriptor = module.descriptor();
-                if (descriptor.id() != module.id()
+                if (descriptor == null || descriptor.id() != module.id()
                         || !descriptor.dependencies().equals(SetSupport.copy(module.dependencies()))) {
                     throw new IllegalArgumentException("Module descriptor does not match contract");
                 }
