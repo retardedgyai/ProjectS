@@ -91,7 +91,9 @@ public final class BetaRuntime implements AutoCloseable {
                 continue;
             }
             BetaRuntimeModuleContext context = new BetaRuntimeModuleContext(
-                    policy, featureFlags, infrastructure, clock, !mutationAllowed);
+                    policy, featureFlags, infrastructure, clock,
+                    policy.mutationPolicy() == BetaMutationPolicy.READ_ONLY
+                            || !mutationAllowed);
             if (!invokePrepare(module, context) || !invokeStart(module)) {
                 failed = true;
                 if (policy.failClosed()) {

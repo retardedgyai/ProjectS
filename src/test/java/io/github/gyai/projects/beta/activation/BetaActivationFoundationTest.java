@@ -279,10 +279,15 @@ public final class BetaActivationFoundationTest {
                 Set.of(), BetaMutationPolicy.STAGING_WRITE, true, Set.of(), List.of());
         FakeModule writer = new FakeModule(BetaRuntimeModuleId.ENHANCEMENT_REPAIR, Set.of(),
                 Set.of(), BetaMutationPolicy.STAGING_WRITE, false, Set.of(), List.of());
-        BetaRuntime runtime = runtime(global(), disabledFlags(), List.of(preview, writer), Set.of());
+        FakeModule readOnlyBase = new FakeModule(BetaRuntimeModuleId.COMBAT_ELEMENTS, Set.of(),
+                Set.of(), BetaMutationPolicy.READ_ONLY, true, Set.of(), List.of());
+        BetaRuntime runtime = runtime(global(), disabledFlags(),
+                List.of(preview, writer, readOnlyBase), Set.of());
         BetaRuntimeHealthSnapshot health = runtime.start();
         assert preview.lastContext.readOnlyMode();
         assert preview.startCalls == 1;
+        assert readOnlyBase.lastContext.readOnlyMode();
+        assert readOnlyBase.startCalls == 1;
         assert writer.startCalls == 0;
         assert health.moduleStates().get(writer.id()) == BetaRuntimeModuleState.BLOCKED;
     }
