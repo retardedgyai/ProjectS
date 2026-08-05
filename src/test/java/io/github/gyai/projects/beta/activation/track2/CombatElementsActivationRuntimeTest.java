@@ -210,7 +210,8 @@ public final class CombatElementsActivationRuntimeTest {
         fixture.runtime.observe(fixture.starter(PLAYER_A, CENTER, "cleanup", 0));
         fixture.runtime.playerLoggedOut(PLAYER_A);
         assert fixture.runtime.snapshots().playerProfile(PLAYER_A) == StagingElementProfile.NONE;
-        fixture.runtime.targetRemoved(CENTER);
+        fixture.boundary.live.remove(CENTER);
+        fixture.boundary.runCleanup();
         assert fixture.runtime.snapshots().targets().isEmpty();
         fixture.runtime.close();
         fixture.runtime.close();

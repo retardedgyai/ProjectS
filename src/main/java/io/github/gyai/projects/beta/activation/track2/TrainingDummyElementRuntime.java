@@ -229,6 +229,9 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     private synchronized void cleanupExpired() {
         if (!running || closed) return;
         try {
+            for (UUID targetId : registry.targets().keySet()) {
+                if (!boundary.isLiveTrainingDummy(targetId)) registry.removeTarget(targetId);
+            }
             registry.cleanup(clock.millis());
         } catch (RuntimeException exception) {
             diagnostic("element cleanup failed");
