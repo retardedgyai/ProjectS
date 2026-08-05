@@ -6,7 +6,6 @@ import io.github.gyai.projects.combat.damage.DamageApplicationResult;
 import io.github.gyai.projects.combat.damage.DamageKind;
 import io.github.gyai.projects.combat.damage.DamageRequest;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
-import io.github.gyai.projects.dummy.TrainingDummyManager;
 import org.bukkit.entity.Player;
 
 import java.time.Clock;
@@ -17,19 +16,23 @@ import java.util.function.Supplier;
 public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObserver {
     private final Supplier<BetaRuntimeModuleState> moduleState;
     private final TrainingDummyElementRuntime runtime;
-    private final TrainingDummyManager dummies;
+    private final TrainingDummyTargetPort targets;
     private final Clock clock;
+    private final CompatibleElementsClientPort compatibleElementsClient;
 
     public Track2ConfirmedHitObserver(
             Supplier<BetaRuntimeModuleState> moduleState,
             TrainingDummyElementRuntime runtime,
-            TrainingDummyManager dummies,
-            Clock clock
+            TrainingDummyTargetPort targets,
+            Clock clock,
+            CompatibleElementsClientPort compatibleElementsClient
     ) {
         this.moduleState = Objects.requireNonNull(moduleState, "moduleState");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
-        this.dummies = Objects.requireNonNull(dummies, "dummies");
+        this.targets = Objects.requireNonNull(targets, "targets");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.compatibleElementsClient = Objects.requireNonNull(
+                compatibleElementsClient, "compatibleElementsClient");
     }
 
     @Override public void confirmed(
@@ -40,7 +43,7 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
         if (moduleState.get() != BetaRuntimeModuleState.RUNNING || request == null
                 || result == null || !result.attempted()
                 || request.target() instanceof Player
-                || !dummies.isTrainingDummy(request.target())
+                || !targets.isTrainingDummy(request.target())
                 || request.offenseSnapshot() != null) return; // secondary damage never recurses
         TrainingDummyElementRuntime.AttackType attackType;
         IceElementEngine.DamageOrigin origin;
@@ -54,17 +57,29 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
             origin = IceElementEngine.DamageOrigin.SKILL_DIRECT;
         } else return;
         try {
+            boolean compatibleClient = resolveCompatible(
+                    compatibleElementsClient, request.attacker().getUniqueId());
             runtime.observe(new TrainingDummyElementRuntime.AttackInput(
                     hitId, request.attacker().getUniqueId(), request.target().getUniqueId(),
                     attackType == TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL
                             ? "starter_sword" : "spin_slash",
                     attackType, origin, request.attackMetadata(),
                     preCritical(result),
-                    result.calculation().critical(), true, false, false,
+                    result.calculation().critical(), true, false, compatibleClient,
                     request.attacker().getWorld().getName(),
                     request.attacker().hasPermission("projects.dev"), clock.millis()));
         } catch (RuntimeException ignored) {
-            // Observation is fail-open and occurs only after the legacy application boundary.
+            // Compatibility/observation is fail-open to legacy combat and fail-closed to beta.
+        }
+    }
+
+    static boolean resolveCompatible(
+            CompatibleElementsClientPort resolver, java.util.UUID playerId
+    ) {
+        try {
+            return resolver.supportsElements(playerId);
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 

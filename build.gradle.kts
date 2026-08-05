@@ -522,6 +522,24 @@ val betaCapabilityHandshakePreflightTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val track2CompatibilityBoundaryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.track2.Track2CompatibilityBoundaryTest")
+    jvmArgs("-ea")
+}
+
+val track2ConfirmedHitPublisherIntegrationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.track2.Track2ConfirmedHitPublisherIntegrationTest")
+    jvmArgs("-ea")
+}
+
 val elementSnapshotProtocolDiagnosticsTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -593,4 +611,6 @@ tasks.named("check") {
     dependsOn(betaActivationWave1IntegratedTest)
     dependsOn(betaActivationWave1ProtocolIntegrationTest)
     dependsOn(betaCapabilityHandshakePreflightTest)
+    dependsOn(track2CompatibilityBoundaryTest)
+    dependsOn(track2ConfirmedHitPublisherIntegrationTest)
 }

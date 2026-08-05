@@ -2,6 +2,7 @@ package io.github.gyai.projects.beta.activation;
 
 import io.github.gyai.projects.beta.activation.track2.ElementRuntimeSnapshotPort;
 import io.github.gyai.projects.beta.activation.track2.CombatElementsRuntimeModuleProvider;
+import io.github.gyai.projects.beta.activation.track2.CompatibleElementsClientPort;
 import io.github.gyai.projects.beta.activation.track2.StagingElementProfile;
 import io.github.gyai.projects.beta.activation.track2.TrainingDummyElementBoundary;
 import io.github.gyai.projects.beta.activation.track4.BetaCapabilityAdvertisementPublisher;
@@ -56,6 +57,7 @@ public final class BetaCapabilityHandshakePreflightTest {
     public static void main(String[] args) {
         defaultSafetyStartsNothing();
         liveHandshakeGatesElementStateUntilAcceptedAck();
+        wrongCapabilityDoesNotSatisfyElements();
         ttlRenewalIsBoundedAndAckGated();
         diagnosticsArePureReads();
         duplicateLifecycleReusesSessionAndCleansUp();
@@ -101,6 +103,11 @@ public final class BetaCapabilityHandshakePreflightTest {
         harness.advertisements.worlds.put(player, "beta_world");
         harness.states.viewers = List.of(player);
         harness.start();
+        CompatibleElementsClientPort acknowledgedElements = playerId ->
+                harness.protocol.capabilitySnapshot(playerId)
+                        .supports(BetaCapabilityId.ELEMENTS, 1);
+        assert !acknowledgedElements.supportsElements(player)
+                : "session absent must not satisfy Elements compatibility";
         assert harness.module.state() == BetaRuntimeModuleState.RUNNING;
         assert harness.channels.active.size() == 4;
         assert harness.lifecycle.registerCount == 1;
@@ -117,6 +124,8 @@ public final class BetaCapabilityHandshakePreflightTest {
         harness.advertisements.listen(player, BetaChannels.CAPABILITIES);
         harness.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
         assert harness.advertisements.packets.size() == 1;
+        assert !acknowledgedElements.supportsElements(player)
+                : "advertisement without ACK must not satisfy Elements compatibility";
         FakeAdvertisementTransport.Packet sent = harness.advertisements.packets.getFirst();
         assert sent.channel().equals(BetaChannels.CAPABILITIES);
         var decodedAdvertisement = new BetaProtocolCodec()
@@ -135,8 +144,8 @@ public final class BetaCapabilityHandshakePreflightTest {
                         decodedAdvertisement.capabilities()));
         assert harness.advertisementPublisher.onAcknowledgement(player, acknowledgement)
                 == BetaCapabilitySessionService.AcknowledgeStatus.ACCEPTED;
-        assert harness.protocol.capabilitySnapshot(player)
-                .supports(BetaCapabilityId.ELEMENTS, 1);
+        assert acknowledgedElements.supportsElements(player)
+                : "accepted Elements v1 ACK must satisfy compatibility";
 
         harness.states.runPublisher();
         assert harness.states.packets.size() == 1 : "accepted ack must admit state";
@@ -153,6 +162,9 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert diagnostics.advertisementSentCount() == 1;
         assert diagnostics.ackAcceptedCount() == 1;
         assert diagnostics.activeCapabilitySessionCount() == 1;
+        harness.lifecycle.fireQuit(player);
+        assert !acknowledgedElements.supportsElements(player)
+                : "disconnect must revoke Elements compatibility";
         harness.stop();
     }
 
@@ -248,6 +260,31 @@ public final class BetaCapabilityHandshakePreflightTest {
         for (int run = 0; run < 100; run++) noAck.advertisements.runMaintenance();
         assert noAck.advertisements.packets.size() == beforeExpiry + 1;
         noAck.stop();
+    }
+
+    private static void wrongCapabilityDoesNotSatisfyElements() {
+        UUID player = UUID.randomUUID();
+        MutableClock clock = new MutableClock(NOW);
+        Harness harness = new Harness(
+                allowlistPolicy(Set.of(player), Set.of("beta_world")),
+                enabledFlags(), clock, BetaCapabilityPolicy.wave3Defaults());
+        harness.advertisements.online = List.of(player);
+        harness.advertisements.worlds.put(player, "beta_world");
+        harness.advertisements.listen(player, BetaChannels.CAPABILITIES);
+        harness.start();
+        harness.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
+        var advertisement = decodeAdvertisement(
+                harness.advertisements.packets.getLast().bytes());
+        byte[] wrongAck = new BetaProtocolCodec().encode(
+                new BetaCapabilityAcknowledgement(
+                        BetaProtocolVersion.CURRENT,
+                        advertisement.sessionId(), advertisement.advertisementRevision(),
+                        List.of(BetaCapabilityDescriptor.v1(BetaCapabilityId.HUD))));
+        assert harness.advertisementPublisher.onAcknowledgement(player, wrongAck)
+                == BetaCapabilitySessionService.AcknowledgeStatus.UNAVAILABLE_CAPABILITY;
+        assert !harness.protocol.capabilitySnapshot(player)
+                .supports(BetaCapabilityId.ELEMENTS, 1);
+        harness.stop();
     }
 
     private static void diagnosticsArePureReads() {

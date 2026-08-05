@@ -44,6 +44,7 @@ public final class CombatElementsActivationRuntimeTest {
 
     public static void main(String[] args) throws Exception {
         noneIsStrictlyObservationalAndParticipationIsDeduplicated();
+        requireCompatibleClientGatesSnapshots();
         metadataIsComposedImmutably();
         fireFixtureDetonatesOnceAndRetainsThreeStacks();
         fireDisplaySnapshotIsRevisionedFiniteAndExpires();
@@ -92,6 +93,27 @@ public final class CombatElementsActivationRuntimeTest {
         } catch (UnsupportedOperationException expected) {
             // expected
         }
+    }
+
+    private static void requireCompatibleClientGatesSnapshots() {
+        Fixture gated = new Fixture(true);
+        gated.runtime.start();
+        gated.runtime.setProfile(PLAYER_A, StagingElementProfile.FIRE);
+        assert !gated.runtime.observe(gated.starter(
+                PLAYER_A, CENTER, "ack-before-hit", 1L, false)).observed();
+        assert gated.runtime.snapshots().targets().isEmpty();
+        var accepted = gated.runtime.observe(gated.starter(
+                PLAYER_A, CENTER, "ack-after-hit", 2L, true));
+        assert accepted.observed();
+        var snapshot = gated.runtime.snapshots().target(CENTER).orElseThrow();
+        assert snapshot.stateRevision() > 0;
+        assert snapshot.fireStacks() == 1;
+
+        Fixture legacy = new Fixture(false);
+        legacy.runtime.start();
+        legacy.runtime.setProfile(PLAYER_A, StagingElementProfile.FIRE);
+        assert legacy.runtime.observe(legacy.starter(
+                PLAYER_A, CENTER, "legacy-no-resolver", 1L, false)).observed();
     }
 
     private static void fireFixtureDetonatesOnceAndRetainsThreeStacks() {
@@ -331,7 +353,9 @@ public final class CombatElementsActivationRuntimeTest {
                     && !path.getFileName().toString().equals(
                     "BukkitTrainingDummyElementBoundary.java")
                     && !path.getFileName().toString().equals(
-                    "Track2ConfirmedHitObserver.java")).toList()) {
+                    "Track2ConfirmedHitObserver.java")
+                    && !path.getFileName().toString().equals(
+                    "TrainingDummyTargetPort.java")).toList()) {
                 source.append(Files.readString(file));
             }
         }
@@ -400,22 +424,34 @@ public final class CombatElementsActivationRuntimeTest {
         final TrainingDummyElementRuntime runtime = new TrainingDummyElementRuntime(boundary, clock);
 
         Fixture() {
+            this(false);
+        }
+
+        Fixture(boolean requireCompatibleClient) {
             boundary.live.add(CENTER);
             assert runtime.configure(new BetaActivationPolicy(
                     BetaActivationAudience.ALLOWLIST,
                     BetaActivationTargetScope.TRAINING_DUMMY_ONLY,
                     BetaMutationPolicy.READ_ONLY,
-                    Set.of(PLAYER_A, PLAYER_B), Set.of("world"), true, false));
+                    Set.of(PLAYER_A, PLAYER_B), Set.of("world"), true,
+                    requireCompatibleClient));
         }
 
         TrainingDummyElementRuntime.AttackInput starter(
                 UUID player, UUID target, String hitId, long now
         ) {
+            return starter(player, target, hitId, now, true);
+        }
+
+        TrainingDummyElementRuntime.AttackInput starter(
+                UUID player, UUID target, String hitId, long now,
+                boolean compatibleClient
+        ) {
             return new TrainingDummyElementRuntime.AttackInput(
                     hitId, player, target, "starter_sword",
                     TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL,
                     IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT,
-                    STARTER, 100.0, true, true, false, true,
+                    STARTER, 100.0, true, true, false, compatibleClient,
                     "world", true, now);
         }
 
