@@ -20,7 +20,9 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
     private final StagingTransactionJournalRepository recoveryJournal;
 
     public FileStagingTransactionAuditSink(StagingEconomyPaths paths) {
-        this(paths, null);
+        this(paths, new StagingTransactionJournalRepository(
+                java.util.Objects.requireNonNull(paths, "staging paths are required")
+                        .transactionsDirectory()));
     }
 
     public FileStagingTransactionAuditSink(
@@ -29,7 +31,8 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
     ) {
         if (paths == null) throw new IllegalArgumentException("staging paths are required");
         directory = paths.transactionsDirectory();
-        this.recoveryJournal = recoveryJournal;
+        this.recoveryJournal = java.util.Objects.requireNonNull(
+                recoveryJournal, "recovery journal is required");
     }
 
     @Override
@@ -46,7 +49,7 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "item-payload-base64: " + Base64.getEncoder()
                 .encodeToString(document.payload()) + "\n";
         write(proposal.requestId(), "resolved", body);
-        if (recoveryJournal != null) recoveryJournal.save(
+        recoveryJournal.save(
                 new StagingTransactionJournalRepository.Entry(
                         proposal.requestId(),
                         StagingTransactionJournalRepository.Stage.PRODUCED,
@@ -57,6 +60,9 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                         proposal.proposedItem().instanceId().map(UUID::toString)
                                 .orElse(proposal.canonicalFamilyId()),
                         StagingTransactionJournalRepository.TerminalOutcome.NONE,
+                        proposal.recipeId(), proposal.expectedRevision(), 1,
+                        java.util.List.of("VALIDATE", "RESERVE", "CONSUME", "PRODUCE"),
+                        true, "",
                         System.currentTimeMillis()));
     }
 
@@ -72,7 +78,11 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "completed-at: " + result.completedAt() + "\n"
                 + "reason: " + safe(result.reason()) + "\n";
         write(result.requestId(), "terminal", body);
-        if (recoveryJournal != null) recoveryJournal.save(terminalEntry(result));
+        recoveryJournal.save(terminalEntry(result));
+    }
+
+    public boolean usesRecoveryJournal(StagingTransactionJournalRepository repository) {
+        return recoveryJournal == repository;
     }
 
     private static StagingTransactionJournalRepository.Entry terminalEntry(
@@ -105,7 +115,11 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                         : StagingTransactionJournalRepository.ReservationState.RELEASED,
                 result.output().map(output -> output.outputId()
                         + ":" + output.quantity()).orElse(""),
-                outcome, result.completedAt().toEpochMilli());
+                outcome, result.recipeId(), result.expectedRevision(),
+                result.expectedOutputUnits(), result.completedStages().stream()
+                        .map(Enum::name).toList(),
+                result.output().map(io.github.gyai.projects.crafting.OutputProposal::equipmentBase)
+                        .orElse(false), result.reason(), result.completedAt().toEpochMilli());
     }
 
     private void write(UUID requestId, String kind, String body) {

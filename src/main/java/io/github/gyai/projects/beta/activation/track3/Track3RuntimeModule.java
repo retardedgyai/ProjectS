@@ -21,6 +21,7 @@ public final class Track3RuntimeModule implements BetaRuntimeModule {
     private final StagingEconomyService.OperationGroup group;
     private final StagingEconomyService service;
     private final BetaRuntimeModuleDescriptor descriptor;
+    private final StagingTransactionRecoveryService recovery;
     private BetaRuntimeModuleState state = BetaRuntimeModuleState.NOT_INSTALLED;
     private long startCount;
     private long stopCount;
@@ -31,9 +32,19 @@ public final class Track3RuntimeModule implements BetaRuntimeModule {
             StagingEconomyService.OperationGroup group,
             StagingEconomyService service
     ) {
+        this(id, group, service, null);
+    }
+
+    Track3RuntimeModule(
+            BetaRuntimeModuleId id,
+            StagingEconomyService.OperationGroup group,
+            StagingEconomyService service,
+            StagingTransactionRecoveryService recovery
+    ) {
         this.id = id;
         this.group = group;
         this.service = service;
+        this.recovery = recovery;
         Set<FeatureKey> features;
         Set<BetaRuntimeModuleId> dependencies;
         if (id == BetaRuntimeModuleId.GATHERING_CRAFTING) {
@@ -79,6 +90,14 @@ public final class Track3RuntimeModule implements BetaRuntimeModule {
                 || !descriptor.activationFeatures().stream()
                 .allMatch(context.featureFlags()::isEnabled)) {
             return fail("Track 3 staging gates or features are closed");
+        }
+        if (recovery != null) {
+            StagingTransactionRecoveryResult recovered;
+            try { recovered = recovery.recoverOnce(); }
+            catch (RuntimeException failure) { return block("durable recovery scan failed"); }
+            if (recovered.recoveryRequired() > 0 || recovered.quarantined() > 0) {
+                return block("unresolved durable staging transactions");
+            }
         }
         state = BetaRuntimeModuleState.READY;
         lastFailure = "";
@@ -131,6 +150,12 @@ public final class Track3RuntimeModule implements BetaRuntimeModule {
         lastFailure = detail == null ? "" : detail;
         if (lastFailure.length() > 256) lastFailure = lastFailure.substring(0, 256);
         return BetaRuntimeModuleResult.failure(lastFailure);
+    }
+
+    private BetaRuntimeModuleResult block(String detail) {
+        state = BetaRuntimeModuleState.BLOCKED;
+        lastFailure = detail;
+        return new BetaRuntimeModuleResult(false, state, detail);
     }
 
     public record Health(

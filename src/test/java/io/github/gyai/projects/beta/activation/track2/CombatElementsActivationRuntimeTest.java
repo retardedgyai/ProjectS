@@ -345,7 +345,10 @@ public final class CombatElementsActivationRuntimeTest {
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java"));
         String command = Files.readString(Path.of(
                 "src/main/java/io/github/gyai/projects/command/ProjectCommand.java"));
-        assert plugin.contains("CombatElementsRuntimeModuleProvider");
+        String composition = Files.readString(Path.of(
+                "src/main/java/io/github/gyai/projects/beta/activation/BetaActivationWave1CompositionRoot.java"));
+        assert composition.contains("CombatElementsRuntimeModuleProvider");
+        assert plugin.contains("BetaActivationWave1CompositionRoot");
         assert plugin.contains("betaConfirmedHitObserver");
         assert !plugin.contains("combatElementsProvider.combatElementsModule().start(");
         assert !command.contains("staging element");

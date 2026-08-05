@@ -133,7 +133,12 @@ public final class Track3StagingItemWriterTest {
             assert result.status() == StagingEconomyOperationPort.Status.COMMITTED;
             assert Files.isDirectory(paths.transactionsDirectory());
             try (var entries = Files.list(paths.transactionsDirectory())) {
-                assert entries.count() == 2 : "resolved and terminal audit expected";
+                var names = entries.map(path -> path.getFileName().toString()).toList();
+                assert names.stream().anyMatch(name -> name.endsWith(".resolved.yml"));
+                assert names.stream().anyMatch(name -> name.endsWith(".terminal.yml"));
+                assert names.stream().anyMatch(name -> name.endsWith(".journal"));
+                assert names.contains("quarantine");
+                assert names.size() == 4 : "bounded audit/journal contents expected: " + names;
             }
             assert !Files.exists(pluginData.resolve("data"));
             service.close();

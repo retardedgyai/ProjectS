@@ -137,7 +137,10 @@ public final class StagingTrainingDummyQuestRuntime
         UUID requestId = stableUuid(key.stableIdentity());
         RewardClaimService service = new RewardClaimService(
                 claimStore,
-                value -> deliveryPort.deliver(value, Track4StagingIds.TOKEN, 1),
+                value -> deliveryPort.deliver(value, Track4StagingIds.TOKEN, 1,
+                        new StagingItemDeliveryPort.DeliveryContext(
+                                request.worldName(), request.projectsDev(),
+                                request.compatibleClient())),
                 receipt -> receipt.status()
                         == io.github.gyai.projects.reward.RewardDeliveryReceipt.Status.REJECTED,
                 clock);

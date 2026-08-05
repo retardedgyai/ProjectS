@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /** One bounded command registry for all staging contributors. */
 public final class BetaOperatorContributorRegistry {
@@ -40,10 +41,19 @@ public final class BetaOperatorContributorRegistry {
     }
 
     private static Entry disabled(String subject, BetaRuntimeModuleId moduleId, BetaRuntime runtime) {
-        return new Entry(subject, moduleId, arguments -> new Result(false, List.of(DISABLED_MESSAGE)));
+        return new Entry(subject, moduleId,
+                (context, arguments) -> new Result(false, List.of(DISABLED_MESSAGE)));
     }
 
     public Result execute(List<String> arguments, BetaRuntimeHealthSnapshot health) {
+        return execute(arguments, health, new Context(null, "", true, false));
+    }
+
+    public Result execute(
+            List<String> arguments,
+            BetaRuntimeHealthSnapshot health,
+            Context context
+    ) {
         if (arguments == null || arguments.size() < 2
                 || !"staging".equalsIgnoreCase(arguments.get(0))) {
             return new Result(false, List.of("usage: /projects beta staging <player|equipment|element|economy|party|quest|reward|mob> ..."));
@@ -53,8 +63,13 @@ public final class BetaOperatorContributorRegistry {
         if (health.moduleStates().get(entry.moduleId()) != BetaRuntimeModuleState.RUNNING) {
             return new Result(false, List.of(DISABLED_MESSAGE));
         }
-        Result result = entry.contributor().execute(List.copyOf(arguments.subList(2, arguments.size())));
-        return bounded(result);
+        try {
+            Result result = entry.contributor().execute(context,
+                    List.copyOf(arguments.subList(2, arguments.size())));
+            return bounded(result);
+        } catch (RuntimeException failure) {
+            return new Result(false, List.of("Beta staging contributor failed safely."));
+        }
     }
 
     public int size() { return entries.size(); }
@@ -77,7 +92,17 @@ public final class BetaOperatorContributorRegistry {
         }
     }
 
-    @FunctionalInterface public interface Contributor { Result execute(List<String> arguments); }
+    @FunctionalInterface public interface Contributor {
+        Result execute(Context context, List<String> arguments);
+    }
+
+    public record Context(UUID actorId, String worldName,
+                          boolean projectsDev, boolean compatibleClient) {
+        public Context {
+            worldName = worldName == null ? "" : worldName;
+            if (worldName.length() > 64) throw new IllegalArgumentException("world name oversized");
+        }
+    }
 
     public record Result(boolean success, List<String> messages) {
         public Result {

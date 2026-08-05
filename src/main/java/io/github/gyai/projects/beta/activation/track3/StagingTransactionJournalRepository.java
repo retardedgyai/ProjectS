@@ -22,7 +22,7 @@ import java.util.UUID;
 public final class StagingTransactionJournalRepository implements AutoCloseable {
     public static final int MAXIMUM_FILES = 2_048;
     public static final long MAXIMUM_FILE_BYTES = 64 * 1024L;
-    private static final String VERSION = "1";
+    private static final String VERSION = "2";
 
     private final Path root;
     private final Path quarantine;
@@ -190,6 +190,12 @@ public final class StagingTransactionJournalRepository implements AutoCloseable 
                 + "reservation=" + value.reservationState() + "\n"
                 + "output=" + text(value.proposedOutputIdentity()) + "\n"
                 + "outcome=" + value.terminalOutcome() + "\n"
+                + "recipe=" + text(value.recipeId()) + "\n"
+                + "expectedRevision=" + value.expectedRevision() + "\n"
+                + "expectedOutputUnits=" + value.expectedOutputUnits() + "\n"
+                + "completedStages=" + text(String.join(",", value.completedStages())) + "\n"
+                + "outputEquipmentBase=" + value.outputEquipmentBase() + "\n"
+                + "reason=" + text(value.reason()) + "\n"
                 + "updatedAt=" + value.updatedAtMillis() + "\n";
     }
 
@@ -202,7 +208,7 @@ public final class StagingTransactionJournalRepository implements AutoCloseable 
                 throw new IllegalArgumentException("malformed journal");
             }
         }
-        if (!VERSION.equals(values.get("version")) || values.size() != 10) {
+        if (!VERSION.equals(values.get("version")) || values.size() != 16) {
             throw new IllegalArgumentException("unsupported journal");
         }
         String inputs = plain(values.get("inputs"));
@@ -210,7 +216,13 @@ public final class StagingTransactionJournalRepository implements AutoCloseable 
                 Stage.valueOf(values.get("stage")), UUID.fromString(values.get("playerId")),
                 plain(values.get("operation")), inputs.isBlank() ? List.of() : List.of(inputs.split(",")),
                 ReservationState.valueOf(values.get("reservation")), plain(values.get("output")),
-                TerminalOutcome.valueOf(values.get("outcome")), Long.parseLong(values.get("updatedAt")));
+                TerminalOutcome.valueOf(values.get("outcome")), plain(values.get("recipe")),
+                Long.parseLong(values.get("expectedRevision")),
+                Long.parseLong(values.get("expectedOutputUnits")),
+                plain(values.get("completedStages")).isBlank() ? List.of()
+                        : List.of(plain(values.get("completedStages")).split(",")),
+                Boolean.parseBoolean(values.get("outputEquipmentBase")),
+                plain(values.get("reason")), Long.parseLong(values.get("updatedAt")));
     }
 
     private static String text(String value) {
@@ -233,16 +245,30 @@ public final class StagingTransactionJournalRepository implements AutoCloseable 
     public record Entry(UUID requestId, Stage stage, UUID playerId, String operationType,
                         List<String> inputIdentities, ReservationState reservationState,
                         String proposedOutputIdentity, TerminalOutcome terminalOutcome,
+                        String recipeId, long expectedRevision, long expectedOutputUnits,
+                        List<String> completedStages, boolean outputEquipmentBase, String reason,
                         long updatedAtMillis) {
+        public Entry(UUID requestId, Stage stage, UUID playerId, String operationType,
+                     List<String> inputIdentities, ReservationState reservationState,
+                     String proposedOutputIdentity, TerminalOutcome terminalOutcome,
+                     long updatedAtMillis) {
+            this(requestId, stage, playerId, operationType, inputIdentities,
+                    reservationState, proposedOutputIdentity, terminalOutcome,
+                    "projects:staging/recovery", 0, 1, List.of(), false, "", updatedAtMillis);
+        }
         public Entry {
             if (requestId == null || stage == null || playerId == null || operationType == null
                     || operationType.isBlank() || operationType.length() > 128 || inputIdentities == null
                     || inputIdentities.size() > 128 || reservationState == null
                     || proposedOutputIdentity == null || proposedOutputIdentity.length() > 512
-                    || terminalOutcome == null || updatedAtMillis < 0) {
+                    || terminalOutcome == null || recipeId == null || recipeId.isBlank()
+                    || expectedRevision < 0 || expectedOutputUnits < 1
+                    || completedStages == null || completedStages.size() > 6
+                    || reason == null || reason.length() > 512 || updatedAtMillis < 0) {
                 throw new IllegalArgumentException("invalid journal entry");
             }
             inputIdentities = List.copyOf(inputIdentities);
+            completedStages = List.copyOf(completedStages);
             for (String input : inputIdentities) if (input == null || input.isBlank() || input.length() > 256)
                 throw new IllegalArgumentException("invalid journal input");
         }

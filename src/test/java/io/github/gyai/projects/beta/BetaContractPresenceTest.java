@@ -84,12 +84,23 @@ public final class BetaContractPresenceTest {
         String plugin = read(
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java");
         assert plugin.contains("FeatureFlagService");
-        assert plugin.contains("BetaActivationWave1ModuleRegistry.disabledPlan().modules()");
-        assert plugin.contains("initializeBetaRuntime();");
-        assert plugin.contains("BetaRuntimeFactory.create(");
+        assert plugin.contains("snapshotBetaConfiguration();");
+        assert plugin.contains("initializeBetaComposition();");
+        assert plugin.contains("BetaActivationWave1CompositionRoot.create(");
+        assert !plugin.contains("disabledPlan()");
         assert !plugin.contains("FeatureKey");
         assert !plugin.contains("SchemaVersions");
         assert !plugin.contains("projects:beta_");
+        String composition = read(
+                "src/main/java/io/github/gyai/projects/beta/activation/BetaActivationWave1CompositionRoot.java");
+        assert composition.contains("new Track1RuntimeModuleProvider(");
+        assert composition.contains("new CombatElementsRuntimeModuleProvider(");
+        assert composition.contains("new Track3RuntimeModuleProvider(economy, recovery)");
+        assert composition.contains("new Track4RuntimeModuleProvider(");
+        assert composition.contains("new BetaActivationWave1ProviderRegistry(");
+        assert composition.contains("new StagingTransactionRecoveryService(transactionRepository, operationJournal)");
+        assert composition.contains("new ElementSnapshotProtocolPublisher(");
+        assert !composition.contains("spawn(\n                            MobEditorV2Service.TestSpawnRequest request) { return null;");
     }
 
     private static String read(String path) throws IOException {

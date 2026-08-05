@@ -81,13 +81,8 @@ import io.github.gyai.projects.lifecycle.ShutdownSequence;
 import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
 import io.github.gyai.projects.beta.activation.BetaRuntime;
 import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
-import io.github.gyai.projects.beta.activation.BetaRuntimeFactory;
-import io.github.gyai.projects.beta.activation.BetaActivationWave1ModuleRegistry;
+import io.github.gyai.projects.beta.activation.BetaActivationWave1CompositionRoot;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
-import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
-import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
-import io.github.gyai.projects.beta.activation.track2.BukkitTrainingDummyElementBoundary;
-import io.github.gyai.projects.beta.activation.track2.CombatElementsRuntimeModuleProvider;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 
@@ -123,7 +118,9 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MobEditorChannel mobEditorChannel;
     private ShutdownSequence shutdownSequence;
     private BetaRuntime betaRuntime;
-    private CombatElementsRuntimeModuleProvider combatElementsProvider;
+    private BetaActivationWave1CompositionRoot betaComposition;
+    private BetaActivationPolicy betaActivationPolicy = BetaActivationPolicy.defaults();
+    private FeatureFlagSnapshot betaFeatureFlags = FeatureFlagSnapshot.allDisabled();
     private ConfirmedDamageHitObserver betaConfirmedHitObserver =
             ConfirmedDamageHitObserver.NO_OP;
 
@@ -131,7 +128,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     public void onEnable() {
         shutdownSequence = null;
         saveDefaultConfig();
-        initializeBetaRuntime();
+        snapshotBetaConfiguration();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
         statusEffectManager = new StatusEffectManager(this);
@@ -165,19 +162,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
-        Clock activationClock = Clock.systemUTC();
-        combatElementsProvider = new CombatElementsRuntimeModuleProvider(
-                new BukkitTrainingDummyElementBoundary(
-                        this, trainingDummyManager, damageService),
-                activationClock);
-        betaConfirmedHitObserver = combatElementsProvider.confirmedHitObserver(
-                () -> betaRuntime == null
-                        ? BetaRuntimeModuleState.DISABLED
-                        : betaRuntime.healthSnapshot().moduleStates().getOrDefault(
-                                BetaRuntimeModuleId.COMBAT_ELEMENTS,
-                                BetaRuntimeModuleState.DISABLED),
-                trainingDummyManager,
-                activationClock);
+        initializeBetaComposition();
         Clock damageShadowClock = Clock.systemUTC();
         BukkitDamageShadowRuntimeContextResolver damageShadowContextResolver =
                 new BukkitDamageShadowRuntimeContextResolver(
@@ -458,7 +443,9 @@ public final class ProjectSPlugin extends JavaPlugin {
                     playerManager, damageShadowCommandService,
                     spinSlashShadowCommandService,
                     damageRouteCommandService,
-                    new BetaRuntimeCommandService(betaRuntime)));
+                    betaRuntime == null || betaComposition == null ? null
+                            : new BetaRuntimeCommandService(
+                            betaRuntime, betaComposition.operators())));
         }
 
         getLogger().info("ProjectS has started!");
@@ -469,42 +456,52 @@ public final class ProjectSPlugin extends JavaPlugin {
         shutdownSequence().run();
     }
 
-    private void initializeBetaRuntime() {
+    private void snapshotBetaConfiguration() {
         try {
             org.bukkit.configuration.ConfigurationSection featureSection =
                     getConfig().getConfigurationSection("features");
-            FeatureFlagSnapshot featureFlags = new FeatureFlagService(
+            betaFeatureFlags = new FeatureFlagService(
                     featureSection == null ? java.util.Map.of()
                             : featureSection.getValues(false)).snapshot();
             org.bukkit.configuration.ConfigurationSection activationSection =
                     getConfig().getConfigurationSection("beta.activation");
-            BetaActivationPolicy activationPolicy = BetaActivationPolicy.parse(
+            betaActivationPolicy = BetaActivationPolicy.parse(
                     activationSection == null ? java.util.Map.of()
                             : activationSection.getValues(false),
                     message -> getLogger().warning(
                             "Beta activation config: " + message));
-            betaRuntime = BetaRuntimeFactory.create(
-                    activationPolicy,
-                    featureFlags,
-                    BetaActivationWave1ModuleRegistry.disabledPlan().modules(),
-                    java.util.Set.of(),
-                    Clock.systemUTC(),
-                    (message, exception) -> getLogger().log(
-                            Level.WARNING, "Beta runtime: " + message, exception));
-            betaRuntime.start();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE,
-                    "Beta runtime initialization failed; legacy startup will continue",
+                    "Beta configuration snapshot failed; Beta remains disabled",
                     exception);
-            betaRuntime = BetaRuntimeFactory.create(
-                    BetaActivationPolicy.defaults(),
-                    FeatureFlagSnapshot.allDisabled(),
-                    BetaActivationWave1ModuleRegistry.disabledPlan().modules(),
-                    java.util.Set.of(),
-                    Clock.systemUTC(),
-                    (message, failure) -> getLogger().log(
-                            Level.WARNING, "Beta runtime fallback: " + message, failure));
-            betaRuntime.start();
+            betaActivationPolicy = BetaActivationPolicy.defaults();
+            betaFeatureFlags = FeatureFlagSnapshot.allDisabled();
+        }
+    }
+
+    private void initializeBetaComposition() {
+        BetaActivationWave1CompositionRoot partial = null;
+        try {
+            Clock clock = Clock.systemUTC();
+            partial = BetaActivationWave1CompositionRoot.create(
+                    this, betaActivationPolicy, betaFeatureFlags,
+                    playerManager, trainingDummyManager, damageService, clock);
+            BetaRuntime runtime = partial.createRuntime(
+                    betaActivationPolicy, betaFeatureFlags, clock,
+                    (message, exception) -> getLogger().log(
+                            Level.WARNING, "Beta runtime: " + message, exception));
+            runtime.start();
+            betaComposition = partial;
+            betaRuntime = runtime;
+            betaConfirmedHitObserver = partial.confirmedHitObserver();
+        } catch (RuntimeException exception) {
+            if (partial != null) partial.close();
+            betaComposition = null;
+            betaRuntime = null;
+            betaConfirmedHitObserver = ConfirmedDamageHitObserver.NO_OP;
+            getLogger().log(Level.SEVERE,
+                    "Beta composition failed safely; legacy startup will continue",
+                    exception);
         }
     }
 
@@ -520,9 +517,8 @@ public final class ProjectSPlugin extends JavaPlugin {
 
         sequence.addIfPresent("betaRuntime.close",
                 betaRuntime, BetaRuntime::close);
-        sequence.addIfPresent("combatElementsProvider.close",
-                combatElementsProvider,
-                provider -> provider.combatElementsModule().close());
+        sequence.addIfPresent("betaComposition.close",
+                betaComposition, BetaActivationWave1CompositionRoot::close);
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",

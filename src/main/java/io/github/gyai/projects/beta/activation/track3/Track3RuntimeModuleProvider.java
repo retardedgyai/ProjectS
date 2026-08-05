@@ -15,13 +15,20 @@ public final class Track3RuntimeModuleProvider implements BetaRuntimeModuleProvi
     private final List<Track3RuntimeModule> modules;
 
     public Track3RuntimeModuleProvider(StagingEconomyService service) {
+        this(service, null);
+    }
+
+    public Track3RuntimeModuleProvider(
+            StagingEconomyService service,
+            StagingTransactionRecoveryService recovery
+    ) {
         if (service == null) throw new IllegalArgumentException("service is required");
         this.service = service;
         modules = List.of(
                 new Track3RuntimeModule(BetaRuntimeModuleId.GATHERING_CRAFTING,
-                        StagingEconomyService.OperationGroup.GATHERING_CRAFTING, service),
+                        StagingEconomyService.OperationGroup.GATHERING_CRAFTING, service, recovery),
                 new Track3RuntimeModule(BetaRuntimeModuleId.ENHANCEMENT_REPAIR,
-                        StagingEconomyService.OperationGroup.ENHANCEMENT_REPAIR, service));
+                        StagingEconomyService.OperationGroup.ENHANCEMENT_REPAIR, service, recovery));
     }
 
     public static Track3RuntimeModuleProvider unregisteredStaging(Clock clock) {

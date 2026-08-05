@@ -4,6 +4,7 @@ import io.github.gyai.projects.beta.activation.track2.ElementRuntimeSnapshotPort
 import io.github.gyai.projects.beta.activation.track2.StagingElementProfile;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionJournalRepository;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionRecoveryService;
+import io.github.gyai.projects.beta.activation.track3.BoundedStagingOperationJournal;
 import io.github.gyai.projects.beta.activation.track4.ElementSnapshotProtocolAdapter;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
@@ -33,7 +34,7 @@ public final class BetaActivationWave1IntegratedTest {
     }
 
     private static void centralPlanIsRegisteredButCompletelyDisabled() {
-        var registry = BetaActivationWave1ModuleRegistry.disabledPlan();
+        var registry = new BetaActivationWave1ModuleRegistry(testModules());
         assert registry.size() == 8;
         BetaRuntime runtime = BetaRuntimeFactory.create(BetaActivationPolicy.defaults(),
                 FeatureFlagSnapshot.allDisabled(), registry.modules(), Set.of(),
@@ -56,7 +57,7 @@ public final class BetaActivationWave1IntegratedTest {
     private static void operatorRegistryIsBoundedAndRestartOnly() {
         BetaRuntime runtime = BetaRuntimeFactory.create(BetaActivationPolicy.defaults(),
                 FeatureFlagSnapshot.allDisabled(),
-                BetaActivationWave1ModuleRegistry.disabledPlan().modules(), Set.of(),
+                new BetaActivationWave1ModuleRegistry(testModules()).modules(), Set.of(),
                 Clock.systemUTC(), (message, failure) -> { });
         runtime.start();
         BetaOperatorContributorRegistry registry =
@@ -92,8 +93,9 @@ public final class BetaActivationWave1IntegratedTest {
                     StagingTransactionJournalRepository.Stage.COMMIT_UNCERTAIN,
                     StagingTransactionJournalRepository.TerminalOutcome.COMMIT_UNCERTAIN));
         }
+        var terminalJournal = new BoundedStagingOperationJournal(32);
         try (var repository = new StagingTransactionJournalRepository(root);
-             var recovery = new StagingTransactionRecoveryService(repository)) {
+             var recovery = new StagingTransactionRecoveryService(repository, terminalJournal)) {
             var result = recovery.recover();
             assert result.terminalReplayed() == 2;
             assert result.recoveryRequired() == 1;
@@ -103,11 +105,14 @@ public final class BetaActivationWave1IntegratedTest {
             assert repository.load(committed).isPresent();
             assert repository.load(rolledBack).isPresent();
             assert repository.load(uncertain).isEmpty();
+            assert terminalJournal.findTerminal(committed).orElseThrow().replayed();
+            assert terminalJournal.findTerminal(rolledBack).orElseThrow().replayed();
             var again = recovery.recover();
             assert again.terminalReplayed() == 2;
             assert again.recoveryRequired() == 1;
             assert again.quarantined() == 0;
         }
+        terminalJournal.close();
     }
 
     private static StagingTransactionJournalRepository.Entry entry(
@@ -116,9 +121,11 @@ public final class BetaActivationWave1IntegratedTest {
             StagingTransactionJournalRepository.TerminalOutcome outcome
     ) {
         return new StagingTransactionJournalRepository.Entry(requestId, stage, playerId,
-                "craft", List.of("item:1@revision:2"),
+                "projects:craft", List.of("projects:item@2"),
                 StagingTransactionJournalRepository.ReservationState.HELD,
-                "output:stable-id", outcome, 1_000L);
+                "projects:output:1", outcome, "projects:recipe", 0, 1,
+                List.of("VALIDATE", "RESERVE", "CONSUME", "PRODUCE", "PERSIST", "COMMIT"),
+                false, "", 1_000L);
     }
 
     private static void fireSnapshotIsRevisionGatedAndProtocolCompatible() {
@@ -180,5 +187,27 @@ public final class BetaActivationWave1IntegratedTest {
         int count = 0, index = 0;
         while ((index = source.indexOf(needle, index)) >= 0) { count++; index += needle.length(); }
         return count;
+    }
+
+    private static List<BetaRuntimeModule> testModules() {
+        return java.util.Arrays.stream(BetaRuntimeModuleId.values())
+                .map(TestModule::new).map(BetaRuntimeModule.class::cast).toList();
+    }
+
+    private static final class TestModule implements BetaRuntimeModule {
+        private final BetaRuntimeModuleId id;
+        private TestModule(BetaRuntimeModuleId id) { this.id = id; }
+        @Override public BetaRuntimeModuleId id() { return id; }
+        @Override public Set<BetaRuntimeModuleId> dependencies() { return Set.of(); }
+        @Override public BetaRuntimeModuleDescriptor descriptor() {
+            return new BetaRuntimeModuleDescriptor(id, Set.of(), Set.of(),
+                    BetaMutationPolicy.READ_ONLY, true, Set.of());
+        }
+        @Override public BetaRuntimeModuleResult prepare(BetaRuntimeModuleContext context) {
+            return BetaRuntimeModuleResult.ready();
+        }
+        @Override public BetaRuntimeModuleResult start() { return BetaRuntimeModuleResult.running(); }
+        @Override public BetaRuntimeModuleResult stop() { return BetaRuntimeModuleResult.stopped(); }
+        @Override public BetaRuntimeModuleState state() { return BetaRuntimeModuleState.NOT_INSTALLED; }
     }
 }
