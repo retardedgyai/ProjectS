@@ -59,3 +59,19 @@ does not satisfy production content/balance, Paper/manual, gameplay activation,
 deployment, or public-enable cells. G/H PRs remain Draft and are not
 automatically merged.
 
+## Activation Wave 1 adapter gate
+
+All four Server Tracks start from the same merge commit containing
+`activation/wave-1-owner-decisions.md`; Track 4 Client starts from compatible
+Client `27f2c5e4b535dee19c860b711cac9662606540ff`. Draft PRs must expose module
+providers and operator contributors without editing central Plugin/command/
+config/channel registration.
+
+Acceptance requires lifecycle idempotency, flag/policy/dependency denial,
+bounded UUID state, no retained Bukkit entity/player object, staging path
+isolation, READ_ONLY write count zero, stop cleanup, and every Track-specific
+failure/duplicate/reconnect test. Protocol producers advertise only while
+RUNNING. Production player/item/Mob paths, automatic migration, feature
+activation, deployment, Paper/manual, and public-enable cells remain
+unsatisfied until the later Integration and staging gates.
+

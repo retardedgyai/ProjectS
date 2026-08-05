@@ -12,6 +12,14 @@ gate; operators do not skip forward.
 - No Beta gameplay wiring, channels, listeners, schedulers, or deployment in
   Activation Phase 0.
 
+### Wave 1 adapter implementation gate
+
+Four Server providers and the Track 4 Client runtime may be implemented from
+one fixed owner-decision SHA. Draft PRs require full local checks and CI, but
+remain unmerged and unregistered. Repository defaults stay closed. Any
+production write, central module registration, new always-on channel/listener,
+deployment, or gameplay activation fails this implementation gate.
+
 ## Gate 1 — Allowlisted Training Dummy read-only
 
 - One or more named operators in `ALLOWLIST`; compatible Client requirement is
