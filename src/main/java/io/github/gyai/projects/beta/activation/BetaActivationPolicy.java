@@ -72,17 +72,18 @@ public record BetaActivationPolicy(
     }
 
     public boolean allowsAudience(UUID playerId, boolean compatibleClient) {
+        if (playerId == null) return false;
         if (requireCompatibleClient && !compatibleClient) return false;
         return switch (audience) {
             case OFF -> false;
             case GLOBAL -> true;
-            case ALLOWLIST -> playerId != null && allowlistedPlayerUuids.contains(playerId);
+            case ALLOWLIST -> allowlistedPlayerUuids.contains(playerId);
         };
     }
 
     public boolean allowsWorld(String worldName) {
         if (worldName == null) return false;
-        if (allowedWorlds.isEmpty()) return isValidWorld(worldName);
+        if (allowedWorlds.isEmpty()) return false;
         return allowedWorlds.contains(worldName);
     }
 

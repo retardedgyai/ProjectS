@@ -51,6 +51,8 @@ public final class BetaActivationFoundationTest {
         assert defaults.failClosed();
         assert !defaults.requireCompatibleClient();
         assert defaults.restartRequired();
+        assert !defaults.allowsAudience(null, true);
+        assert !defaults.allowsWorld("world");
 
         List<String> warnings = new ArrayList<>();
         BetaActivationPolicy parsed = BetaActivationPolicy.parse(Map.of(
@@ -330,6 +332,12 @@ public final class BetaActivationFoundationTest {
                 < source.indexOf("playerManager = new PlayerManager();");
         assert source.indexOf("betaRuntime, BetaRuntime::close")
                 < source.indexOf("monsterManager, MonsterManager::stop");
+
+        String command = Files.readString(Path.of(
+                "src/main/java/io/github/gyai/projects/command/ProjectCommand.java"));
+        assert command.indexOf("args[0].equalsIgnoreCase(\"beta\")")
+                < command.indexOf("if (!(sender instanceof Player player))");
+        assert command.contains("sender.hasPermission(\"projects.dev\")");
     }
 
     private static void configDefaultsRemainClosed() throws Exception {

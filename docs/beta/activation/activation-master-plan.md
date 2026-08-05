@@ -60,8 +60,9 @@ Audience (`OFF`, `ALLOWLIST`, `GLOBAL`), target scope
 (`TRAINING_DUMMY_ONLY`, `NON_PLAYER_PVE`, `ALL_PVE`), and mutation policy
 (`READ_ONLY`, `STAGING_WRITE`, `PRODUCTION_WRITE`) are independent. Defaults
 are `OFF`, `TRAINING_DUMMY_ONLY`, and `READ_ONLY`; PvP is excluded from every
-target scope. Player and world allowlists are immutable and bounded. Invalid
-values fail to safe defaults. The policy and feature flags are snapshotted
+target scope. Player and world allowlists are immutable and bounded. A missing
+actor UUID or an empty world allowlist denies activation. Invalid values fail
+to safe defaults. The policy and feature flags are snapshotted
 once at startup; every change requires a restart.
 
 ## Activation stages and verification

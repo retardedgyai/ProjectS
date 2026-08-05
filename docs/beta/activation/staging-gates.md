@@ -16,6 +16,8 @@ gate; operators do not skip forward.
 
 - One or more named operators in `ALLOWLIST`; compatible Client requirement is
   decided explicitly.
+- One or more staging world names are explicitly listed; an empty list denies
+  every world.
 - Only Training Dummy targets; mutation remains `READ_ONLY`.
 - Track adapters expose observations only. Confirm zero durable writes and no
   item generation, consumption, migration, reward, or Mob save.
