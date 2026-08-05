@@ -16,14 +16,80 @@ The project is intended to grow into a large MMO plugin containing custom
 items, player data, combat, monsters, quests, dungeons, NPCs, skills, and
 economy systems.
 
-## Role of Codex
+## Authority and Roles
 
-Codex is mainly responsible for implementation and repetitive coding.
+- The user is the game director and final decision-maker.
+- ChatGPT/Sol owns architecture, task decomposition, model selection,
+  specification clarification, and important reviews.
+- Codex implements the bounded task described in the approved task prompt.
+- Do not make product, game-design, economy, progression, or architecture
+  decisions that are not explicitly approved.
+- When a required decision is missing, stop expanding the implementation and
+  report the unresolved decision in the completion report.
 
-The overall game design and architecture are decided by the user together
-with ChatGPT.
+## Required Codex Task Prompt
 
-Do not make major design decisions on your own.
+Every implementation task prepared for Codex must include all of the following
+fields. Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical template.
+
+1. Recommended model
+2. Reasoning effort
+3. Selection reason
+4. Objective
+5. Scope and target files
+6. Non-goals
+7. Implementation requirements
+8. Acceptance criteria
+9. Tests
+10. Completion report format
+
+Do not silently invent missing requirements. If a missing field materially
+affects implementation, report it before making broad or irreversible changes.
+
+## Model Selection Policy
+
+ChatGPT/Sol selects the model and reasoning effort for each task. Codex should
+follow the selection written in the task prompt.
+
+Default guidance:
+
+- Small mechanical changes: Luna Low or Medium
+- Normal, clearly bounded implementation: Luna High
+- Investigation-heavy or judgment-heavy implementation: Terra
+- Ambiguous, high-risk, cross-system, or foundational changes: Sol
+- Use the lowest model and reasoning effort that can reliably complete the task.
+- Do not use parallel agents or unusually expensive reasoning modes unless the
+  task prompt explicitly requires them.
+
+If the selected model is unavailable in the current Codex surface, do not
+quietly substitute a more expensive model. Report the limitation and use the
+closest approved option only when the task prompt allows it.
+
+## Standard Implementation Workflow
+
+1. Read the task prompt and confirm that all required fields are present.
+2. Inspect only the relevant project structure, files, and referenced design
+   documents.
+3. Preserve currently working behavior.
+4. Make the smallest reasonable set of changes.
+5. Stay inside the specified scope and non-goals.
+6. Run the specified tests and relevant build checks.
+7. Compare the result against every acceptance criterion.
+8. Return the required completion report.
+
+Sol review is not mandatory for every change. Request or prepare a Sol review
+when the task is medium-risk or high-risk, including changes involving:
+
+- Combat calculation foundations
+- Economy, trading, rewards, or item duplication risk
+- Persistence, migrations, or player data integrity
+- Async or concurrent processing
+- Security or permission boundaries
+- Multiple systems or large architectural changes
+- A failed or uncertain Luna implementation
+
+For review, prioritize the original task prompt, Git diff, test results, and
+reported concerns instead of rereading the entire repository without need.
 
 ## Before Editing
 
@@ -33,7 +99,7 @@ Before changing files:
 2. Read the relevant existing classes.
 3. Preserve currently working behavior.
 4. Make the smallest reasonable set of changes.
-5. Ask for clarification when requirements are ambiguous.
+5. Report ambiguity instead of making major unapproved decisions.
 
 Do not create unnecessary classes, managers, interfaces, abstractions, or
 frameworks.
@@ -108,25 +174,33 @@ Do not:
 
 After implementation:
 
-1. Run:
+1. Run the tests specified by the task prompt.
+2. For normal Java implementation tasks, run:
 
    `.\gradlew.bat clean build`
 
-2. Fix compilation errors caused by the changes.
-3. Do not claim success unless the build succeeds.
-4. Report warnings separately from errors.
+3. Fix compilation errors caused by the changes.
+4. Do not claim success unless the required checks succeed.
+5. Report warnings separately from errors.
 
-If the build cannot be completed, clearly explain why.
+Documentation-only changes do not require a Gradle build unless the task prompt
+explicitly requests one.
 
-## Final Response Format
+If verification cannot be completed, clearly explain why.
+
+## Required Completion Report
 
 After completing a task, report:
 
-1. What was implemented.
-2. Which files were created or changed.
-3. Whether the Gradle build succeeded.
-4. Any warnings or remaining concerns.
-5. How the user can test the feature in Minecraft.
+1. Selected model and reasoning effort used
+2. What was implemented
+3. Which files were created or changed
+4. Acceptance criteria results
+5. Tests and build checks executed
+6. Test results
+7. Warnings or remaining concerns
+8. Unresolved specification or architecture decisions
+9. How the user can test the feature in Minecraft, when applicable
 
 Keep the explanation understandable for a beginner.
 
@@ -135,11 +209,14 @@ Keep the explanation understandable for a beginner.
 The normal workflow is:
 
 1. The user discusses the next feature with ChatGPT.
-2. ChatGPT prepares the implementation instructions.
-3. Codex implements the approved task.
-4. ChatGPT reviews the result when needed.
-5. The user tests the plugin.
-6. The user commits and pushes the completed feature.
+2. ChatGPT selects the model and reasoning effort.
+3. ChatGPT prepares the implementation instructions using the required template.
+4. Codex implements the approved bounded task.
+5. Codex runs tests and returns the completion report.
+6. ChatGPT/Sol reviews medium-risk and high-risk results when needed.
+7. The user tests the plugin.
+8. Git changes are committed and pushed only when explicitly requested.
 
 Follow the task-specific prompt in addition to this file. If a task-specific
-prompt conflicts with this file, ask before making major architectural changes.
+prompt conflicts with this file, follow the more specific approved instruction
+while preserving the safety rules and final authority of the user.
