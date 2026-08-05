@@ -62,8 +62,10 @@ public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeMod
     public ConfirmedDamageHitObserver confirmedHitObserver(
             Supplier<BetaRuntimeModuleState> state,
             TrainingDummyManager dummies,
-            Clock clock
+            Clock clock,
+            CompatibleElementsClientPort compatibleElementsClient
     ) {
-        return new Track2ConfirmedHitObserver(state, runtime, dummies, clock);
+        return new Track2ConfirmedHitObserver(
+                state, runtime, dummies, clock, compatibleElementsClient);
     }
 }

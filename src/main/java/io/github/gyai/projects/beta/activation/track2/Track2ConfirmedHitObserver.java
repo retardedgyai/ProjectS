@@ -19,17 +19,21 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
     private final TrainingDummyElementRuntime runtime;
     private final TrainingDummyManager dummies;
     private final Clock clock;
+    private final CompatibleElementsClientPort compatibleElementsClient;
 
     public Track2ConfirmedHitObserver(
             Supplier<BetaRuntimeModuleState> moduleState,
             TrainingDummyElementRuntime runtime,
             TrainingDummyManager dummies,
-            Clock clock
+            Clock clock,
+            CompatibleElementsClientPort compatibleElementsClient
     ) {
         this.moduleState = Objects.requireNonNull(moduleState, "moduleState");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.dummies = Objects.requireNonNull(dummies, "dummies");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.compatibleElementsClient = Objects.requireNonNull(
+                compatibleElementsClient, "compatibleElementsClient");
     }
 
     @Override public void confirmed(
@@ -54,17 +58,29 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
             origin = IceElementEngine.DamageOrigin.SKILL_DIRECT;
         } else return;
         try {
+            boolean compatibleClient = resolveCompatible(
+                    compatibleElementsClient, request.attacker().getUniqueId());
             runtime.observe(new TrainingDummyElementRuntime.AttackInput(
                     hitId, request.attacker().getUniqueId(), request.target().getUniqueId(),
                     attackType == TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL
                             ? "starter_sword" : "spin_slash",
                     attackType, origin, request.attackMetadata(),
                     preCritical(result),
-                    result.calculation().critical(), true, false, false,
+                    result.calculation().critical(), true, false, compatibleClient,
                     request.attacker().getWorld().getName(),
                     request.attacker().hasPermission("projects.dev"), clock.millis()));
         } catch (RuntimeException ignored) {
-            // Observation is fail-open and occurs only after the legacy application boundary.
+            // Compatibility/observation is fail-open to legacy combat and fail-closed to beta.
+        }
+    }
+
+    static boolean resolveCompatible(
+            CompatibleElementsClientPort resolver, java.util.UUID playerId
+    ) {
+        try {
+            return resolver.supportsElements(playerId);
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 

@@ -315,7 +315,9 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                 });
 
         ConfirmedDamageHitObserver observer = track2.confirmedHitObserver(
-                track2.combatElementsModule()::state, dummies, clock);
+                track2.combatElementsModule()::state, dummies, clock,
+                playerId -> protocol.capabilitySnapshot(playerId)
+                        .supports(BetaCapabilityId.ELEMENTS, 1));
         return new BetaActivationWave1CompositionRoot(track1, track2, track3, track4,
                 Set.of("track1.bukkit-listener", "track1.staging-player-store",
                         "track1.inventory-reader", "training-dummy-boundary",
