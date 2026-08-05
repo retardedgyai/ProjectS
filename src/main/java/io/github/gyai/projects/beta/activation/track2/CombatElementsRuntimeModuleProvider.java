@@ -8,6 +8,7 @@ import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import java.util.function.Supplier;
+import java.util.UUID;
 
 /** Concrete Track 2 provider discovered and registered only by the future Gate. */
 public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeModuleProvider {
@@ -48,6 +49,14 @@ public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeMod
 
     public TrainingDummyParticipationPort participation() {
         return runtime.participation();
+    }
+
+    public void playerDisconnected(UUID playerId) {
+        runtime.playerLoggedOut(playerId);
+    }
+
+    public void clearPlayerProfiles() {
+        runtime.clearPlayerProfiles();
     }
 
     public ConfirmedDamageHitObserver confirmedHitObserver(

@@ -75,6 +75,14 @@ public final class ElementSnapshotProtocolPublisher implements AutoCloseable {
 
     public synchronized boolean running() { return running; }
 
+    public void clearViewer(UUID playerId) {
+        if (playerId != null) adapter.clearViewer(playerId);
+    }
+
+    public void clearViewerState() {
+        adapter.clear();
+    }
+
     @Override public synchronized void close() {
         if (!running && task == null) { adapter.clear(); return; }
         running = false;

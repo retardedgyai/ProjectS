@@ -75,6 +75,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     private final FileStagingQuestProgressPort questProgress;
     private final FileStagingRewardClaimStore rewardClaims;
     private final ClientBetaProtocolRuntime protocol;
+    private final BetaCapabilityAdvertisementPublisher advertisementPublisher;
     private final ElementSnapshotProtocolPublisher elementPublisher;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
     private boolean closed;
@@ -95,6 +96,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             FileStagingQuestProgressPort questProgress,
             FileStagingRewardClaimStore rewardClaims,
             ClientBetaProtocolRuntime protocol,
+            BetaCapabilityAdvertisementPublisher advertisementPublisher,
             ElementSnapshotProtocolPublisher elementPublisher,
             ConfirmedDamageHitObserver confirmedHitObserver
     ) {
@@ -105,6 +107,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         this.auditSink = auditSink; this.questProgress = questProgress;
         this.operationJournal = operationJournal;
         this.rewardClaims = rewardClaims; this.protocol = protocol;
+        this.advertisementPublisher = advertisementPublisher;
         this.elementPublisher = elementPublisher; this.confirmedHitObserver = confirmedHitObserver;
         modules = new BetaActivationWave1ProviderRegistry(
                 track1, track2, track3, track4).modules();
@@ -126,6 +129,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         Path data = plugin.getDataFolder().toPath().toAbsolutePath().normalize();
 
         ClientBetaProtocolRuntime[] protocolHolder = new ClientBetaProtocolRuntime[1];
+        BetaCapabilityAdvertisementPublisher[] advertisementHolder =
+                new BetaCapabilityAdvertisementPublisher[1];
         StagingPlayerProgressService progress = new StagingPlayerProgressService(policy,
                 new StagingPlayerProgressFileStore(
                         data.resolve("beta-staging").resolve("players"), Set.of()), clock);
@@ -219,18 +224,17 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         producers.put(BetaCapabilityId.ENHANCEMENT, track3.modules().get(1));
         producers.put(BetaCapabilityId.MOB_EDITOR_V2, mobModule);
         RunningCapabilityRegistry availability = new RunningCapabilityRegistry(producers);
+        BetaCapabilityPolicy capabilityPolicy = BetaCapabilityPolicy.wave3Defaults();
         BetaCapabilitySessionService sessions = new BetaCapabilitySessionService(
-                BetaCapabilityPolicy.wave3Defaults(), clock);
+                capabilityPolicy, clock);
         BetaCommandRouter router = new BetaCommandRouter(new BetaRateLimiter(512, clock),
                 (context, command) -> context.permissionGranted()
                         ? BetaCommandAuthorization.Decision.allow()
                         : BetaCommandAuthorization.Decision.deny("projects.dev required"), 512);
         PluginMessageListener incoming = (channel, player, message) -> {
-            ClientBetaProtocolRuntime value = protocolHolder[0];
-            if (value == null || !BetaChannels.ACKNOWLEDGEMENT.equals(channel)) return;
-            var decoded = new BetaProtocolCodec().decodeAcknowledgement(message);
-            if (decoded.status() == BetaProtocolDecodeResult.Status.SUCCESS) {
-                value.acknowledge(player.getUniqueId(), decoded.value());
+            BetaCapabilityAdvertisementPublisher value = advertisementHolder[0];
+            if (value != null && BetaChannels.ACKNOWLEDGEMENT.equals(channel)) {
+                value.onAcknowledgement(player.getUniqueId(), message);
             }
         };
         BukkitBetaChannelRegistrar channels = new BukkitBetaChannelRegistrar(plugin, incoming);
@@ -248,8 +252,37 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         ElementSnapshotProtocolPublisher publisher = new ElementSnapshotProtocolPublisher(
                 elementAdapter, new BukkitBetaStateTransport(plugin, dummies),
                 protocol::capabilitySnapshot, clock);
+        BetaCapabilityAdvertisementPublisher advertisementPublisher =
+                new BetaCapabilityAdvertisementPublisher(
+                        protocol,
+                        new BukkitBetaCapabilityAdvertisementTransport(plugin),
+                        new BukkitBetaCapabilityLifecycleRegistrar(plugin),
+                        capabilityPolicy,
+                        clock,
+                        () -> protocolModuleHolder[0] == null
+                                ? BetaRuntimeModuleState.NOT_INSTALLED
+                                : protocolModuleHolder[0].state(),
+                        playerLifecycle(track2, protocol));
+        advertisementHolder[0] = advertisementPublisher;
+        protocol.addViewerStateLifecycle(new ClientBetaProtocolRuntime.ViewerStateLifecycle() {
+            @Override public void clear(UUID playerId) {
+                advertisementPublisher.clearPlayerState(playerId);
+            }
+            @Override public void clearAll() {
+                advertisementPublisher.clearAllState();
+            }
+        });
+        protocol.addViewerStateLifecycle(new ClientBetaProtocolRuntime.ViewerStateLifecycle() {
+            @Override public void clear(UUID playerId) {
+                publisher.clearViewer(playerId);
+            }
+            @Override public void clearAll() {
+                publisher.clearViewerState();
+            }
+        });
         ClientBetaProtocolRuntimeModule protocolModule =
-                new ClientBetaProtocolRuntimeModule(protocol, publisher);
+                new ClientBetaProtocolRuntimeModule(
+                        protocol, advertisementPublisher, publisher);
         protocolModuleHolder[0] = protocolModule;
         Track4RuntimeModuleProvider track4 = new Track4RuntimeModuleProvider(
                 partyModule, mobModule, protocolModule);
@@ -273,7 +306,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                 entry("reward", BetaRuntimeModuleId.PARTY_QUEST_REWARD,
                         (context, args) -> track4Result(track4Commands, context)),
                 entry("mob", BetaRuntimeModuleId.MOB_EDITOR_V2,
-                        (context, args) -> track4Result(track4Commands, context))));
+                        (context, args) -> track4Result(track4Commands, context))),
+                advertisementPublisher::diagnosticLines);
 
         ConfirmedDamageHitObserver observer = track2.confirmedHitObserver(
                 track2.combatElementsModule()::state, dummies, clock);
@@ -285,13 +319,46 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         "track3-item-delivery-port", "beta-staging-mob-repository",
                         "minecraft-plugin-messaging"),
                 operators, progress, equipment, transactionRepository, recovery,
-                auditSink, operationJournal, questProgress, rewardClaims, protocol, publisher, observer);
+                auditSink, operationJournal, questProgress, rewardClaims, protocol,
+                advertisementPublisher, publisher, observer);
     }
 
     private static BetaOperatorContributorRegistry.Entry entry(
             String subject, BetaRuntimeModuleId id,
             BetaOperatorContributorRegistry.Contributor contributor
     ) { return new BetaOperatorContributorRegistry.Entry(subject, id, contributor); }
+
+    static io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort
+            playerLifecycle(
+                    CombatElementsRuntimeModuleProvider track2,
+                    ClientBetaProtocolRuntime protocol
+            ) {
+        java.util.Objects.requireNonNull(track2, "track2");
+        java.util.Objects.requireNonNull(protocol, "protocol");
+        return new io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort() {
+            @Override public void connectionStarted(UUID playerId) {
+                cleanup(() -> track2.playerDisconnected(playerId));
+                cleanup(() -> protocol.reconnect(playerId));
+            }
+
+            @Override public void connectionEnded(UUID playerId) {
+                cleanup(() -> track2.playerDisconnected(playerId));
+                cleanup(() -> protocol.disconnect(playerId));
+            }
+
+            @Override public void clearAll() {
+                cleanup(track2::clearPlayerProfiles);
+                cleanup(protocol::clearAllConnectionState);
+            }
+        };
+    }
+
+    private static void cleanup(Runnable cleanup) {
+        try { cleanup.run(); }
+        catch (RuntimeException ignored) {
+            // One connection-scoped cleanup must not suppress the remaining steps.
+        }
+    }
 
     private static BetaOperatorContributorRegistry.Result track1Result(
             Track1OperatorCommandContributor contributor,
@@ -338,7 +405,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     public io.github.gyai.projects.beta.activation.track2.TrainingDummyParticipationPort participation() { return track2.participation(); }
     public StagingEconomyService economy() { return track3.service(); }
     public Inspection inspection() { return new Inspection(track1, track2, track3, track4,
-            transactionRepository, recovery, auditSink, protocol, elementPublisher); }
+            transactionRepository, recovery, auditSink, protocol,
+            advertisementPublisher, elementPublisher); }
     public RecoveryGraphSnapshot recoveryGraph() {
         return new RecoveryGraphSnapshot(
                 recovery.usesRepository(transactionRepository),
@@ -349,6 +417,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     @Override public synchronized void close() {
         if (closed) return; closed = true;
         closeSafely(elementPublisher);
+        closeSafely(advertisementPublisher);
         closeSafely(protocol);
         for (int index = track4.modules().size() - 1; index >= 0; index--) stopSafely(track4.modules().get(index));
         closeSafely(track3); closeSafely(recovery); closeSafely(rewardClaims);
@@ -367,6 +436,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             StagingTransactionRecoveryService recovery,
             FileStagingTransactionAuditSink auditSink,
             ClientBetaProtocolRuntime protocol,
+            BetaCapabilityAdvertisementPublisher advertisementPublisher,
             ElementSnapshotProtocolPublisher publisher
     ) { }
     public record RecoveryGraphSnapshot(boolean recoveryUsesRepository,

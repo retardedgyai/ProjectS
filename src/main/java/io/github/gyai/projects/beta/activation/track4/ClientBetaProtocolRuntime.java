@@ -14,7 +14,9 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
     private final BetaCommandRouter commands;
     private final BetaCapabilityAvailability availability;
     private final List<Registration> registrations = new ArrayList<>();
+    private final List<ViewerStateLifecycle> viewerStateLifecycles = new ArrayList<>();
     private boolean running;
+    private boolean closed;
 
     public ClientBetaProtocolRuntime(BetaChannelRegistrar channels,
                                      BetaCapabilitySessionService sessions,
@@ -28,6 +30,7 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
 
     public synchronized void start() {
         if (running) return;
+        if (closed) throw new IllegalStateException("protocol runtime is closed");
         try {
             register(BetaChannels.CAPABILITIES, BetaChannelRegistrar.Direction.OUTGOING);
             register(BetaChannels.ACKNOWLEDGEMENT, BetaChannelRegistrar.Direction.INCOMING);
@@ -64,16 +67,62 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
 
     public synchronized boolean running() { return running; }
 
+    public synchronized boolean closed() { return closed; }
+
+    public synchronized int activeSessionCount() {
+        return sessions.activeSessionCount();
+    }
+
+    public synchronized int retainedSessionCount() {
+        return sessions.retainedSessionCount();
+    }
+
+    public synchronized void clearAllConnectionState() {
+        sessions.clear();
+        for (int index = viewerStateLifecycles.size() - 1; index >= 0; index--) {
+            try { viewerStateLifecycles.get(index).clearAll(); }
+            catch (RuntimeException ignored) { }
+        }
+    }
+
+    public synchronized void addViewerStateLifecycle(ViewerStateLifecycle lifecycle) {
+        if (closed) throw new IllegalStateException("protocol runtime is closed");
+        if (lifecycle == null || viewerStateLifecycles.contains(lifecycle)) return;
+        if (viewerStateLifecycles.size() >= 8) {
+            throw new IllegalStateException("too many viewer state lifecycles");
+        }
+        viewerStateLifecycles.add(lifecycle);
+    }
+
+    public synchronized void disconnect(UUID playerId) {
+        if (playerId == null) return;
+        sessions.clear(playerId);
+        clearViewerState(playerId);
+    }
+
+    public synchronized void reconnect(UUID playerId) {
+        if (playerId == null) return;
+        sessions.reconnect(playerId);
+        clearViewerState(playerId);
+    }
+
     public synchronized BetaCapabilitySnapshot capabilitySnapshot(UUID playerId) {
         return running ? sessions.snapshot(playerId)
                 : BetaCapabilitySnapshot.oldClient(playerId);
     }
 
     @Override public synchronized void close() {
+        if (closed) return;
+        closed = true;
+        running = false;
         unregisterAll();
         sessions.close();
         commands.close();
-        running = false;
+        for (int index = viewerStateLifecycles.size() - 1; index >= 0; index--) {
+            try { viewerStateLifecycles.get(index).clearAll(); }
+            catch (RuntimeException ignored) { }
+        }
+        viewerStateLifecycles.clear();
     }
 
     private void register(String channel, BetaChannelRegistrar.Direction direction) {
@@ -88,6 +137,19 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
             catch (RuntimeException ignored) { }
         }
         registrations.clear();
+    }
+
+    private void clearViewerState(UUID playerId) {
+        for (int index = viewerStateLifecycles.size() - 1; index >= 0; index--) {
+            try { viewerStateLifecycles.get(index).clear(playerId); }
+            catch (RuntimeException ignored) { }
+        }
+    }
+
+    public interface ViewerStateLifecycle {
+        void clear(UUID playerId);
+
+        void clearAll();
     }
 
     private record Registration(String channel, BetaChannelRegistrar.Direction direction) { }
