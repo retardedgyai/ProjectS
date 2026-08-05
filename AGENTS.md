@@ -32,8 +32,21 @@ economy systems.
 
 ## Required Codex Task Prompt
 
-Every implementation task prepared for Codex must include all of the following
-fields. Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical template.
+Every Codex task must include the fields required by its selected task format.
+Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical definition.
+
+For a Simple Task, require:
+
+1. Recommended model
+2. Reasoning effort
+3. Objective
+4. Scope
+5. Non-goals
+6. Acceptance criteria
+7. Tests
+8. Completion report format
+
+For a Full Task, require:
 
 1. Recommended model
 2. Reasoning effort
@@ -45,6 +58,9 @@ fields. Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical template.
 8. Acceptance criteria
 9. Tests
 10. Completion report format
+
+Do not silently simplify a task format after implementation starts. If the
+format is unclear, use the Full Task format.
 
 Do not silently invent missing requirements. If a missing field materially
 affects implementation, report it before making broad or irreversible changes.
@@ -228,7 +244,7 @@ If verification cannot be completed, clearly explain why.
 
 After completing a task, report:
 
-1. Selected model and reasoning effort used
+1. The model and reasoning effort actually selected at task start
 2. What was implemented
 3. Which files were created or changed
 4. Acceptance criteria results
@@ -239,6 +255,11 @@ After completing a task, report:
 9. How the user can test the feature in Minecraft, when applicable
 
 Keep the explanation understandable for a beginner.
+
+Report the actual model and reasoning effort selected at task start. Only state
+that a model was unavailable or that a substitute was used when that limitation
+was actually confirmed and a change was made; do not infer or guess this from
+the task recommendation.
 
 ## Current Development Workflow
 
