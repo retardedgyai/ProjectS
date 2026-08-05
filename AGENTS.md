@@ -16,14 +16,123 @@ The project is intended to grow into a large MMO plugin containing custom
 items, player data, combat, monsters, quests, dungeons, NPCs, skills, and
 economy systems.
 
-## Role of Codex
+## Authority and Roles
 
-Codex is mainly responsible for implementation and repetitive coding.
+- The user is the game director and final decision-maker.
+- ChatGPT handles design, specification organization, task decomposition, model
+  selection, acceptance criteria, integration order, and final review judgment.
+- Codex implements the bounded task described in the approved task prompt and
+  reports tests and completion status.
+- Sol is used for high-risk implementation, complex investigation, or review of
+  high-risk diffs. Sol does not automatically own all design decisions.
+- Do not make product, game-design, economy, progression, or architecture
+  decisions that are not explicitly approved.
+- When a required decision is missing, stop expanding the implementation and
+  report the unresolved decision in the completion report.
 
-The overall game design and architecture are decided by the user together
-with ChatGPT.
+## Required Codex Task Prompt
 
-Do not make major design decisions on your own.
+Every Codex task must include the fields required by its selected task format.
+Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical definition.
+
+For a Simple Task, require:
+
+1. Recommended model
+2. Reasoning effort
+3. Objective
+4. Scope
+5. Non-goals
+6. Acceptance criteria
+7. Tests
+8. Completion report format
+
+For a Full Task, require:
+
+1. Recommended model
+2. Reasoning effort
+3. Selection reason
+4. Objective
+5. Scope and target files
+6. Non-goals
+7. Implementation requirements
+8. Acceptance criteria
+9. Tests
+10. Completion report format
+
+Do not silently simplify a task format after implementation starts. If the
+format is unclear, use the Full Task format.
+
+Do not silently invent missing requirements. If a missing field materially
+affects implementation, report it before making broad or irreversible changes.
+
+## Instruction Precedence
+
+Follow instructions in this order: the user's latest explicit instruction,
+approved task-specific instructions, a deeper-directory `AGENTS.md` or
+`AGENTS.override.md`, the repository-root `AGENTS.md`, and general defaults.
+Task-specific instructions do not implicitly waive production-data protection,
+force-push prohibition, unauthorized main changes, unauthorized deployment or
+startup, or out-of-scope implementation. Such exceptions require explicit
+permission.
+
+## Model Selection Policy
+
+The recommended model and reasoning effort are selected before the task starts
+by the user or ChatGPT. They are not instructions for Codex to switch models
+automatically during execution. Codex should follow the selection written in
+the task prompt.
+
+Default guidance:
+
+- Small mechanical changes: Luna Low or Medium
+- Normal, clearly bounded implementation: Luna High
+- Investigation-heavy or judgment-heavy implementation: Terra
+- Ambiguous, high-risk, cross-system, or foundational changes: Sol
+- Use the lowest model and reasoning effort that can reliably complete the task.
+- Model names and available reasoning levels can differ by Codex environment.
+  If a requested choice is unavailable, report the available candidates before
+  starting and do not silently switch to a more expensive setting.
+- Do not use parallel agents or unusually expensive reasoning modes unless the
+  task prompt explicitly allows them.
+
+If the selected model is unavailable in the current Codex surface, do not
+quietly substitute a more expensive model. Report the limitation and use the
+closest approved option only when the task prompt allows it.
+
+## Parallel Development
+
+- Using sub-agents within one Codex task, editing one worktree concurrently, or
+  splitting work into parallel tasks by Codex alone requires explicit task
+  permission.
+- Independent Tracks split by ChatGPT may run in separate branches, worktrees,
+  and Codex tasks. Each Track starts from its specified base SHA and follows
+  the stated shared-file ownership and integration order.
+
+## Standard Implementation Workflow
+
+1. Read the task prompt and confirm that all required fields are present.
+2. Inspect only the relevant project structure, files, and referenced design
+   documents.
+3. Preserve currently working behavior.
+4. Make the smallest reasonable set of changes.
+5. Stay inside the specified scope and non-goals.
+6. Run the specified tests and relevant build checks.
+7. Compare the result against every acceptance criterion.
+8. Return the required completion report.
+
+Sol review is not mandatory for every change. Request or prepare a Sol review
+when the task is medium-risk or high-risk, including changes involving:
+
+- Combat calculation foundations
+- Economy, trading, rewards, or item duplication risk
+- Persistence, migrations, or player data integrity
+- Async or concurrent processing
+- Security or permission boundaries
+- Multiple systems or large architectural changes
+- A failed or uncertain Luna implementation
+
+For review, prioritize the original task prompt, Git diff, test results, and
+reported concerns instead of rereading the entire repository without need.
 
 ## Before Editing
 
@@ -33,7 +142,7 @@ Before changing files:
 2. Read the relevant existing classes.
 3. Preserve currently working behavior.
 4. Make the smallest reasonable set of changes.
-5. Ask for clarification when requirements are ambiguous.
+5. Report ambiguity instead of making major unapproved decisions.
 
 Do not create unnecessary classes, managers, interfaces, abstractions, or
 frameworks.
@@ -100,6 +209,7 @@ Do not:
 - Change Gradle, Java, or Paper versions unless requested.
 - Edit generated files inside `build/` or `.gradle/`.
 - Commit or push Git changes unless explicitly requested.
+- Do not merge, delete branches, or change PR state unless explicitly requested.
 - Run destructive Git commands.
 - Delete user files.
 - Add secrets, tokens, passwords, or personal information to the repository.
@@ -108,38 +218,63 @@ Do not:
 
 After implementation:
 
-1. Run:
+1. Run the tests specified by the task prompt.
+2. For normal Java implementation tasks, run:
 
-   `.\gradlew.bat clean build`
+   `.\gradlew.bat clean check -PskipAutoStart`
 
-2. Fix compilation errors caused by the changes.
-3. Do not claim success unless the build succeeds.
-4. Report warnings separately from errors.
+   `.\gradlew.bat clean build -PskipAutoStart`
 
-If the build cannot be completed, clearly explain why.
+   `.\gradlew.bat check -PskipAutoStart` is also allowed when a normal check
+   is sufficient.
 
-## Final Response Format
+   Ordinary `clean build`/`build`, auto-deploy, and Paper startup may be used
+   only when the task-specific prompt explicitly permits them. For normal
+   implementation and CI pre-verification, always use `-PskipAutoStart`.
+   Documentation-only tasks do not run Gradle unless their task-specific
+   instructions explicitly require it.
+
+3. Fix compilation errors caused by the changes.
+4. Do not claim success unless the required checks succeed.
+5. Report warnings separately from errors.
+
+If verification cannot be completed, clearly explain why.
+
+## Required Completion Report
 
 After completing a task, report:
 
-1. What was implemented.
-2. Which files were created or changed.
-3. Whether the Gradle build succeeded.
-4. Any warnings or remaining concerns.
-5. How the user can test the feature in Minecraft.
+1. The model and reasoning effort actually selected at task start
+2. What was implemented
+3. Which files were created or changed
+4. Acceptance criteria results
+5. Tests and build checks executed
+6. Test results
+7. Warnings or remaining concerns
+8. Unresolved specification or architecture decisions
+9. How the user can test the feature in Minecraft, when applicable
 
 Keep the explanation understandable for a beginner.
+
+Report the actual model and reasoning effort selected at task start. Only state
+that a model was unavailable or that a substitute was used when that limitation
+was actually confirmed and a change was made; do not infer or guess this from
+the task recommendation.
 
 ## Current Development Workflow
 
 The normal workflow is:
 
 1. The user discusses the next feature with ChatGPT.
-2. ChatGPT prepares the implementation instructions.
-3. Codex implements the approved task.
-4. ChatGPT reviews the result when needed.
-5. The user tests the plugin.
-6. The user commits and pushes the completed feature.
+2. ChatGPT selects the model and reasoning effort before the task starts.
+3. ChatGPT prepares the implementation instructions using the required template.
+4. Codex implements the approved bounded task.
+5. Codex runs tests and returns the completion report.
+6. ChatGPT reviews the result; Sol reviews medium-risk and high-risk results
+   when needed.
+7. The user tests the plugin.
+8. Git changes are committed and pushed only when explicitly requested.
 
 Follow the task-specific prompt in addition to this file. If a task-specific
-prompt conflicts with this file, ask before making major architectural changes.
+prompt conflicts with this file, follow the more specific approved instruction
+while preserving the safety rules and final authority of the user.
