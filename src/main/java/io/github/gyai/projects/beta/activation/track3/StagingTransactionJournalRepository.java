@@ -120,6 +120,19 @@ public final class StagingTransactionJournalRepository implements AutoCloseable 
         if (!closed && Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) forceDirectory(root);
     }
 
+    /** Persistent quarantine is a startup gate until an operator resolves it. */
+    public synchronized int quarantinedFileCount() {
+        requireOpen();
+        if (!Files.isDirectory(quarantine, LinkOption.NOFOLLOW_LINKS)) return 0;
+        try (var stream = Files.list(quarantine)) {
+            return (int) stream.filter(path -> Files.isRegularFile(
+                            path, LinkOption.NOFOLLOW_LINKS))
+                    .limit(MAXIMUM_FILES + 1L).count();
+        } catch (IOException failure) {
+            throw new IllegalStateException("journal quarantine listing failed", failure);
+        }
+    }
+
     @Override public synchronized void close() {
         if (closed) return;
         drain();

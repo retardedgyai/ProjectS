@@ -59,6 +59,7 @@ public final class StagingTransactionRecoveryService implements AutoCloseable {
                 }
             }
         }
+        quarantined = Math.max(quarantined, repository.quarantinedFileCount());
         latest = new StagingTransactionRecoveryResult(discarded, terminal, required,
                 quarantined, blockedRequests, blockedOperations);
         return latest;

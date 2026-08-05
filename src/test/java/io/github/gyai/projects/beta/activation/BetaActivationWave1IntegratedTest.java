@@ -29,8 +29,23 @@ public final class BetaActivationWave1IntegratedTest {
         centralPlanIsRegisteredButCompletelyDisabled();
         operatorRegistryIsBoundedAndRestartOnly();
         durableRecoveryNeverRetriesUncertainWork();
+        corruptRecoveryJournalRemainsBlocking();
         fireSnapshotIsRevisionGatedAndProtocolCompatible();
         sourceBoundariesPreserveSingleApplicationAndVanillaFireBan();
+    }
+
+    private static void corruptRecoveryJournalRemainsBlocking() throws Exception {
+        Path base = Files.createTempDirectory("projects-wave1-corrupt");
+        Path root = base.resolve("beta-staging").resolve("transactions");
+        Files.createDirectories(root);
+        UUID requestId = UUID.randomUUID();
+        Files.writeString(root.resolve(requestId + ".journal"), "not-a-journal");
+        try (var repository = new StagingTransactionJournalRepository(root);
+             var recovery = new StagingTransactionRecoveryService(repository)) {
+            assert recovery.recover().quarantined() == 1;
+            assert recovery.recover().quarantined() == 1;
+            assert repository.load(requestId).isEmpty();
+        }
     }
 
     private static void centralPlanIsRegisteredButCompletelyDisabled() {
@@ -110,7 +125,7 @@ public final class BetaActivationWave1IntegratedTest {
             var again = recovery.recover();
             assert again.terminalReplayed() == 2;
             assert again.recoveryRequired() == 1;
-            assert again.quarantined() == 0;
+            assert again.quarantined() == 1 : "quarantine must remain a startup gate";
         }
         terminalJournal.close();
     }
