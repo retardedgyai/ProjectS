@@ -17,10 +17,22 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
     private static final int MAXIMUM_AUDIT_BYTES = 65_536;
     private final Path directory;
     private final StagingEquipmentCodec codec = new StagingEquipmentCodec();
+    private final StagingTransactionJournalRepository recoveryJournal;
 
     public FileStagingTransactionAuditSink(StagingEconomyPaths paths) {
+        this(paths, new StagingTransactionJournalRepository(
+                java.util.Objects.requireNonNull(paths, "staging paths are required")
+                        .transactionsDirectory()));
+    }
+
+    public FileStagingTransactionAuditSink(
+            StagingEconomyPaths paths,
+            StagingTransactionJournalRepository recoveryJournal
+    ) {
         if (paths == null) throw new IllegalArgumentException("staging paths are required");
         directory = paths.transactionsDirectory();
+        this.recoveryJournal = java.util.Objects.requireNonNull(
+                recoveryJournal, "recovery journal is required");
     }
 
     @Override
@@ -37,6 +49,21 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "item-payload-base64: " + Base64.getEncoder()
                 .encodeToString(document.payload()) + "\n";
         write(proposal.requestId(), "resolved", body);
+        recoveryJournal.save(
+                new StagingTransactionJournalRepository.Entry(
+                        proposal.requestId(),
+                        StagingTransactionJournalRepository.Stage.PRODUCED,
+                        proposal.playerId(), proposal.operationId(),
+                        proposal.inputs().stream().map(input ->
+                                input.inputId() + "@" + input.revision()).toList(),
+                        StagingTransactionJournalRepository.ReservationState.HELD,
+                        proposal.proposedItem().instanceId().map(UUID::toString)
+                                .orElse(proposal.canonicalFamilyId()),
+                        StagingTransactionJournalRepository.TerminalOutcome.NONE,
+                        proposal.recipeId(), proposal.expectedRevision(), 1,
+                        java.util.List.of("VALIDATE", "RESERVE", "CONSUME", "PRODUCE"),
+                        true, "",
+                        System.currentTimeMillis()));
     }
 
     @Override
@@ -51,6 +78,48 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "completed-at: " + result.completedAt() + "\n"
                 + "reason: " + safe(result.reason()) + "\n";
         write(result.requestId(), "terminal", body);
+        recoveryJournal.save(terminalEntry(result));
+    }
+
+    public boolean usesRecoveryJournal(StagingTransactionJournalRepository repository) {
+        return recoveryJournal == repository;
+    }
+
+    private static StagingTransactionJournalRepository.Entry terminalEntry(
+            TransactionAuditResult result
+    ) {
+        StagingTransactionJournalRepository.Stage stage;
+        StagingTransactionJournalRepository.TerminalOutcome outcome;
+        switch (result.outcome()) {
+            case COMMITTED -> {
+                stage = StagingTransactionJournalRepository.Stage.COMMITTED;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.COMMITTED;
+            }
+            case ROLLED_BACK, REJECTED, INPUT_CONFLICT, TERMINAL_LIMIT,
+                    REPLAY_CONFLICT, DUPLICATE_ACTIVE, ACTIVE_LIMIT, CLOSED -> {
+                stage = StagingTransactionJournalRepository.Stage.ROLLED_BACK;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.ROLLED_BACK;
+            }
+            case ROLLBACK_FAILED, COMMIT_UNCERTAIN -> {
+                stage = StagingTransactionJournalRepository.Stage.COMMIT_UNCERTAIN;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.COMMIT_UNCERTAIN;
+            }
+            default -> throw new IllegalStateException("unknown transaction outcome");
+        }
+        return new StagingTransactionJournalRepository.Entry(
+                result.requestId(), stage, result.playerId(), result.operationId(),
+                result.inputs().stream().map(input ->
+                        input.inputId() + "@" + input.revision()).toList(),
+                stage == StagingTransactionJournalRepository.Stage.COMMITTED
+                        ? StagingTransactionJournalRepository.ReservationState.CONSUMED
+                        : StagingTransactionJournalRepository.ReservationState.RELEASED,
+                result.output().map(output -> output.outputId()
+                        + ":" + output.quantity()).orElse(""),
+                outcome, result.recipeId(), result.expectedRevision(),
+                result.expectedOutputUnits(), result.completedStages().stream()
+                        .map(Enum::name).toList(),
+                result.output().map(io.github.gyai.projects.crafting.OutputProposal::equipmentBase)
+                        .orElse(false), result.reason(), result.completedAt().toEpochMilli());
     }
 
     private void write(UUID requestId, String kind, String body) {

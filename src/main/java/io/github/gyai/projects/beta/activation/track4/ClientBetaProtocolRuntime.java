@@ -62,6 +62,13 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
 
     public synchronized int registrationCount() { return registrations.size(); }
 
+    public synchronized boolean running() { return running; }
+
+    public synchronized BetaCapabilitySnapshot capabilitySnapshot(UUID playerId) {
+        return running ? sessions.snapshot(playerId)
+                : BetaCapabilitySnapshot.oldClient(playerId);
+    }
+
     @Override public synchronized void close() {
         unregisterAll();
         sessions.close();

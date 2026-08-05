@@ -9,9 +9,38 @@ import java.util.Locale;
 public final class BetaRuntimeCommandService {
     public static final int MAXIMUM_RESPONSE_LINES = 32;
     private final BetaRuntime runtime;
+    private final BetaOperatorContributorRegistry contributors;
 
     public BetaRuntimeCommandService(BetaRuntime runtime) {
+        this(runtime, BetaOperatorContributorRegistry.disabledDefaults(runtime));
+    }
+
+    public BetaRuntimeCommandService(
+            BetaRuntime runtime,
+            BetaOperatorContributorRegistry contributors
+    ) {
         this.runtime = java.util.Objects.requireNonNull(runtime, "runtime");
+        this.contributors = java.util.Objects.requireNonNull(contributors, "contributors");
+    }
+
+    public Response execute(List<String> arguments, boolean hasDevPermission) {
+        return execute(arguments, new BetaOperatorContributorRegistry.Context(
+                null, "", hasDevPermission, false));
+    }
+
+    public Response execute(
+            List<String> arguments,
+            BetaOperatorContributorRegistry.Context context
+    ) {
+        boolean hasDevPermission = context != null && context.projectsDev();
+        if (!hasDevPermission) return new Response(false, List.of("permission denied"));
+        List<String> values = arguments == null ? List.of() : List.copyOf(arguments);
+        if (!values.isEmpty() && "staging".equalsIgnoreCase(values.get(0))) {
+            BetaOperatorContributorRegistry.Result result =
+                    contributors.execute(values, runtime.healthSnapshot(), context);
+            return new Response(result.success(), result.messages());
+        }
+        return execute(values.isEmpty() ? "status" : values.get(0), true);
     }
 
     public Response execute(String action, boolean hasDevPermission) {

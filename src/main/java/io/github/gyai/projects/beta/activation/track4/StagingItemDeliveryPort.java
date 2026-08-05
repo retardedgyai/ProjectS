@@ -10,5 +10,17 @@ public interface StagingItemDeliveryPort {
             String canonicalItemId,
             int quantity);
 
+    default RewardDeliveryReceipt deliver(
+            RewardClaimRequest claim,
+            String canonicalItemId,
+            int quantity,
+            DeliveryContext context
+    ) {
+        return deliver(claim, canonicalItemId, quantity);
+    }
+
     boolean available();
+
+    record DeliveryContext(String worldName, boolean projectsDev,
+                           boolean compatibleClient) { }
 }

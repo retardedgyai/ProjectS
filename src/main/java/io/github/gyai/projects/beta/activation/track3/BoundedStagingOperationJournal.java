@@ -74,6 +74,19 @@ public final class BoundedStagingOperationJournal implements EquipmentOperationJ
         auditSink.terminal(result);
     }
 
+    /** Loads an already-durable terminal result without writing it again. */
+    public synchronized void restoreTerminal(TransactionAuditResult result) {
+        requireOpen();
+        TransactionAuditResult replay = java.util.Objects.requireNonNull(result).asReplay();
+        TransactionAuditResult existing = terminal.get(replay.requestId());
+        if (existing != null && !existing.equals(replay)) {
+            throw new IllegalStateException("conflicting durable terminal replay");
+        }
+        putBounded(terminal, replay.requestId(), replay);
+        resolved.remove(replay.requestId());
+        persisted.remove(replay.requestId());
+    }
+
     @Override
     public synchronized void rollbackProposal(UUID requestId) {
         persisted.remove(requestId);

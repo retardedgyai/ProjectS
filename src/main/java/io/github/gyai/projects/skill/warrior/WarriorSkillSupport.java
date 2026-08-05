@@ -8,6 +8,7 @@ import io.github.gyai.projects.combat.damage.DamageRequest;
 import io.github.gyai.projects.combat.damage.DamageRequestApplier;
 import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.damage.AttackMetadata;
+import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -31,6 +32,7 @@ public final class WarriorSkillSupport {
     private final WarriorCombatManager combatManager;
     private final BalanceTuningManager balanceManager;
     private final DamageRequestApplier damageApplier;
+    private final ConfirmedDamageHitObserver confirmedHitObserver;
 
     public WarriorSkillSupport(
             JavaPlugin plugin,
@@ -41,7 +43,7 @@ public final class WarriorSkillSupport {
             DamageService damageService
     ) {
         this(plugin, dummyManager, enhancementManager, combatManager,
-                balanceManager, damageService::apply);
+                balanceManager, damageService::apply, ConfirmedDamageHitObserver.NO_OP);
     }
 
     public WarriorSkillSupport(
@@ -52,6 +54,19 @@ public final class WarriorSkillSupport {
             BalanceTuningManager balanceManager,
             DamageRequestApplier damageApplier
     ) {
+        this(plugin, dummyManager, enhancementManager, combatManager,
+                balanceManager, damageApplier, ConfirmedDamageHitObserver.NO_OP);
+    }
+
+    public WarriorSkillSupport(
+            JavaPlugin plugin,
+            TrainingDummyManager dummyManager,
+            EnhancementManager enhancementManager,
+            WarriorCombatManager combatManager,
+            BalanceTuningManager balanceManager,
+            DamageRequestApplier damageApplier,
+            ConfirmedDamageHitObserver confirmedHitObserver
+    ) {
         this.plugin = plugin;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
@@ -59,6 +74,8 @@ public final class WarriorSkillSupport {
         this.balanceManager = balanceManager;
         this.damageApplier = Objects.requireNonNull(
                 damageApplier, "damageApplier");
+        this.confirmedHitObserver = Objects.requireNonNull(
+                confirmedHitObserver, "confirmedHitObserver");
     }
 
     public boolean validateCaster(Player player) {
@@ -287,7 +304,14 @@ public final class WarriorSkillSupport {
                     player, target, fixedDamage, coefficient,
                     skillId, session.sessionId(), areaDamage,
                     modeMultiplier, attackMetadata);
-            Runnable application = () -> damageApplier.apply(request);
+            Runnable application = () -> {
+                var result = damageApplier.apply(request);
+                if (result.attempted()) {
+                    String hitId = session.sessionId() + ":" + target.getUniqueId();
+                    try { confirmedHitObserver.confirmed(hitId, request, result); }
+                    catch (RuntimeException ignoredObserverFailure) { }
+                }
+            };
             if (spiritBonusAlreadyApplied) {
                 combatManager.runWithSpiritBonusAlreadyApplied(
                         player, application);
