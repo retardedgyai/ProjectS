@@ -20,7 +20,6 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -37,7 +36,8 @@ public final class BukkitTrainingDummyElementBoundary implements TrainingDummyEl
     private final JavaPlugin plugin;
     private final TrainingDummyManager dummyManager;
     private final DamageService damageService;
-    private final LinkedHashMap<UUID, Long> lastVisualAt = new LinkedHashMap<>();
+    private final BoundedVisualRateLimiter visualRateLimiter =
+            new BoundedVisualRateLimiter(MAXIMUM_VISUAL_RATE_KEYS, VISUAL_RATE_MILLIS);
 
     public BukkitTrainingDummyElementBoundary(
             JavaPlugin plugin,
@@ -54,6 +54,13 @@ public final class BukkitTrainingDummyElementBoundary implements TrainingDummyEl
         Entity entity = targetId == null ? null : Bukkit.getEntity(targetId);
         return entity instanceof LivingEntity && entity.isValid()
                 && dummyManager.isTrainingDummy(entity);
+    }
+
+    @Override
+    public int targetRuntimeId(UUID targetId) {
+        Entity entity = targetId == null ? null : Bukkit.getEntity(targetId);
+        return entity != null && entity.isValid() && dummyManager.isTrainingDummy(entity)
+                ? entity.getEntityId() : -1;
     }
 
     @Override
@@ -113,26 +120,35 @@ public final class BukkitTrainingDummyElementBoundary implements TrainingDummyEl
         Objects.requireNonNull(event, "event");
         Entity entity = Bukkit.getEntity(event.targetId());
         if (!(entity instanceof LivingEntity target) || !dummyManager.isTrainingDummy(entity)) return;
-        Long previous = lastVisualAt.get(event.targetId());
-        if (previous != null && event.occurredAtMillis() - previous < VISUAL_RATE_MILLIS) return;
-        if (!lastVisualAt.containsKey(event.targetId())
-                && lastVisualAt.size() >= MAXIMUM_VISUAL_RATE_KEYS) {
-            lastVisualAt.remove(lastVisualAt.keySet().iterator().next());
-        }
-        lastVisualAt.put(event.targetId(), event.occurredAtMillis());
-        Particle.DustOptions dust = new Particle.DustOptions(
-                event.profile() == StagingElementProfile.FIRE
-                        ? Color.fromRGB(255, 96, 32) : Color.fromRGB(96, 192, 255),
-                1.0f);
         for (Player viewer : target.getWorld().getPlayers()) {
             if (!viewer.hasPermission("projects.dev")
                     || viewer.getLocation().distanceSquared(target.getLocation())
                     > MAXIMUM_VIEW_DISTANCE_SQUARED) continue;
+            if (event.profile() == StagingElementProfile.FIRE) {
+                if (event.detonationPulse()) {
+                    viewer.spawnParticle(Particle.DUST,
+                            target.getLocation().add(0, 1.2, 0), 10,
+                            .35, .4, .35, 0,
+                            new Particle.DustOptions(Color.fromRGB(255, 96, 32), 1.2f));
+                }
+                if (!event.compatibleClient() && admitFallback(viewer.getUniqueId(),
+                        event.targetId(), event.occurredAtMillis())) {
+                    viewer.sendActionBar(Component.text(event.state()));
+                }
+                continue;
+            }
+            if (!admitFallback(viewer.getUniqueId(), event.targetId(),
+                    event.occurredAtMillis())) continue;
             viewer.spawnParticle(Particle.DUST, target.getLocation().add(0, 1.2, 0),
-                    6, .25, .35, .25, 0, dust);
-            viewer.sendActionBar(Component.text("[STAGING " + event.profile()
-                    + "] " + event.state()));
+                    6, .25, .35, .25, 0,
+                    new Particle.DustOptions(Color.fromRGB(96, 192, 255), 1.0f));
+            viewer.sendActionBar(Component.text("[STAGING ICE] " + event.state()));
         }
+    }
+
+    private boolean admitFallback(UUID viewerId, UUID targetId, long occurredAtMillis) {
+        String key = viewerId + ":" + targetId;
+        return visualRateLimiter.admit(key, occurredAtMillis);
     }
 
     @Override
@@ -146,7 +162,7 @@ public final class BukkitTrainingDummyElementBoundary implements TrainingDummyEl
             public void cancel() {
                 scheduled.cancel();
                 synchronized (BukkitTrainingDummyElementBoundary.this) {
-                    lastVisualAt.clear();
+                    visualRateLimiter.clear();
                 }
             }
 

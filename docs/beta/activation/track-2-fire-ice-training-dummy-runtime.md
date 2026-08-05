@@ -111,12 +111,24 @@ selected dummy UUID to `reset-target`; malformed UUIDs fail closed.
 
 ## Visual fallback
 
-When the callback explicitly says a debug viewer is authorized and near, the
-Bukkit boundary emits at most six particles plus one actionbar update to
-`projects.dev` viewers in the same world and within 32 blocks. The per-target
-rate limiter prevents tick spam. Client Beta UI and protocol channels are not
-required and are not registered here. The immutable snapshot port is the only
-Track 4 protocol input.
+Fire never uses Minecraft combustion state, fire ticks, visual fire, the
+vanilla fire overlay, or vanilla fire-tick damage. Normal Fire stack retention
+emits no particle. The only permitted Fire particle is a short dedicated DUST
+pulse when the authoritative detonation revision advances.
+
+When no compatible Client is present, an explicitly authorized nearby
+`projects.dev` viewer may receive a rate-limited `Fire 3 / 10` ActionBar. This
+fallback is display-only and is keyed by viewer/target with a bounded 500 ms
+limiter. A compatible Client receives neither the ActionBar nor continuous
+Fire particles.
+
+The immutable snapshot adds target network ID, globally monotonic state
+revision, stacks 0..10, fractional gauge, threshold, fractional progress,
+decay state/countdown, detonation pulse revision, and expiry timestamp. Values
+are finite and bounded, contain UUID/scalars only, and are removed on target
+removal, timeout, or module stop. `fireDisplayFields()` maps these values into
+the existing protocol-v1 display document; channel/version/capability semantics
+are unchanged.
 
 ## Automated acceptance
 

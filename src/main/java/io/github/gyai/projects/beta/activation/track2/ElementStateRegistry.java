@@ -22,6 +22,7 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
     static final long TARGET_TIMEOUT_MILLIS = 300_000L;
     static final long HIT_KEY_TIMEOUT_MILLIS = 10_000L;
     static final long FREEZE_DURATION_MILLIS = 3_000L;
+    static final long FIRE_DECAY_HOLD_MILLIS = 5_000L;
 
     static final FireElementEngine.TargetProfile FIRE_DUMMY =
             new FireElementEngine.TargetProfile(ElementTargetCategory.NORMAL, 25.0);
@@ -33,6 +34,7 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
     private final LinkedHashMap<String, Long> hitKeys = new LinkedHashMap<>();
     private final ArrayDeque<ParticipationEvent> participation = new ArrayDeque<>();
     private long nextSequence = 1L;
+    private long nextStateRevision = 1L;
 
     synchronized boolean setProfile(UUID playerId, StagingElementProfile profile) {
         if (playerId == null || profile == null) return false;
@@ -51,14 +53,19 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
                 : profiles.getOrDefault(playerId, StagingElementProfile.NONE);
     }
 
-    synchronized TargetState targetState(UUID targetId, long nowMillis) {
+    synchronized TargetState targetState(UUID targetId, int targetRuntimeId, long nowMillis) {
+        if (targetId == null || targetRuntimeId < 0) return null;
         TargetState state = targets.get(targetId);
+        if (state != null && state.targetRuntimeId != targetRuntimeId) {
+            targets.remove(targetId);
+            state = null;
+        }
         if (state != null && state.frozenSinceMillis >= 0
                 && nowMillis - state.frozenSinceMillis >= FREEZE_DURATION_MILLIS) {
-            state.resetIce(nowMillis);
+            state.resetIce(nowMillis, nextRevision());
         }
         if (state == null && targets.size() < MAXIMUM_TARGETS) {
-            state = new TargetState(targetId, nowMillis);
+            state = new TargetState(targetId, targetRuntimeId, nowMillis);
             targets.put(targetId, state);
         }
         return state;
@@ -73,6 +80,10 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
         }
         hitKeys.put(key, nowMillis);
         return true;
+    }
+
+    synchronized void changed(TargetState state, long nowMillis, boolean detonated) {
+        if (state != null) state.changed(nowMillis, detonated, nextRevision());
     }
 
     synchronized void recordParticipation(
@@ -105,12 +116,19 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
     synchronized int cleanup(long nowMillis) {
         cleanupHitKeys(nowMillis);
         for (TargetState state : targets.values()) {
+            state.snapshotClockMillis = nowMillis;
             if (state.frozenSinceMillis >= 0
                     && nowMillis - state.frozenSinceMillis >= FREEZE_DURATION_MILLIS) {
-                state.resetIce(nowMillis);
+                state.resetIce(nowMillis, nextRevision());
             }
             try {
-                state.fire.advanceDecay(state.targetId.toString(), nowMillis);
+                FireElementEngine.StateSnapshot before = state.fire
+                        .state(state.targetId.toString()).orElse(null);
+                FireElementEngine.StateSnapshot after = state.fire
+                        .advanceDecay(state.targetId.toString(), nowMillis).orElse(null);
+                if (!java.util.Objects.equals(before, after)) {
+                    state.stateRevision = nextRevision();
+                }
             } catch (IllegalArgumentException ignored) {
                 // A stale scheduler tick cannot mutate newer callback state.
             }
@@ -126,6 +144,8 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
         targets.clear();
         hitKeys.clear();
         participation.clear();
+        nextSequence = 1L;
+        nextStateRevision = 1L;
     }
 
     synchronized int profileCount() {
@@ -152,22 +172,42 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
         hitKeys.entrySet().removeIf(entry -> nowMillis - entry.getValue() > HIT_KEY_TIMEOUT_MILLIS);
     }
 
+    private long nextRevision() {
+        if (nextStateRevision == Long.MAX_VALUE) return Long.MAX_VALUE;
+        return nextStateRevision++;
+    }
+
     static final class TargetState {
         final UUID targetId;
+        final int targetRuntimeId;
         final FireElementEngine fire = new FireElementEngine(FireElementEngine.Policy.waveOne(1, 64));
         IceElementEngine ice = new IceElementEngine(IceElementEngine.Policy.waveOne(1, 64));
         long frozenSinceMillis = -1L;
         long lastUpdatedAtMillis;
+        long snapshotClockMillis;
+        long stateRevision;
+        long detonationPulseRevision;
 
-        TargetState(UUID targetId, long nowMillis) {
+        TargetState(UUID targetId, int targetRuntimeId, long nowMillis) {
             this.targetId = targetId;
+            this.targetRuntimeId = targetRuntimeId;
             this.lastUpdatedAtMillis = nowMillis;
+            this.snapshotClockMillis = nowMillis;
         }
 
-        void resetIce(long nowMillis) {
+        void resetIce(long nowMillis, long revision) {
             ice.clear();
             frozenSinceMillis = -1L;
             lastUpdatedAtMillis = nowMillis;
+            snapshotClockMillis = nowMillis;
+            stateRevision = revision;
+        }
+
+        void changed(long nowMillis, boolean detonated, long revision) {
+            lastUpdatedAtMillis = nowMillis;
+            snapshotClockMillis = nowMillis;
+            stateRevision = revision;
+            if (detonated) detonationPulseRevision++;
         }
 
         TargetSnapshot snapshot() {
@@ -176,16 +216,36 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
             int contributors = 0;
             if (fireState != null) contributors += fireState.contributions().size();
             if (iceState != null) contributors += iceState.contributions().size();
+            double threshold = FIRE_DUMMY.stackThreshold();
+            double fractional = fireState == null ? 0.0
+                    : fireState.fractionalBurnValue();
+            long decayStartsAt = fireState == null ? snapshotClockMillis
+                    : safeAdd(fireState.lastFireInputAtMillis(), FIRE_DECAY_HOLD_MILLIS);
+            boolean hasFire = fireState != null
+                    && (fireState.stacks() > 0 || fractional > 0.0);
             return new TargetSnapshot(
                     targetId,
+                    targetRuntimeId,
+                    stateRevision,
                     fireState == null ? 0 : fireState.stacks(),
-                    fireState == null ? 0.0 : fireState.fractionalBurnValue(),
+                    fractional,
+                    threshold,
+                    fractional / threshold,
+                    hasFire && snapshotClockMillis >= decayStartsAt,
+                    hasFire ? Math.max(0L, decayStartsAt - snapshotClockMillis) : 0L,
+                    detonationPulseRevision,
+                    safeAdd(lastUpdatedAtMillis, TARGET_TIMEOUT_MILLIS),
                     iceState == null ? 0.0 : iceState.coldValue(),
                     iceState == null ? IceElementEngine.Stage.NONE : iceState.stage(),
                     iceState != null && iceState.frozen(),
                     iceState == null ? 0L : iceState.refreezeImmuneUntilMillis(),
                     lastUpdatedAtMillis,
                     contributors);
+        }
+
+        private static long safeAdd(long left, long right) {
+            try { return Math.addExact(left, right); }
+            catch (ArithmeticException ignored) { return Long.MAX_VALUE; }
         }
     }
 }

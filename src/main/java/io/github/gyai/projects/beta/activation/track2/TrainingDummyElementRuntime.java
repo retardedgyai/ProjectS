@@ -79,7 +79,9 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
         if (profile == StagingElementProfile.NONE) {
             return AttackOutcome.unchanged(input.metadata());
         }
-        ElementStateRegistry.TargetState target = registry.targetState(input.targetId(), now);
+        int targetRuntimeId = boundary.targetRuntimeId(input.targetId());
+        ElementStateRegistry.TargetState target = registry.targetState(
+                input.targetId(), targetRuntimeId, now);
         if (target == null) {
             diagnostic("target capacity reached");
             return AttackOutcome.unchanged(input.metadata());
@@ -150,14 +152,15 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
                 input.targetId().toString(), ElementStateRegistry.FIRE_DUMMY,
                 input.attackerId(), ElementAttackSchool.PHYSICAL,
                 FIRE_INPUT, FIRE_ATTRIBUTE, input.occurredAtMillis()));
-        target.lastUpdatedAtMillis = input.occurredAtMillis();
+        boolean detonated = result.detonation().isPresent();
+        registry.changed(target, input.occurredAtMillis(), detonated);
         int secondaryApplications = 0;
         if (result.detonation().isPresent()) {
             FireElementEngine.DetonationEvent event = result.detonation().orElseThrow();
             secondaryApplications = applyFireDetonation(input, event, metadata);
         }
-        publishVisual(input, StagingElementProfile.FIRE,
-                "stacks=" + result.state().stacks());
+        publishVisual(input, StagingElementProfile.FIRE, result.state().stacks(),
+                detonated, "Fire " + result.state().stacks() + " / 10");
         return new AttackOutcome(metadata, 1.0, false, false,
                 secondaryApplications, result.accepted());
     }
@@ -172,7 +175,7 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
                 input.attackerId(), ElementAttackSchool.PHYSICAL,
                 input.origin(), ICE_INPUT, 0.0, shatter,
                 input.preCriticalDirectDamage(), input.occurredAtMillis()));
-        target.lastUpdatedAtMillis = input.occurredAtMillis();
+        registry.changed(target, input.occurredAtMillis(), false);
         if (result.frozeNow()) target.frozenSinceMillis = input.occurredAtMillis();
         int secondaryApplications = 0;
         if (result.shatter().isPresent()) {
@@ -183,7 +186,7 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
                     event.totalAdditionalDamage(), IceElementEngine.DamageOrigin.SHATTER_ADDITIONAL,
                     metadata, false)) ? 1 : 0;
         }
-        publishVisual(input, StagingElementProfile.ICE,
+        publishVisual(input, StagingElementProfile.ICE, 0, false,
                 "stage=" + result.state().stage());
         return new AttackOutcome(metadata, result.directDamageMultiplier(),
                 result.frozeNow(), result.shatter().isPresent(),
@@ -230,11 +233,13 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
         }
     }
 
-    private void publishVisual(AttackInput input, StagingElementProfile profile, String state) {
+    private void publishVisual(AttackInput input, StagingElementProfile profile,
+                               int fireStacks, boolean detonationPulse, String state) {
         if (!input.debugViewerAllowedAndNear()) return;
         try {
             boundary.publishVisual(new TrainingDummyElementBoundary.VisualEvent(
-                    input.targetId(), profile, state, input.occurredAtMillis()));
+                    input.targetId(), profile, fireStacks, input.compatibleClient(),
+                    detonationPulse, state, input.occurredAtMillis()));
         } catch (RuntimeException exception) {
             diagnostic("visual fallback failed");
         }

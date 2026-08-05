@@ -46,6 +46,8 @@ public final class CombatElementsActivationRuntimeTest {
         noneIsStrictlyObservationalAndParticipationIsDeduplicated();
         metadataIsComposedImmutably();
         fireFixtureDetonatesOnceAndRetainsThreeStacks();
+        fireDisplaySnapshotIsRevisionedFiniteAndExpires();
+        fireFallbackIsRateLimited();
         fireTracksMultipleContributorsAndDecays();
         iceStagesFreezeBonusAndOneShotShatter();
         invalidTargetsAndOriginsAreRejected();
@@ -53,6 +55,7 @@ public final class CombatElementsActivationRuntimeTest {
         moduleProviderIsFailClosedAndIdempotent();
         operatorContributorIsPermissionBounded();
         sourceBoundaryHasNoBukkitOrCentralRegistration();
+        vanillaFireApisAreAbsentFromTrackRuntime();
         System.out.println("CombatElementsActivationRuntimeTest: OK");
     }
 
@@ -112,9 +115,52 @@ public final class CombatElementsActivationRuntimeTest {
         assert fixture.boundary.secondary.stream().filter(damage ->
                 damage.targetId().equals(NEARBY)).findFirst().orElseThrow().amount() == 15.0;
         assert fixture.runtime.snapshots().target(CENTER).orElseThrow().fireStacks() == 3;
+        var snapshot = fixture.runtime.snapshots().target(CENTER).orElseThrow();
+        assert snapshot.detonationPulseRevision() == 1;
+        assert snapshot.targetRuntimeId() == FakeBoundary.RUNTIME_ID;
         int before = fixture.boundary.secondary.size();
         fixture.runtime.observe(fixture.starter(PLAYER_A, CENTER, "fire-10", 10L));
         assert fixture.boundary.secondary.size() == before;
+    }
+
+    private static void fireDisplaySnapshotIsRevisionedFiniteAndExpires() {
+        Fixture fixture = new Fixture(); fixture.runtime.start();
+        fixture.runtime.setProfile(PLAYER_A, StagingElementProfile.FIRE);
+        fixture.runtime.observe(fixture.starter(PLAYER_A, CENTER, "snapshot-1", 1_000L));
+        var first = fixture.runtime.snapshots().target(CENTER).orElseThrow();
+        assert first.stateRevision() == 1;
+        assert first.fireStacks() == 1;
+        assert first.fractionalFireGauge() == 0.0;
+        assert first.fireThreshold() == 25.0;
+        assert first.fractionalFireProgress() == 0.0;
+        assert !first.fireDecayActive();
+        assert first.fireDecayStartsInMillis() == 5_000L;
+        assert first.snapshotExpiresAtMillis() == 301_000L;
+        assert first.fireDisplayFields().size() == 10;
+        assert first.fireDisplayFields().get("target-network-id").equals("42");
+        assert first.fireDisplayFields().get("state-revision").equals("1");
+        assert Double.isFinite(first.fractionalFireGauge());
+        assert Double.isFinite(first.fireThreshold());
+        assert Double.isFinite(first.fractionalFireProgress());
+        fixture.runtime.observe(fixture.starter(PLAYER_A, CENTER, "snapshot-2", 2_000L));
+        assert fixture.runtime.snapshots().target(CENTER).orElseThrow().stateRevision() == 2;
+        fixture.clock.millis = 302_000L;
+        fixture.boundary.runCleanup();
+        assert fixture.runtime.snapshots().target(CENTER).isEmpty();
+        fixture.runtime.close();
+        assert fixture.runtime.snapshots().targets().isEmpty();
+    }
+
+    private static void fireFallbackIsRateLimited() {
+        BoundedVisualRateLimiter limiter = new BoundedVisualRateLimiter(2, 500L);
+        assert limiter.admit("viewer-a:target", 0L);
+        assert !limiter.admit("viewer-a:target", 499L);
+        assert limiter.admit("viewer-a:target", 500L);
+        assert limiter.admit("viewer-b:target", 500L);
+        assert limiter.admit("viewer-c:target", 500L);
+        assert limiter.size() == 2;
+        limiter.clear();
+        assert limiter.size() == 0;
     }
 
     private static void fireTracksMultipleContributorsAndDecays() {
@@ -290,12 +336,32 @@ public final class CombatElementsActivationRuntimeTest {
         assert !bukkitBoundary.contains("private final Player");
         assert !bukkitBoundary.contains("private final LivingEntity");
         assert !bukkitBoundary.contains("private final Entity");
+        assert !bukkitBoundary.contains("setFireTicks");
+        assert !bukkitBoundary.contains("setVisualFire");
+        assert !bukkitBoundary.contains("getFireTicks");
         String plugin = Files.readString(Path.of(
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java"));
         String command = Files.readString(Path.of(
                 "src/main/java/io/github/gyai/projects/command/ProjectCommand.java"));
         assert !plugin.contains("CombatElementsRuntimeModuleProvider");
         assert !command.contains("staging element");
+    }
+
+    private static void vanillaFireApisAreAbsentFromTrackRuntime() throws IOException {
+        Path root = Path.of("src/main/java/io/github/gyai/projects/beta/activation/track2");
+        StringBuilder source = new StringBuilder();
+        try (var files = Files.walk(root)) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                source.append(Files.readString(file));
+            }
+        }
+        String text = source.toString();
+        assert !text.contains("setFireTicks");
+        assert !text.contains("setVisualFire");
+        assert !text.contains("getFireTicks");
+        assert !text.contains("isVisualFire");
+        assert !text.contains("EntityDamageEvent.DamageCause.FIRE");
+        assert !text.contains("EntityCombustEvent");
     }
 
     private static BetaRuntimeModuleContext context(FeatureFlagSnapshot flags) {
@@ -348,6 +414,7 @@ public final class CombatElementsActivationRuntimeTest {
     }
 
     private static final class FakeBoundary implements TrainingDummyElementBoundary {
+        static final int RUNTIME_ID = 42;
         final Set<UUID> live = new LinkedHashSet<>();
         final List<SecondaryDamage> secondary = new ArrayList<>();
         final List<VisualEvent> visuals = new ArrayList<>();
@@ -359,6 +426,11 @@ public final class CombatElementsActivationRuntimeTest {
         @Override
         public boolean isLiveTrainingDummy(UUID targetId) {
             return live.contains(targetId);
+        }
+
+        @Override
+        public int targetRuntimeId(UUID targetId) {
+            return live.contains(targetId) ? RUNTIME_ID : -1;
         }
 
         @Override
