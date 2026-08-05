@@ -19,9 +19,12 @@ economy systems.
 ## Authority and Roles
 
 - The user is the game director and final decision-maker.
-- ChatGPT/Sol owns architecture, task decomposition, model selection,
-  specification clarification, and important reviews.
-- Codex implements the bounded task described in the approved task prompt.
+- ChatGPT handles design, specification organization, task decomposition, model
+  selection, acceptance criteria, integration order, and final review judgment.
+- Codex implements the bounded task described in the approved task prompt and
+  reports tests and completion status.
+- Sol is used for high-risk implementation, complex investigation, or review of
+  high-risk diffs. Sol does not automatically own all design decisions.
 - Do not make product, game-design, economy, progression, or architecture
   decisions that are not explicitly approved.
 - When a required decision is missing, stop expanding the implementation and
@@ -46,10 +49,22 @@ fields. Use `docs/ai/CODEX_TASK_TEMPLATE.md` as the canonical template.
 Do not silently invent missing requirements. If a missing field materially
 affects implementation, report it before making broad or irreversible changes.
 
+## Instruction Precedence
+
+Follow instructions in this order: the user's latest explicit instruction,
+approved task-specific instructions, a deeper-directory `AGENTS.md` or
+`AGENTS.override.md`, the repository-root `AGENTS.md`, and general defaults.
+Task-specific instructions do not implicitly waive production-data protection,
+force-push prohibition, unauthorized main changes, unauthorized deployment or
+startup, or out-of-scope implementation. Such exceptions require explicit
+permission.
+
 ## Model Selection Policy
 
-ChatGPT/Sol selects the model and reasoning effort for each task. Codex should
-follow the selection written in the task prompt.
+The recommended model and reasoning effort are selected before the task starts
+by the user or ChatGPT. They are not instructions for Codex to switch models
+automatically during execution. Codex should follow the selection written in
+the task prompt.
 
 Default guidance:
 
@@ -58,12 +73,24 @@ Default guidance:
 - Investigation-heavy or judgment-heavy implementation: Terra
 - Ambiguous, high-risk, cross-system, or foundational changes: Sol
 - Use the lowest model and reasoning effort that can reliably complete the task.
+- Model names and available reasoning levels can differ by Codex environment.
+  If a requested choice is unavailable, report the available candidates before
+  starting and do not silently switch to a more expensive setting.
 - Do not use parallel agents or unusually expensive reasoning modes unless the
-  task prompt explicitly requires them.
+  task prompt explicitly allows them.
 
 If the selected model is unavailable in the current Codex surface, do not
 quietly substitute a more expensive model. Report the limitation and use the
 closest approved option only when the task prompt allows it.
+
+## Parallel Development
+
+- Using sub-agents within one Codex task, editing one worktree concurrently, or
+  splitting work into parallel tasks by Codex alone requires explicit task
+  permission.
+- Independent Tracks split by ChatGPT may run in separate branches, worktrees,
+  and Codex tasks. Each Track starts from its specified base SHA and follows
+  the stated shared-file ownership and integration order.
 
 ## Standard Implementation Workflow
 
@@ -166,6 +193,7 @@ Do not:
 - Change Gradle, Java, or Paper versions unless requested.
 - Edit generated files inside `build/` or `.gradle/`.
 - Commit or push Git changes unless explicitly requested.
+- Do not merge, delete branches, or change PR state unless explicitly requested.
 - Run destructive Git commands.
 - Delete user files.
 - Add secrets, tokens, passwords, or personal information to the repository.
@@ -177,14 +205,22 @@ After implementation:
 1. Run the tests specified by the task prompt.
 2. For normal Java implementation tasks, run:
 
-   `.\gradlew.bat clean build`
+   `.\gradlew.bat clean check -PskipAutoStart`
+
+   `.\gradlew.bat clean build -PskipAutoStart`
+
+   `.\gradlew.bat check -PskipAutoStart` is also allowed when a normal check
+   is sufficient.
+
+   Ordinary `clean build`/`build`, auto-deploy, and Paper startup may be used
+   only when the task-specific prompt explicitly permits them. For normal
+   implementation and CI pre-verification, always use `-PskipAutoStart`.
+   Documentation-only tasks do not run Gradle unless their task-specific
+   instructions explicitly require it.
 
 3. Fix compilation errors caused by the changes.
 4. Do not claim success unless the required checks succeed.
 5. Report warnings separately from errors.
-
-Documentation-only changes do not require a Gradle build unless the task prompt
-explicitly requests one.
 
 If verification cannot be completed, clearly explain why.
 
@@ -209,11 +245,12 @@ Keep the explanation understandable for a beginner.
 The normal workflow is:
 
 1. The user discusses the next feature with ChatGPT.
-2. ChatGPT selects the model and reasoning effort.
+2. ChatGPT selects the model and reasoning effort before the task starts.
 3. ChatGPT prepares the implementation instructions using the required template.
 4. Codex implements the approved bounded task.
 5. Codex runs tests and returns the completion report.
-6. ChatGPT/Sol reviews medium-risk and high-risk results when needed.
+6. ChatGPT reviews the result; Sol reviews medium-risk and high-risk results
+   when needed.
 7. The user tests the plugin.
 8. Git changes are committed and pushed only when explicitly requested.
 
