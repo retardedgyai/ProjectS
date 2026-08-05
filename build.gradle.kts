@@ -468,6 +468,24 @@ val track3RuntimeModuleTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val combatElementsActivationRuntimeTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.track2.CombatElementsActivationRuntimeTest")
+    jvmArgs("-ea")
+}
+
+val track1ActivationFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.track1.Track1ActivationFoundationTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -523,4 +541,6 @@ tasks.named("check") {
     dependsOn(mobV2FoundationTest)
     dependsOn(wave3IntegratedFoundationTest)
     dependsOn(betaActivationFoundationTest)
+    dependsOn(combatElementsActivationRuntimeTest)
+    dependsOn(track1ActivationFoundationTest)
 }
