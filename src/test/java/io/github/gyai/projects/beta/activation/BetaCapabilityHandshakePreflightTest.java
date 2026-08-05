@@ -1,13 +1,16 @@
 package io.github.gyai.projects.beta.activation;
 
 import io.github.gyai.projects.beta.activation.track2.ElementRuntimeSnapshotPort;
+import io.github.gyai.projects.beta.activation.track2.CombatElementsRuntimeModuleProvider;
 import io.github.gyai.projects.beta.activation.track2.StagingElementProfile;
+import io.github.gyai.projects.beta.activation.track2.TrainingDummyElementBoundary;
 import io.github.gyai.projects.beta.activation.track4.BetaCapabilityAdvertisementPublisher;
 import io.github.gyai.projects.beta.activation.track4.BetaCapabilityAdvertisementTransport;
 import io.github.gyai.projects.beta.activation.track4.BetaCapabilityLifecycleListener;
 import io.github.gyai.projects.beta.activation.track4.BetaCapabilityLifecycleRegistrar;
 import io.github.gyai.projects.beta.activation.track4.BetaChannelRegistrar;
 import io.github.gyai.projects.beta.activation.track4.BetaStateTransport;
+import io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort;
 import io.github.gyai.projects.beta.activation.track4.ClientBetaProtocolRuntime;
 import io.github.gyai.projects.beta.activation.track4.ClientBetaProtocolRuntimeModule;
 import io.github.gyai.projects.beta.activation.track4.ElementSnapshotProtocolAdapter;
@@ -45,6 +48,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 public final class BetaCapabilityHandshakePreflightTest {
     private static final Instant NOW = Instant.parse("2026-08-05T00:00:00Z");
@@ -52,7 +56,10 @@ public final class BetaCapabilityHandshakePreflightTest {
     public static void main(String[] args) {
         defaultSafetyStartsNothing();
         liveHandshakeGatesElementStateUntilAcceptedAck();
+        ttlRenewalIsBoundedAndAckGated();
+        diagnosticsArePureReads();
         duplicateLifecycleReusesSessionAndCleansUp();
+        productionPlayerLifecycleClearsTemporaryProfiles();
         admissionAndBoundsFailClosed();
         partialStartupFailureCleansEveryBoundary();
         productionCompositionUsesLivePublisherWithoutPlayerRetention();
@@ -73,6 +80,7 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert harness.channels.registerCount == 0;
         assert harness.lifecycle.registerCount == 0;
         assert harness.advertisements.scheduleCount == 0;
+        assert harness.advertisements.maintenanceScheduleCount == 0;
         assert harness.states.scheduleCount == 0;
         assert harness.advertisements.packets.isEmpty();
         assert harness.states.packets.isEmpty();
@@ -97,6 +105,7 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert harness.channels.active.size() == 4;
         assert harness.lifecycle.registerCount == 1;
         assert harness.advertisements.scheduleCount == 1;
+        assert harness.advertisements.maintenanceScheduleCount == 1;
         assert harness.states.scheduleCount == 1;
 
         harness.advertisements.runInitialCheck();
@@ -145,6 +154,160 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert diagnostics.ackAcceptedCount() == 1;
         assert diagnostics.activeCapabilitySessionCount() == 1;
         harness.stop();
+    }
+
+    private static void ttlRenewalIsBoundedAndAckGated() {
+        UUID player = UUID.randomUUID();
+        MutableClock clock = new MutableClock(NOW);
+        BetaCapabilityPolicy shortTtl = new BetaCapabilityPolicy(
+                8, Duration.ofSeconds(5),
+                List.of(BetaCapabilityDescriptor.v1(BetaCapabilityId.ELEMENTS)));
+        Harness harness = new Harness(
+                allowlistPolicy(Set.of(player), Set.of("beta_world")),
+                enabledFlags(), clock, shortTtl);
+        harness.advertisements.online = List.of(player);
+        harness.advertisements.worlds.put(player, "beta_world");
+        harness.advertisements.listen(player, BetaChannels.CAPABILITIES);
+        harness.states.viewers = List.of(player);
+        harness.start();
+        assert harness.module.start().success();
+        assert harness.advertisements.maintenanceScheduleCount == 1;
+        assert harness.advertisementPublisher.maintenanceRunning();
+        harness.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
+        var current = decodeAdvertisement(harness.advertisements.packets.getLast().bytes());
+        byte[] currentAck = acknowledgement(current);
+        assert harness.advertisementPublisher.onAcknowledgement(player, currentAck)
+                == BetaCapabilitySessionService.AcknowledgeStatus.ACCEPTED;
+        harness.states.runPublisher();
+        assert harness.states.packets.size() == 1;
+
+        int advertisements = harness.advertisements.packets.size();
+        for (int run = 0; run < 100; run++) harness.advertisements.runMaintenance();
+        assert harness.advertisements.packets.size() == advertisements;
+        assert harness.advertisementPublisher.diagnostics().sessionRenewalCount() == 0;
+
+        for (int renewal = 1; renewal <= 3; renewal++) {
+            UUID oldSession = current.sessionId();
+            long oldRevision = current.advertisementRevision();
+            int statesBeforeRenewal = harness.states.packets.size();
+            clock.advance(Duration.ofSeconds(6));
+            harness.advertisements.runMaintenance();
+            assert harness.advertisements.packets.size() == ++advertisements;
+            current = decodeAdvertisement(harness.advertisements.packets.getLast().bytes());
+            assert !current.sessionId().equals(oldSession);
+            assert current.advertisementRevision() > oldRevision;
+            assert harness.advertisementPublisher.onAcknowledgement(player, currentAck)
+                    == BetaCapabilitySessionService.AcknowledgeStatus.UNKNOWN_SESSION;
+            harness.states.runPublisher();
+            assert harness.states.packets.size() == statesBeforeRenewal
+                    : "state before renewed ack must be zero";
+            currentAck = acknowledgement(current);
+            assert harness.advertisementPublisher.onAcknowledgement(player, currentAck)
+                    == BetaCapabilitySessionService.AcknowledgeStatus.ACCEPTED;
+            harness.states.runPublisher();
+            assert harness.states.packets.size() == statesBeforeRenewal + 1;
+        }
+        var diagnostics = harness.advertisementPublisher.diagnostics();
+        assert diagnostics.sessionRenewalCount() == 3;
+        assert diagnostics.expiredSessionCount() == 3;
+        assert diagnostics.maintenanceRunCount() == 103;
+        assert diagnostics.maintenanceFailureCount() == 0;
+        assert diagnostics.pendingAdvertisementCount() == 1;
+        assert diagnostics.activeCapabilitySessionCount() == 1;
+        harness.stop();
+        assert harness.advertisements.maintenanceCancelled;
+
+        Harness noAck = new Harness(
+                allowlistPolicy(Set.of(player), Set.of("beta_world")),
+                enabledFlags(), new MutableClock(NOW), shortTtl);
+        noAck.advertisements.online = List.of(player);
+        noAck.advertisements.worlds.put(player, "beta_world");
+        noAck.advertisements.listen(player, BetaChannels.CAPABILITIES);
+        noAck.start();
+        noAck.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
+        byte[] first = noAck.advertisements.packets.getLast().bytes();
+        noAck.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
+        assert java.util.Arrays.equals(first, noAck.advertisements.packets.getLast().bytes());
+        int beforeExpiry = noAck.advertisements.packets.size();
+        for (int run = 0; run < 100; run++) noAck.advertisements.runMaintenance();
+        assert noAck.advertisements.packets.size() == beforeExpiry;
+        noAck.advertisements.online = List.of();
+        noAck.clock.advance(Duration.ofSeconds(6));
+        noAck.advertisements.runMaintenance();
+        assert noAck.advertisements.packets.size() == beforeExpiry;
+        assert noAck.advertisementPublisher.diagnostics().sessionRenewalCount() == 0;
+        assert noAck.advertisementPublisher.pendingCount() == 1;
+        noAck.advertisements.failOnline = true;
+        noAck.advertisements.runMaintenance();
+        assert noAck.advertisements.packets.size() == beforeExpiry;
+        assert noAck.advertisementPublisher.diagnostics().maintenanceFailureCount() == 1;
+        noAck.advertisements.failOnline = false;
+        noAck.advertisements.online = List.of(player);
+        noAck.advertisements.runMaintenance();
+        assert noAck.advertisements.packets.size() == beforeExpiry + 1;
+        for (int run = 0; run < 100; run++) noAck.advertisements.runMaintenance();
+        assert noAck.advertisements.packets.size() == beforeExpiry + 1;
+        noAck.stop();
+    }
+
+    private static void diagnosticsArePureReads() {
+        UUID player = UUID.randomUUID();
+        MutableClock clock = new MutableClock(NOW);
+        BetaCapabilityPolicy shortTtl = new BetaCapabilityPolicy(
+                8, Duration.ofSeconds(5),
+                List.of(BetaCapabilityDescriptor.v1(BetaCapabilityId.ELEMENTS)));
+        Harness harness = new Harness(
+                allowlistPolicy(Set.of(player), Set.of("beta_world")),
+                enabledFlags(), clock, shortTtl);
+        harness.advertisements.online = List.of(player);
+        harness.advertisements.worlds.put(player, "beta_world");
+        harness.advertisements.listen(player, BetaChannels.CAPABILITIES);
+        harness.start();
+        harness.lifecycle.fireRegister(player, BetaChannels.CAPABILITIES);
+        var first = decodeAdvertisement(harness.advertisements.packets.getLast().bytes());
+        int packetCount = harness.advertisements.packets.size();
+        clock.advance(Duration.ofSeconds(6));
+        for (int read = 0; read < 100; read++) {
+            var diagnostics = harness.advertisementPublisher.diagnostics();
+            assert diagnostics.pendingAdvertisementCount() == 1;
+            assert diagnostics.activeCapabilitySessionCount() == 1;
+            assert diagnostics.maintenanceRunCount() == 0;
+            assert harness.advertisementPublisher.pendingCount() == 1;
+            assert harness.advertisementPublisher.diagnosticLines().size() == 6;
+        }
+        assert harness.advertisements.packets.size() == packetCount;
+        var retained = decodeAdvertisement(harness.advertisements.packets.getLast().bytes());
+        assert retained.sessionId().equals(first.sessionId());
+        assert retained.advertisementRevision() == first.advertisementRevision();
+        harness.stop();
+    }
+
+    private static void productionPlayerLifecycleClearsTemporaryProfiles() {
+        UUID playerA = UUID.randomUUID();
+        UUID playerB = UUID.randomUUID();
+        CombatElementsRuntimeModuleProvider track2 =
+                new CombatElementsRuntimeModuleProvider(
+                        new NoopElementBoundary(), Clock.fixed(NOW, ZoneOffset.UTC));
+        Harness harness = new Harness(
+                allowlistPolicy(Set.of(playerA, playerB), Set.of("beta_world")),
+                enabledFlags(), new MutableClock(NOW), BetaCapabilityPolicy.wave3Defaults(),
+                protocol -> BetaActivationWave1CompositionRoot.playerLifecycle(track2, protocol));
+        track2.operatorCommands().execute(true, playerA, List.of("fire"));
+        track2.operatorCommands().execute(true, playerB, List.of("ice"));
+        harness.start();
+        harness.lifecycle.fireQuit(playerA);
+        assert track2.snapshots().playerProfile(playerA) == StagingElementProfile.NONE;
+        assert track2.snapshots().playerProfile(playerB) == StagingElementProfile.ICE;
+        harness.lifecycle.fireKick(playerB);
+        assert track2.snapshots().playerProfile(playerB) == StagingElementProfile.NONE;
+        track2.operatorCommands().execute(true, playerB, List.of("ice"));
+        harness.lifecycle.fireJoin(playerB);
+        assert track2.snapshots().playerProfile(playerB) == StagingElementProfile.NONE;
+        track2.operatorCommands().execute(true, playerA, List.of("fire"));
+        harness.stop();
+        harness.stop();
+        harness.advertisementPublisher.close();
+        assert track2.snapshots().playerProfile(playerA) == StagingElementProfile.NONE;
     }
 
     private static void duplicateLifecycleReusesSessionAndCleansUp() {
@@ -298,6 +461,7 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert harness.channels.active.isEmpty();
         assert harness.lifecycle.unregisterCount == 1;
         assert harness.advertisements.initialCancelled;
+        assert harness.advertisements.maintenanceCancelled;
         assert !harness.advertisementPublisher.running();
         assert harness.protocol.closed();
         assert harness.protocol.activeSessionCount() == 0;
@@ -309,6 +473,9 @@ public final class BetaCapabilityHandshakePreflightTest {
         assert composition.contains("new BukkitBetaCapabilityAdvertisementTransport(plugin)");
         assert composition.contains("new BukkitBetaCapabilityLifecycleRegistrar(plugin)");
         assert composition.contains("value.onAcknowledgement(player.getUniqueId(), message)");
+        assert composition.contains("playerLifecycle(track2, protocol)");
+        assert composition.contains("track2.playerDisconnected(playerId)");
+        assert composition.contains("track2::clearPlayerProfiles");
         String publisher = read("src/main/java/io/github/gyai/projects/beta/activation/track4/"
                 + "BetaCapabilityAdvertisementPublisher.java");
         String transport = read("src/main/java/io/github/gyai/projects/beta/activation/track4/"
@@ -317,6 +484,7 @@ public final class BetaCapabilityHandshakePreflightTest {
                 + "BukkitBetaCapabilityLifecycleRegistrar.java");
         assert !publisher.contains("Player player");
         assert !publisher.contains("Map<UUID, Player");
+        assert publisher.contains("scheduleRepeating(");
         assert !transport.contains("private final Player");
         assert !registrar.contains("private final Player");
     }
@@ -334,6 +502,21 @@ public final class BetaCapabilityHandshakePreflightTest {
         return FeatureFlagSnapshot.of(Map.of(
                 FeatureKey.CLIENT_BETA_UI, true,
                 FeatureKey.FIRE_SYSTEM, true));
+    }
+
+    private static io.github.gyai.projects.network.beta.BetaCapabilityAdvertisement
+            decodeAdvertisement(byte[] packet) {
+        return new BetaProtocolCodec().decodeAdvertisement(packet).value();
+    }
+
+    private static byte[] acknowledgement(
+            io.github.gyai.projects.network.beta.BetaCapabilityAdvertisement advertisement
+    ) {
+        return new BetaProtocolCodec().encode(new BetaCapabilityAcknowledgement(
+                BetaProtocolVersion.CURRENT,
+                advertisement.sessionId(),
+                advertisement.advertisementRevision(),
+                advertisement.capabilities()));
     }
 
     private static String read(String path) {
@@ -358,6 +541,7 @@ public final class BetaCapabilityHandshakePreflightTest {
         private final ElementSnapshotProtocolPublisher elementPublisher;
         private final BetaCapabilityAdvertisementPublisher advertisementPublisher;
         private final ClientBetaProtocolRuntimeModule module;
+        private final MutableClock clock;
 
         private Harness(
                 BetaActivationPolicy policy,
@@ -365,7 +549,8 @@ public final class BetaCapabilityHandshakePreflightTest {
                 MutableClock clock,
                 BetaCapabilityPolicy capabilityPolicy
         ) {
-            this(policy, flags, clock, capabilityPolicy, BetaRuntimeModuleState.RUNNING);
+            this(policy, flags, clock, capabilityPolicy,
+                    BetaRuntimeModuleState.RUNNING, null);
         }
 
         private Harness(
@@ -375,8 +560,33 @@ public final class BetaCapabilityHandshakePreflightTest {
                 BetaCapabilityPolicy capabilityPolicy,
                 BetaRuntimeModuleState elementState
         ) {
+            this(policy, flags, clock, capabilityPolicy, elementState, null);
+        }
+
+        private Harness(
+                BetaActivationPolicy policy,
+                FeatureFlagSnapshot flags,
+                MutableClock clock,
+                BetaCapabilityPolicy capabilityPolicy,
+                Function<ClientBetaProtocolRuntime, BetaStagingPlayerLifecyclePort>
+                        playerLifecycleFactory
+        ) {
+            this(policy, flags, clock, capabilityPolicy,
+                    BetaRuntimeModuleState.RUNNING, playerLifecycleFactory);
+        }
+
+        private Harness(
+                BetaActivationPolicy policy,
+                FeatureFlagSnapshot flags,
+                MutableClock clock,
+                BetaCapabilityPolicy capabilityPolicy,
+                BetaRuntimeModuleState elementState,
+                Function<ClientBetaProtocolRuntime, BetaStagingPlayerLifecyclePort>
+                        playerLifecycleFactory
+        ) {
             this.policy = policy;
             this.flags = flags;
+            this.clock = clock;
             elements = new StateModule(BetaRuntimeModuleId.COMBAT_ELEMENTS, elementState);
             EnumMap<BetaCapabilityId, BetaRuntimeModule> producers =
                     new EnumMap<>(BetaCapabilityId.class);
@@ -397,10 +607,17 @@ public final class BetaCapabilityHandshakePreflightTest {
                     elements::state, protocol::capabilitySnapshot, ignored -> true);
             elementPublisher = new ElementSnapshotProtocolPublisher(
                     elementAdapter, states, protocol::capabilitySnapshot, clock);
-            advertisementPublisher = new BetaCapabilityAdvertisementPublisher(
+            BetaStagingPlayerLifecyclePort playerLifecycle = playerLifecycleFactory == null
+                    ? null : playerLifecycleFactory.apply(protocol);
+            advertisementPublisher = playerLifecycle == null
+                    ? new BetaCapabilityAdvertisementPublisher(
                     protocol, advertisements, lifecycle, capabilityPolicy, clock,
                     () -> holder[0] == null ? BetaRuntimeModuleState.NOT_INSTALLED
-                            : holder[0].state());
+                            : holder[0].state())
+                    : new BetaCapabilityAdvertisementPublisher(
+                    protocol, advertisements, lifecycle, capabilityPolicy, clock,
+                    () -> holder[0] == null ? BetaRuntimeModuleState.NOT_INSTALLED
+                            : holder[0].state(), playerLifecycle);
             protocol.addViewerStateLifecycle(new ClientBetaProtocolRuntime.ViewerStateLifecycle() {
                 @Override public void clear(UUID playerId) {
                     advertisementPublisher.clearPlayerState(playerId);
@@ -471,10 +688,18 @@ public final class BetaCapabilityHandshakePreflightTest {
         private final List<Packet> packets = new ArrayList<>();
         private List<UUID> online = List.of();
         private Runnable initialCheck;
+        private Runnable maintenance;
         private boolean initialCancelled;
+        private boolean maintenanceCancelled;
+        private boolean failOnline;
         private int scheduleCount;
+        private int maintenanceScheduleCount;
 
         @Override public List<UUID> onlinePlayers() { return online; }
+        @Override public boolean online(UUID playerId) {
+            if (failOnline) throw new IllegalStateException("online check failed");
+            return online.contains(playerId);
+        }
         @Override public Set<String> listeningChannels(UUID playerId) {
             return channels.getOrDefault(playerId, Set.of());
         }
@@ -490,6 +715,16 @@ public final class BetaCapabilityHandshakePreflightTest {
                 @Override public boolean cancelled() { return initialCancelled; }
             };
         }
+        @Override public Cancellable scheduleRepeating(Runnable task, long periodMillis) {
+            assert periodMillis == BetaCapabilityAdvertisementPublisher
+                    .MAINTENANCE_PERIOD_MILLIS;
+            maintenanceScheduleCount++;
+            maintenance = task;
+            return new Cancellable() {
+                @Override public void cancel() { maintenanceCancelled = true; }
+                @Override public boolean cancelled() { return maintenanceCancelled; }
+            };
+        }
         private void listen(UUID player, String channel) {
             channels.computeIfAbsent(player, ignored -> new LinkedHashSet<>()).add(channel);
         }
@@ -499,6 +734,9 @@ public final class BetaCapabilityHandshakePreflightTest {
                 initialCheck = null;
                 task.run();
             }
+        }
+        private void runMaintenance() {
+            if (!maintenanceCancelled && maintenance != null) maintenance.run();
         }
         private record Packet(UUID playerId, String channel, byte[] bytes) { }
     }
@@ -588,6 +826,23 @@ public final class BetaCapabilityHandshakePreflightTest {
         @Override public BetaRuntimeModuleResult start() { return BetaRuntimeModuleResult.running(); }
         @Override public BetaRuntimeModuleResult stop() { return BetaRuntimeModuleResult.stopped(); }
         @Override public BetaRuntimeModuleState state() { return state; }
+    }
+
+    private static final class NoopElementBoundary implements TrainingDummyElementBoundary {
+        @Override public boolean isLiveTrainingDummy(UUID targetId) { return false; }
+        @Override public int targetRuntimeId(UUID targetId) { return -1; }
+        @Override public List<UUID> nearbyTrainingDummies(
+                UUID centerId, double radius, int limit
+        ) { return List.of(); }
+        @Override public void applySecondaryDamage(SecondaryDamage damage) { }
+        @Override public void publishVisual(VisualEvent event) { }
+        @Override public Cancellable scheduleCleanup(Runnable task, long periodMillis) {
+            return new Cancellable() {
+                private boolean cancelled;
+                @Override public void cancel() { cancelled = true; }
+                @Override public boolean cancelled() { return cancelled; }
+            };
+        }
     }
 
     private static final class MutableClock extends Clock {

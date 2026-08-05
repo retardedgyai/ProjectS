@@ -138,6 +138,11 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
         return sessions.size();
     }
 
+    /** Pure diagnostic count; expiry remains owned by protocol operations and maintenance. */
+    public synchronized int retainedSessionCount() {
+        return sessions.size();
+    }
+
     @Override
     public synchronized void close() {
         if (closed) return;

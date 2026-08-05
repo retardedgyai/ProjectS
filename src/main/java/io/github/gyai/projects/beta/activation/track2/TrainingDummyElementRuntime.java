@@ -105,6 +105,10 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
         registry.removePlayer(playerId);
     }
 
+    public synchronized void clearPlayerProfiles() {
+        registry.clearPlayerProfiles();
+    }
+
     /** Chunk unload, entity removal, and dummy replacement use the same UUID-only cleanup. */
     public synchronized void targetRemoved(UUID targetId) {
         registry.removeTarget(targetId);

@@ -85,6 +85,21 @@ send/resend/ACK/session counters and the last result, never player or packet
 identifiers. Full lifecycle and staging instructions are in
 `docs/beta/activation/capability-handshake-preflight.md`.
 
+The branch now follows integration SHA
+`865dc702b10a3990e5f4e6d4ac97f71efa48f11b`. A single five-second maintenance
+task owns TTL recovery. It replaces expired pending or acknowledged sessions
+with one newly admitted advertisement per TTL, using a new session ID,
+revision, and expiry. Old ACKs fail closed, and Elements packets remain zero
+until the new ACK succeeds. Repeated diagnostics are pure reads and cannot
+expire sessions or mutate handshake state.
+
+Join, quit, kick, reconnect, module stop, and plugin close now reach the actual
+Track 2 provider through a UUID-only lifecycle port. They remove temporary
+per-player Fire/Ice profiles while preserving shared target stacks,
+fractional values, cold, contributions, and state revisions. Default audience
+OFF and all-false flags still register zero listeners, channels, schedulers,
+or packets and perform zero production writes.
+
 ## Durable transaction recovery
 
 Recovery records live only under `beta-staging/transactions`. Each stable
@@ -130,6 +145,11 @@ verifies default-zero behavior, live admission and ACK gating, duplicate and
 reconnect behavior, expiry and stale-ACK rejection, bounded retention,
 stop/failure cleanup, producer scoping, and the absence of retained Bukkit
 `Player` references.
+
+The handshake test also covers three consecutive TTL renewals, old-ACK
+rejection, ACK-before-state gating, no-spam behavior, diagnostics purity, the
+single maintenance scheduler lifecycle, production profile cleanup, and
+preservation of shared target state.
 
 Rollback is the merge commit revert while flags remain false. No production
 data migration, staging policy change, deployment, Paper launch, or Client

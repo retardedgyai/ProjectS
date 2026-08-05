@@ -263,8 +263,19 @@ public final class CombatElementsActivationRuntimeTest {
         assert fixture.runtime.start();
         fixture.runtime.setProfile(PLAYER_A, StagingElementProfile.FIRE);
         fixture.runtime.observe(fixture.starter(PLAYER_A, CENTER, "cleanup", 0));
+        fixture.runtime.setProfile(PLAYER_B, StagingElementProfile.ICE);
+        fixture.runtime.observe(fixture.starter(PLAYER_B, CENTER, "cleanup-ice", 1));
+        var sharedBeforeLogout = fixture.runtime.snapshots().target(CENTER).orElseThrow();
         fixture.runtime.playerLoggedOut(PLAYER_A);
         assert fixture.runtime.snapshots().playerProfile(PLAYER_A) == StagingElementProfile.NONE;
+        assert fixture.runtime.snapshots().playerProfile(PLAYER_B) == StagingElementProfile.ICE;
+        assert fixture.runtime.snapshots().target(CENTER).orElseThrow()
+                .equals(sharedBeforeLogout)
+                : "profile cleanup must preserve shared target state and contributions";
+        fixture.runtime.clearPlayerProfiles();
+        assert fixture.runtime.snapshots().playerProfile(PLAYER_B) == StagingElementProfile.NONE;
+        assert fixture.runtime.snapshots().target(CENTER).orElseThrow()
+                .equals(sharedBeforeLogout);
         fixture.boundary.live.remove(CENTER);
         fixture.boundary.runCleanup();
         assert fixture.runtime.snapshots().targets().isEmpty();

@@ -8,6 +8,8 @@ import java.util.UUID;
 public interface BetaCapabilityAdvertisementTransport {
     List<UUID> onlinePlayers();
 
+    boolean online(UUID playerId);
+
     Set<String> listeningChannels(UUID playerId);
 
     String worldName(UUID playerId);
@@ -15,6 +17,8 @@ public interface BetaCapabilityAdvertisementTransport {
     void send(UUID playerId, String channel, byte[] packet);
 
     Cancellable scheduleMainThread(Runnable task);
+
+    Cancellable scheduleRepeating(Runnable task, long periodMillis);
 
     interface Cancellable {
         void cancel();

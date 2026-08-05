@@ -73,6 +73,18 @@ public final class ClientBetaProtocolRuntime implements AutoCloseable {
         return sessions.activeSessionCount();
     }
 
+    public synchronized int retainedSessionCount() {
+        return sessions.retainedSessionCount();
+    }
+
+    public synchronized void clearAllConnectionState() {
+        sessions.clear();
+        for (int index = viewerStateLifecycles.size() - 1; index >= 0; index--) {
+            try { viewerStateLifecycles.get(index).clearAll(); }
+            catch (RuntimeException ignored) { }
+        }
+    }
+
     public synchronized void addViewerStateLifecycle(ViewerStateLifecycle lifecycle) {
         if (closed) throw new IllegalStateException("protocol runtime is closed");
         if (lifecycle == null || viewerStateLifecycles.contains(lifecycle)) return;

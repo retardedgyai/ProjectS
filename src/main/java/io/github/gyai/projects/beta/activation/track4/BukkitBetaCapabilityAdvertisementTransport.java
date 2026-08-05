@@ -29,6 +29,13 @@ public final class BukkitBetaCapabilityAdvertisementTransport
     }
 
     @Override
+    public boolean online(UUID playerId) {
+        requirePrimaryThread();
+        Player player = Bukkit.getPlayer(playerId);
+        return player != null && player.isOnline();
+    }
+
+    @Override
     public Set<String> listeningChannels(UUID playerId) {
         requirePrimaryThread();
         Player player = Bukkit.getPlayer(playerId);
@@ -58,6 +65,28 @@ public final class BukkitBetaCapabilityAdvertisementTransport
     public Cancellable scheduleMainThread(Runnable task) {
         BukkitTask scheduled = Bukkit.getScheduler().runTask(
                 plugin, java.util.Objects.requireNonNull(task, "task"));
+        return new Cancellable() {
+            @Override
+            public void cancel() {
+                scheduled.cancel();
+            }
+
+            @Override
+            public boolean cancelled() {
+                return scheduled.isCancelled();
+            }
+        };
+    }
+
+    @Override
+    public Cancellable scheduleRepeating(Runnable task, long periodMillis) {
+        if (periodMillis < 5_000L || periodMillis > 30_000L) {
+            throw new IllegalArgumentException("maintenance period out of bounds");
+        }
+        BukkitTask scheduled = Bukkit.getScheduler().runTaskTimer(
+                plugin, java.util.Objects.requireNonNull(task, "task"),
+                Math.max(1L, periodMillis / 50L),
+                Math.max(1L, periodMillis / 50L));
         return new Cancellable() {
             @Override
             public void cancel() {

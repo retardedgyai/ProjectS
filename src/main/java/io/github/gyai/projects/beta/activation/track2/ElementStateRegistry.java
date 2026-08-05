@@ -109,6 +109,10 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
         if (playerId != null) profiles.remove(playerId);
     }
 
+    synchronized void clearPlayerProfiles() {
+        profiles.clear();
+    }
+
     synchronized void removeTarget(UUID targetId) {
         if (targetId != null) targets.remove(targetId);
     }

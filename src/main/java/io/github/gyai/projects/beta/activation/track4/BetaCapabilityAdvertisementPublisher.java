@@ -21,23 +21,31 @@ import java.util.function.Supplier;
 /** Bounded per-connection advertisement lifecycle. No Bukkit object is retained. */
 public final class BetaCapabilityAdvertisementPublisher
         implements BetaCapabilityLifecycleListener, AutoCloseable {
+    public static final long MAINTENANCE_PERIOD_MILLIS = 5_000L;
     private final ClientBetaProtocolRuntime protocol;
     private final BetaCapabilityAdvertisementTransport transport;
     private final BetaCapabilityLifecycleRegistrar lifecycle;
     private final BetaCapabilityPolicy capabilityPolicy;
     private final Clock clock;
     private final Supplier<BetaRuntimeModuleState> protocolModuleState;
+    private final BetaStagingPlayerLifecyclePort playerLifecycle;
     private final BetaProtocolCodec codec = new BetaProtocolCodec();
     private final LinkedHashMap<UUID, PendingAdvertisement> pending =
             new LinkedHashMap<>(16, .75f, true);
     private BetaActivationPolicy activationPolicy = BetaActivationPolicy.defaults();
     private BetaCapabilityAdvertisementTransport.Cancellable initialCheck;
+    private BetaCapabilityAdvertisementTransport.Cancellable maintenanceTask;
     private boolean clientBetaUiEnabled;
     private boolean running;
+    private boolean closed;
     private long sentCount;
     private long resendCount;
     private long ackAcceptedCount;
     private long ackRejectedCount;
+    private long sessionRenewalCount;
+    private long expiredSessionCount;
+    private long maintenanceRunCount;
+    private long maintenanceFailureCount;
     private String lastHandshakeResult = "none";
 
     public BetaCapabilityAdvertisementPublisher(
@@ -48,6 +56,19 @@ public final class BetaCapabilityAdvertisementPublisher
             Clock clock,
             Supplier<BetaRuntimeModuleState> protocolModuleState
     ) {
+        this(protocol, transport, lifecycle, capabilityPolicy, clock,
+                protocolModuleState, defaultPlayerLifecycle(protocol));
+    }
+
+    public BetaCapabilityAdvertisementPublisher(
+            ClientBetaProtocolRuntime protocol,
+            BetaCapabilityAdvertisementTransport transport,
+            BetaCapabilityLifecycleRegistrar lifecycle,
+            BetaCapabilityPolicy capabilityPolicy,
+            Clock clock,
+            Supplier<BetaRuntimeModuleState> protocolModuleState,
+            BetaStagingPlayerLifecyclePort playerLifecycle
+    ) {
         this.protocol = java.util.Objects.requireNonNull(protocol, "protocol");
         this.transport = java.util.Objects.requireNonNull(transport, "transport");
         this.lifecycle = java.util.Objects.requireNonNull(lifecycle, "lifecycle");
@@ -56,6 +77,8 @@ public final class BetaCapabilityAdvertisementPublisher
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.protocolModuleState = java.util.Objects.requireNonNull(
                 protocolModuleState, "protocolModuleState");
+        this.playerLifecycle = java.util.Objects.requireNonNull(
+                playerLifecycle, "playerLifecycle");
     }
 
     public synchronized void start(
@@ -63,6 +86,7 @@ public final class BetaCapabilityAdvertisementPublisher
             boolean featureEnabled
     ) {
         if (running) return;
+        if (closed) throw new IllegalStateException("advertisement publisher is closed");
         activationPolicy = java.util.Objects.requireNonNull(policy, "policy");
         clientBetaUiEnabled = featureEnabled;
         try {
@@ -70,8 +94,15 @@ public final class BetaCapabilityAdvertisementPublisher
             running = true;
             initialCheck = java.util.Objects.requireNonNull(
                     transport.scheduleMainThread(this::advertiseExistingPlayers));
+            maintenanceTask = java.util.Objects.requireNonNull(
+                    transport.scheduleRepeating(
+                            this::runMaintenance, MAINTENANCE_PERIOD_MILLIS));
         } catch (RuntimeException failure) {
             running = false;
+            cancel(initialCheck);
+            initialCheck = null;
+            cancel(maintenanceTask);
+            maintenanceTask = null;
             try {
                 lifecycle.unregister();
             } catch (RuntimeException ignored) {
@@ -83,7 +114,7 @@ public final class BetaCapabilityAdvertisementPublisher
 
     @Override
     public void onJoin(UUID playerId) {
-        if (playerId != null) protocol.reconnect(playerId);
+        if (playerId != null) playerLifecycle.connectionStarted(playerId);
     }
 
     @Override
@@ -95,12 +126,12 @@ public final class BetaCapabilityAdvertisementPublisher
 
     @Override
     public void onQuit(UUID playerId) {
-        if (playerId != null) protocol.disconnect(playerId);
+        if (playerId != null) playerLifecycle.connectionEnded(playerId);
     }
 
     @Override
     public void onKick(UUID playerId) {
-        if (playerId != null) protocol.disconnect(playerId);
+        if (playerId != null) playerLifecycle.connectionEnded(playerId);
     }
 
     public void advertiseExistingPlayers() {
@@ -130,36 +161,56 @@ public final class BetaCapabilityAdvertisementPublisher
         boolean resend;
         synchronized (this) {
             if (!running) return;
-            expirePending();
             PendingAdvertisement existing = pending.get(playerId);
             if (existing != null) {
+                if (existing.renewalDue()) return;
+                if (clock.instant().isAfter(existing.expiresAt())) return;
                 if (existing.acknowledged()) return;
                 packet = existing.packet().clone();
                 resend = true;
             } else {
-                BetaCapabilityAdvertisement advertisement = protocol
-                        .advertise(playerId, clientBetaUiEnabled)
-                        .orElse(null);
-                if (advertisement == null) return;
-                packet = codec.encode(advertisement);
-                remember(playerId, new PendingAdvertisement(
-                        advertisement.sessionId(),
-                        advertisement.advertisementRevision(),
-                        packet.clone(),
-                        clock.instant().plus(capabilityPolicy.sessionTtl()),
-                        false));
+                packet = createAdvertisement(playerId, false);
+                if (packet == null) return;
                 resend = false;
             }
         }
+        sendAdvertisement(playerId, packet, resend, false);
+    }
+
+    public void runMaintenance() {
+        ArrayList<RenewalCandidate> candidates = new ArrayList<>();
         try {
-            transport.send(playerId, BetaChannels.CAPABILITIES, packet);
             synchronized (this) {
-                if (resend) resendCount = increment(resendCount);
-                else sentCount = increment(sentCount);
-                lastHandshakeResult = resend ? "advertisement-resent" : "advertisement-sent";
+                if (!running) return;
+                maintenanceRunCount = increment(maintenanceRunCount);
+                Instant now = clock.instant();
+                for (var entry : pending.entrySet()) {
+                    if (candidates.size() >= capabilityPolicy.maximumSessions()) break;
+                    PendingAdvertisement value = entry.getValue();
+                    if (value.renewalDue()) {
+                        candidates.add(new RenewalCandidate(
+                                entry.getKey(), value, false));
+                    } else if (now.isAfter(value.expiresAt())) {
+                        candidates.add(new RenewalCandidate(
+                                entry.getKey(), value.renewalDueCopy(), true));
+                    }
+                }
+                for (RenewalCandidate candidate : candidates) {
+                    if (!candidate.invalidateOldSession()) continue;
+                    pending.put(candidate.playerId(), candidate.pending());
+                    expiredSessionCount = increment(expiredSessionCount);
+                }
             }
         } catch (RuntimeException failure) {
-            recordResult("advertisement-send-failed");
+            maintenanceFailed("maintenance-scan-failed");
+            return;
+        }
+        for (RenewalCandidate candidate : candidates) {
+            try {
+                renew(candidate);
+            } catch (RuntimeException failure) {
+                maintenanceFailed("maintenance-renewal-failed");
+            }
         }
     }
 
@@ -205,25 +256,29 @@ public final class BetaCapabilityAdvertisementPublisher
     }
 
     public synchronized int pendingCount() {
-        expirePending();
         return pending.size();
     }
 
     public synchronized Diagnostics diagnostics() {
-        expirePending();
         return new Diagnostics(sentCount, resendCount, ackAcceptedCount,
-                ackRejectedCount, protocol.activeSessionCount(),
+                ackRejectedCount, protocol.retainedSessionCount(),
+                sessionRenewalCount, expiredSessionCount,
+                maintenanceRunCount, maintenanceFailureCount,
                 lastHandshakeResult, pending.size());
     }
 
     public List<String> diagnosticLines() {
         Diagnostics value = diagnostics();
         return List.of(
-                "advertisementSent=" + value.advertisementSentCount(),
-                "advertisementResend=" + value.advertisementResendCount(),
-                "ackAccepted=" + value.ackAcceptedCount(),
-                "ackRejected=" + value.ackRejectedCount(),
+                "advertisementSent=" + value.advertisementSentCount()
+                        + " advertisementResend=" + value.advertisementResendCount(),
+                "ackAccepted=" + value.ackAcceptedCount()
+                        + " ackRejected=" + value.ackRejectedCount(),
                 "activeCapabilitySessions=" + value.activeCapabilitySessionCount(),
+                "sessionRenewal=" + value.sessionRenewalCount()
+                        + " expiredSession=" + value.expiredSessionCount(),
+                "maintenanceRun=" + value.maintenanceRunCount()
+                        + " maintenanceFailure=" + value.maintenanceFailureCount(),
                 "lastHandshakeResult=" + value.lastHandshakeResult());
     }
 
@@ -231,24 +286,37 @@ public final class BetaCapabilityAdvertisementPublisher
         return running;
     }
 
+    public synchronized boolean maintenanceRunning() {
+        return maintenanceTask != null && !maintenanceTask.cancelled();
+    }
+
     @Override
     public synchronized void close() {
+        if (closed) return;
+        closed = true;
         running = false;
         if (initialCheck != null) {
-            try {
-                initialCheck.cancel();
-            } catch (RuntimeException ignored) {
-                // Continue listener and state cleanup.
-            }
+            cancel(initialCheck);
             initialCheck = null;
         }
+        cancel(maintenanceTask);
+        maintenanceTask = null;
+        RuntimeException first = null;
         try {
             lifecycle.unregister();
+        } catch (RuntimeException failure) {
+            first = failure;
+        }
+        try {
+            playerLifecycle.clearAll();
+        } catch (RuntimeException failure) {
+            if (first == null) first = failure;
         } finally {
             pending.clear();
             clientBetaUiEnabled = false;
             activationPolicy = BetaActivationPolicy.defaults();
         }
+        if (first != null) throw first;
     }
 
     private boolean admitted(UUID playerId) {
@@ -274,16 +342,76 @@ public final class BetaCapabilityAdvertisementPublisher
         }
     }
 
-    private synchronized void expirePending() {
-        Instant now = clock.instant();
-        ArrayList<UUID> expired = new ArrayList<>();
-        pending.forEach((playerId, value) -> {
-            if (now.isAfter(value.expiresAt())) expired.add(playerId);
-        });
-        for (UUID playerId : expired) {
-            pending.remove(playerId);
-            protocol.disconnect(playerId);
+    private void renew(RenewalCandidate candidate) {
+        UUID playerId = candidate.playerId();
+        if (candidate.invalidateOldSession()) {
+            try {
+                protocol.disconnect(playerId);
+            } catch (RuntimeException failure) {
+                maintenanceFailed("renewal-disconnect-failed");
+                return;
+            }
+            synchronized (this) {
+                if (!running) return;
+                pending.putIfAbsent(playerId, candidate.pending());
+            }
         }
+        try {
+            if (!transport.online(playerId) || !admitted(playerId)) return;
+        } catch (RuntimeException failure) {
+            maintenanceFailed("renewal-admission-failed");
+            return;
+        }
+        byte[] packet;
+        synchronized (this) {
+            PendingAdvertisement current = pending.get(playerId);
+            if (!running || current == null || !current.renewalDue()) return;
+            packet = createAdvertisement(playerId, true);
+            if (packet == null) return;
+        }
+        sendAdvertisement(playerId, packet, false, true);
+    }
+
+    private byte[] createAdvertisement(UUID playerId, boolean renewal) {
+        BetaCapabilityAdvertisement advertisement = protocol
+                .advertise(playerId, clientBetaUiEnabled)
+                .orElse(null);
+        if (advertisement == null) return null;
+        byte[] packet = codec.encode(advertisement);
+        remember(playerId, new PendingAdvertisement(
+                advertisement.sessionId(),
+                advertisement.advertisementRevision(),
+                packet.clone(),
+                clock.instant().plus(capabilityPolicy.sessionTtl()),
+                false,
+                false));
+        if (renewal) sessionRenewalCount = increment(sessionRenewalCount);
+        return packet;
+    }
+
+    private void sendAdvertisement(
+            UUID playerId,
+            byte[] packet,
+            boolean resend,
+            boolean renewal
+    ) {
+        try {
+            transport.send(playerId, BetaChannels.CAPABILITIES, packet);
+            synchronized (this) {
+                if (resend) resendCount = increment(resendCount);
+                else sentCount = increment(sentCount);
+                lastHandshakeResult = renewal ? "session-renewed"
+                        : resend ? "advertisement-resent" : "advertisement-sent";
+            }
+        } catch (RuntimeException failure) {
+            if (renewal) maintenanceFailed("renewal-send-failed");
+            else recordResult("advertisement-send-failed");
+        }
+    }
+
+    private synchronized void maintenanceFailed(String result) {
+        maintenanceFailureCount = increment(maintenanceFailureCount);
+        lastHandshakeResult = bounded(result);
     }
 
     private void remember(UUID playerId, PendingAdvertisement value) {
@@ -297,6 +425,36 @@ public final class BetaCapabilityAdvertisementPublisher
 
     private synchronized void recordResult(String value) {
         lastHandshakeResult = bounded(value);
+    }
+
+    private static void cancel(BetaCapabilityAdvertisementTransport.Cancellable value) {
+        if (value == null) return;
+        try {
+            value.cancel();
+        } catch (RuntimeException ignored) {
+            // Remaining lifecycle cleanup must continue.
+        }
+    }
+
+    private static BetaStagingPlayerLifecyclePort defaultPlayerLifecycle(
+            ClientBetaProtocolRuntime protocol
+    ) {
+        return new BetaStagingPlayerLifecyclePort() {
+            @Override
+            public void connectionStarted(UUID playerId) {
+                protocol.reconnect(playerId);
+            }
+
+            @Override
+            public void connectionEnded(UUID playerId) {
+                protocol.disconnect(playerId);
+            }
+
+            @Override
+            public void clearAll() {
+                protocol.clearAllConnectionState();
+            }
+        };
     }
 
     private static long increment(long value) {
@@ -314,13 +472,26 @@ public final class BetaCapabilityAdvertisementPublisher
             long revision,
             byte[] packet,
             Instant expiresAt,
-            boolean acknowledged
+            boolean acknowledged,
+            boolean renewalDue
     ) {
         private PendingAdvertisement acknowledgedCopy() {
             return new PendingAdvertisement(
-                    sessionId, revision, packet.clone(), expiresAt, true);
+                    sessionId, revision, packet.clone(), expiresAt, true, renewalDue);
+        }
+
+        private PendingAdvertisement renewalDueCopy() {
+            return new PendingAdvertisement(
+                    sessionId, revision, packet.clone(), expiresAt,
+                    acknowledged, true);
         }
     }
+
+    private record RenewalCandidate(
+            UUID playerId,
+            PendingAdvertisement pending,
+            boolean invalidateOldSession
+    ) { }
 
     public record Diagnostics(
             long advertisementSentCount,
@@ -328,6 +499,10 @@ public final class BetaCapabilityAdvertisementPublisher
             long ackAcceptedCount,
             long ackRejectedCount,
             int activeCapabilitySessionCount,
+            long sessionRenewalCount,
+            long expiredSessionCount,
+            long maintenanceRunCount,
+            long maintenanceFailureCount,
             String lastHandshakeResult,
             int pendingAdvertisementCount
     ) {

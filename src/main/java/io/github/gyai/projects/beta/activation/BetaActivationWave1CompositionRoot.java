@@ -261,7 +261,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         clock,
                         () -> protocolModuleHolder[0] == null
                                 ? BetaRuntimeModuleState.NOT_INSTALLED
-                                : protocolModuleHolder[0].state());
+                                : protocolModuleHolder[0].state(),
+                        playerLifecycle(track2, protocol));
         advertisementHolder[0] = advertisementPublisher;
         protocol.addViewerStateLifecycle(new ClientBetaProtocolRuntime.ViewerStateLifecycle() {
             @Override public void clear(UUID playerId) {
@@ -326,6 +327,38 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             String subject, BetaRuntimeModuleId id,
             BetaOperatorContributorRegistry.Contributor contributor
     ) { return new BetaOperatorContributorRegistry.Entry(subject, id, contributor); }
+
+    static io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort
+            playerLifecycle(
+                    CombatElementsRuntimeModuleProvider track2,
+                    ClientBetaProtocolRuntime protocol
+            ) {
+        java.util.Objects.requireNonNull(track2, "track2");
+        java.util.Objects.requireNonNull(protocol, "protocol");
+        return new io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort() {
+            @Override public void connectionStarted(UUID playerId) {
+                cleanup(() -> track2.playerDisconnected(playerId));
+                cleanup(() -> protocol.reconnect(playerId));
+            }
+
+            @Override public void connectionEnded(UUID playerId) {
+                cleanup(() -> track2.playerDisconnected(playerId));
+                cleanup(() -> protocol.disconnect(playerId));
+            }
+
+            @Override public void clearAll() {
+                cleanup(track2::clearPlayerProfiles);
+                cleanup(protocol::clearAllConnectionState);
+            }
+        };
+    }
+
+    private static void cleanup(Runnable cleanup) {
+        try { cleanup.run(); }
+        catch (RuntimeException ignored) {
+            // One connection-scoped cleanup must not suppress the remaining steps.
+        }
+    }
 
     private static BetaOperatorContributorRegistry.Result track1Result(
             Track1OperatorCommandContributor contributor,

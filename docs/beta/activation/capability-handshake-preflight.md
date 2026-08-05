@@ -2,7 +2,7 @@
 
 ## Scope
 
-This preflight is based on `6c20b167bb43063490e8bcac189dd5af8e343a87`
+This preflight now follows `865dc702b10a3990e5f4e6d4ac97f71efa48f11b`
 and adds the missing production lifecycle for the existing capability v1
 protocol. It changes Server code only. It does not enable a Beta feature,
 change repository defaults, change the Client, deploy an artifact, or launch
@@ -71,22 +71,62 @@ capability policy and expire on its TTL. Retained publisher state contains
 UUIDs, immutable protocol identifiers, bounded packet bytes, timestamps, and
 counters; it does not retain Bukkit `Player` objects.
 
+## TTL maintenance and recovery
+
+The missing recovery path was an owner for expiry after the initial live
+handshake. Session snapshots correctly stopped state delivery after five
+minutes, but no production lifecycle cleared the old connection state and sent
+a replacement advertisement. The advertisement publisher now owns one bounded
+maintenance task with a five-second period. Each run examines at most the
+configured maximum session count.
+
+An expired pending or acknowledged session is removed, its protocol and viewer
+state are cleared, and admission is rechecked against online presence, channel
+listening, audience, allowlist, and world. An admitted player receives exactly
+one new advertisement with a new session ID, increasing revision, and new
+expiry. Until the matching new ACK is accepted, `projects:elements` state stays
+blocked. The previous ACK is rejected. Disconnect also clears the viewer
+revision gate, so the current immutable Fire/Ice snapshot is eligible again
+after the new ACK.
+
+An unacknowledged Client receives at most one new advertisement per session
+TTL. Maintenance within the retained TTL sends nothing. Duplicate channel
+registration retains its existing behavior: before ACK it may resend the same
+session, revision, and bytes; after ACK it sends nothing.
+
 ## Start, failure, and stop behavior
 
-Start order is channel registration, advertisement lifecycle registration, and
+Start order is channel registration, advertisement lifecycle registration,
+initial online-player check scheduling, handshake maintenance scheduling, and
 then element publisher start. A partial start failure unwinds registered work
-in reverse order. Stop continues cleanup after an individual cleanup failure
-and is idempotent. Scheduled existing-player checks are cancelled, listeners
-are unregistered, pending advertisements are cleared, sessions are closed, and
-viewer revision state is removed. A stopped or closed runtime cannot send a
-new advertisement.
+in reverse order. Stop first closes element publication, then cancels handshake
+maintenance, unregisters the lifecycle listener, clears temporary player
+profiles and connection state, and finally unregisters protocol channels.
+Cleanup continues after an individual failure and close is idempotent. A
+stopped or closed runtime cannot send a new advertisement.
 
 ## Diagnostics
 
 The read-only Beta health response includes bounded aggregate handshake data:
-advertisements sent, duplicate resends, accepted and rejected ACKs, active
-sessions, and the last bounded result. It does not expose player UUIDs, session
-IDs, packet bytes, or a mutation command.
+advertisements sent, duplicate resends, accepted and rejected ACKs, retained
+sessions, renewals, expirations, maintenance runs/failures, and the last
+bounded result. Diagnostics and status/health reads use a pure retained-session
+count: they do not expire a session, remove pending state, send a packet,
+advance a revision, or alter a counter. It does not expose player UUIDs,
+session IDs, packet bytes, world names, or a mutation command.
+
+## Temporary element-profile cleanup
+
+Join/reconnect, quit, and kick use a UUID-only lifecycle port. It first removes
+only that player's temporary `FIRE` or `ICE` staging profile and then clears the
+protocol session, pending advertisement, and viewer revision state. Protocol
+module stop and plugin close clear all temporary profiles through the same
+production Track 2 provider boundary. Cleanup steps are exception-isolated.
+
+Profile cleanup does not remove or rewrite shared target Fire stacks,
+fractional burn, Ice cold, contributor state, or target revision. Track 2 still
+owns those target states and clears them only through its existing target and
+module lifecycle.
 
 ## Staging prerequisites
 
@@ -106,5 +146,7 @@ registrations, scheduler tasks, and packets. Before a later staging activation:
 
 Automated verification is limited to the repository checks and build with
 `-PskipAutoStart`. No deployment or game launch is part of this preflight.
-Rollback is a revert of this change while repository flags remain false; there
-is no data migration or Client rollback requirement.
+Rollback is a revert of the renewal/profile-cleanup commit while repository
+flags remain false; there is no data migration or Client rollback requirement.
+Read-Only Staging Gate still requires an explicitly approved non-OFF audience,
+flags, allowlist/world scope, matching Client, and live handshake validation.
