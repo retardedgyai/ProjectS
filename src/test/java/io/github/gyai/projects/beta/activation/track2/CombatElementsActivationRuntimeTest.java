@@ -32,6 +32,7 @@ import java.util.UUID;
 public final class CombatElementsActivationRuntimeTest {
     private static final UUID PLAYER_A = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
     private static final UUID PLAYER_B = UUID.fromString("00000000-0000-0000-0000-0000000000b2");
+    private static final UUID PLAYER_C = UUID.fromString("00000000-0000-0000-0000-0000000000c3");
     private static final UUID CENTER = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID NEARBY = UUID.fromString("10000000-0000-0000-0000-000000000002");
     private static final AttackMetadata STARTER = new AttackMetadata(
@@ -182,13 +183,13 @@ public final class CombatElementsActivationRuntimeTest {
                 "pvp", PLAYER_A, CENTER, "starter_sword",
                 TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL,
                 IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT, STARTER, 100,
-                true, true, true, false, 1);
+                true, true, true, true, "world", false, 1);
         assert !fixture.runtime.observe(playerTarget).observed();
         var secondary = new TrainingDummyElementRuntime.AttackInput(
                 "secondary", PLAYER_A, CENTER, "spin_slash",
                 TrainingDummyElementRuntime.AttackType.SPIN_SLASH,
                 IceElementEngine.DamageOrigin.AUTOMATIC_SECONDARY, SPIN, 100,
-                true, true, false, false, 2);
+                true, true, false, true, "world", false, 2);
         assert !fixture.runtime.observe(secondary).observed();
         var malformedMetadata = new TrainingDummyElementRuntime.AttackInput(
                 "malformed", PLAYER_A, CENTER, "starter_sword",
@@ -196,8 +197,16 @@ public final class CombatElementsActivationRuntimeTest {
                 IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT,
                 new AttackMetadata(Set.of(AttackTag.NORMAL_ATTACK, AttackTag.MELEE,
                         AttackTag.PHYSICAL, AttackTag.MAGIC), null),
-                100, true, true, false, false, 3);
+                100, true, true, false, true, "world", false, 3);
         assert !fixture.runtime.observe(malformedMetadata).observed();
+        var wrongWorld = new TrainingDummyElementRuntime.AttackInput(
+                "wrong-world", PLAYER_A, CENTER, "starter_sword",
+                TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL,
+                IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT, STARTER,
+                100, true, true, false, true, "production", false, 4);
+        assert !fixture.runtime.observe(wrongWorld).observed();
+        assert !fixture.runtime.observe(
+                fixture.starter(PLAYER_C, CENTER, "not-allowlisted", 5)).observed();
         assert fixture.boundary.secondary.isEmpty();
         assert fixture.runtime.snapshots().targets().isEmpty();
     }
@@ -308,6 +317,11 @@ public final class CombatElementsActivationRuntimeTest {
 
         Fixture() {
             boundary.live.add(CENTER);
+            assert runtime.configure(new BetaActivationPolicy(
+                    BetaActivationAudience.ALLOWLIST,
+                    BetaActivationTargetScope.TRAINING_DUMMY_ONLY,
+                    BetaMutationPolicy.READ_ONLY,
+                    Set.of(PLAYER_A, PLAYER_B), Set.of("world"), true, false));
         }
 
         TrainingDummyElementRuntime.AttackInput starter(
@@ -317,7 +331,8 @@ public final class CombatElementsActivationRuntimeTest {
                     hitId, player, target, "starter_sword",
                     TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL,
                     IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT,
-                    STARTER, 100.0, true, true, false, true, now);
+                    STARTER, 100.0, true, true, false, true,
+                    "world", true, now);
         }
 
         TrainingDummyElementRuntime.AttackInput spin(
@@ -327,7 +342,8 @@ public final class CombatElementsActivationRuntimeTest {
                     hitId, player, target, "spin_slash",
                     TrainingDummyElementRuntime.AttackType.SPIN_SLASH,
                     IceElementEngine.DamageOrigin.SKILL_DIRECT,
-                    SPIN, 100.0, true, true, false, true, now);
+                    SPIN, 100.0, true, true, false, true,
+                    "world", true, now);
         }
     }
 

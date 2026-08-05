@@ -13,7 +13,9 @@ The future Integration Gate may instantiate
 `BukkitTrainingDummyElementBoundary`. Construction is inert. The cleanup task
 is registered only by `start()` after the Runtime Kernel has admitted both
 element flags, a non-OFF audience, Training Dummy scope, READ_ONLY mutation,
-and both required infrastructure capabilities. `stop()` cancels that task and
+and both required infrastructure capabilities. Every hit callback rechecks the
+fixed audience/allowlist, compatible-client requirement, allowed world, and
+Training Dummy scope snapshots. `stop()` cancels that task and
 clears every temporary profile, target state, hit key, participation event,
 visual rate key, and diagnostic.
 

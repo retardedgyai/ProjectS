@@ -1,5 +1,7 @@
 package io.github.gyai.projects.beta.activation.track2;
 
+import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
+import io.github.gyai.projects.beta.activation.BetaActivationTarget;
 import io.github.gyai.projects.combat.damage.AttackMetadata;
 import io.github.gyai.projects.combat.damage.AttackTag;
 import io.github.gyai.projects.combat.damage.DamageElement;
@@ -35,6 +37,7 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     private final ElementStateRegistry registry = new ElementStateRegistry();
     private final ArrayList<String> diagnostics = new ArrayList<>();
     private TrainingDummyElementBoundary.Cancellable cleanupTask;
+    private BetaActivationPolicy activationPolicy = BetaActivationPolicy.defaults();
     private boolean running;
     private boolean closed;
 
@@ -46,6 +49,7 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     public synchronized boolean start() {
         if (closed) return false;
         if (running) return true;
+        if (!activationPolicy.allowsTarget(BetaActivationTarget.TRAINING_DUMMY)) return false;
         cleanupTask = Objects.requireNonNull(
                 boundary.scheduleCleanup(this::cleanupExpired, 1_000L), "cleanup task");
         running = true;
@@ -55,6 +59,10 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     public synchronized AttackOutcome observe(AttackInput input) {
         Objects.requireNonNull(input, "input");
         if (!running || closed || input.playerTarget()
+                || !activationPolicy.allowsAudience(
+                input.attackerId(), input.compatibleClient())
+                || !activationPolicy.allowsWorld(input.worldName())
+                || !activationPolicy.allowsTarget(BetaActivationTarget.TRAINING_DUMMY)
                 || !input.trainingDummyTarget()
                 || !boundary.isLiveTrainingDummy(input.targetId())
                 || !supported(input)) {
@@ -83,6 +91,12 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
 
     public synchronized boolean setProfile(UUID playerId, StagingElementProfile profile) {
         return !closed && registry.setProfile(playerId, profile);
+    }
+
+    synchronized boolean configure(BetaActivationPolicy policy) {
+        if (running || closed || policy == null) return false;
+        activationPolicy = policy;
+        return true;
     }
 
     public synchronized void playerLoggedOut(UUID playerId) {
@@ -293,6 +307,8 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
             boolean legacyCritical,
             boolean trainingDummyTarget,
             boolean playerTarget,
+            boolean compatibleClient,
+            String worldName,
             boolean debugViewerAllowedAndNear,
             long occurredAtMillis
     ) {
@@ -302,7 +318,9 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
                     || attackId.isBlank() || attackId.length() > 64 || attackType == null
                     || origin == null || metadata == null
                     || !Double.isFinite(preCriticalDirectDamage)
-                    || preCriticalDirectDamage < 0 || occurredAtMillis < 0) {
+                    || preCriticalDirectDamage < 0 || worldName == null
+                    || worldName.isBlank() || worldName.length() > 64
+                    || occurredAtMillis < 0) {
                 throw new IllegalArgumentException("Invalid element attack input");
             }
         }

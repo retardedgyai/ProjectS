@@ -70,6 +70,9 @@ public final class CombatElementsRuntimeModule implements BetaRuntimeModule, Aut
             healthDetail = "required element infrastructure unavailable";
             return new BetaRuntimeModuleResult(false, state, healthDetail);
         }
+        if (!runtime.configure(context.activationPolicy())) {
+            return fail("element runtime policy snapshot refused");
+        }
         state = BetaRuntimeModuleState.READY;
         healthDetail = "ready; no gameplay registration performed";
         return BetaRuntimeModuleResult.ready();
