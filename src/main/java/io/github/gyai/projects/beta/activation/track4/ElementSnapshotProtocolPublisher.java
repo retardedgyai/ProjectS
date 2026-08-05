@@ -49,6 +49,7 @@ public final class ElementSnapshotProtocolPublisher implements AutoCloseable {
         try { viewers = transport.viewers(); }
         catch (RuntimeException ignored) { return; }
         if (viewers == null) return;
+        adapter.retainViewers(viewers);
         int examined = 0;
         for (UUID viewer : viewers) {
             if (viewer == null || examined++ >= ElementSnapshotProtocolAdapter.MAXIMUM_VIEWERS) break;

@@ -81,9 +81,18 @@ public final class BetaActivationWave1ProtocolIntegrationTest {
         assert transport.packets.size() == 2;
         transport.runScheduled();
         assert transport.packets.size() == 2 : "duplicate pulse must not send";
+        UUID secondTarget = UUID.randomUUID();
+        snapshots.target = secondTarget;
+        snapshots.value = snapshot(secondTarget, 1, 0);
+        transport.target = secondTarget;
+        transport.runScheduled();
+        assert adapter.retainedRevisionCount() == 1 : "target change must clear old revision";
+        transport.viewers = List.of();
+        transport.runScheduled();
+        assert adapter.retainedRevisionCount() == 0 : "quit must clear viewer revision";
         publisher.close();
         transport.runScheduled();
-        assert transport.packets.size() == 2 : "stopped publisher must not send";
+        assert transport.packets.size() == 3 : "stopped publisher must not send";
         protocol.close();
         assert channels.active.isEmpty();
     }
@@ -126,7 +135,7 @@ public final class BetaActivationWave1ProtocolIntegrationTest {
     }
 
     private static final class MutableSnapshots implements ElementRuntimeSnapshotPort {
-        private final UUID target; private TargetSnapshot value;
+        private UUID target; private TargetSnapshot value;
         private MutableSnapshots(UUID target, TargetSnapshot value) { this.target = target; this.value = value; }
         @Override public Optional<TargetSnapshot> target(UUID id) {
             return target.equals(id) ? Optional.of(value) : Optional.empty();
@@ -136,10 +145,13 @@ public final class BetaActivationWave1ProtocolIntegrationTest {
     }
 
     private static final class RecordingTransport implements BetaStateTransport {
-        private final UUID player, target; private Runnable scheduled; private boolean cancelled;
+        private final UUID player; private UUID target; private List<UUID> viewers;
+        private Runnable scheduled; private boolean cancelled;
         private final List<byte[]> packets = new ArrayList<>();
-        private RecordingTransport(UUID player, UUID target) { this.player = player; this.target = target; }
-        @Override public List<UUID> viewers() { return List.of(player); }
+        private RecordingTransport(UUID player, UUID target) {
+            this.player = player; this.target = target; this.viewers = List.of(player);
+        }
+        @Override public List<UUID> viewers() { return viewers; }
         @Override public UUID visibleTarget(UUID viewerId) { return target; }
         @Override public void send(UUID viewerId, String channel, byte[] packet) {
             assert channel.equals(BetaChannels.STATE); packets.add(packet.clone());

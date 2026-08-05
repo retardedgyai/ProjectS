@@ -50,6 +50,8 @@ public final class ElementSnapshotProtocolAdapter {
             return Optional.empty();
         }
         ElementRuntimeSnapshotPort.TargetSnapshot value = found.orElseThrow();
+        lastSent.keySet().removeIf(key -> key.viewerId().equals(viewerId)
+                && !key.targetId().equals(targetId));
         ViewerTarget key = new ViewerTarget(viewerId, targetId);
         if (value.stateRevision() <= lastSent.getOrDefault(key, -1L)) return Optional.empty();
         remember(key, value.stateRevision());
@@ -58,6 +60,14 @@ public final class ElementSnapshotProtocolAdapter {
 
     public synchronized void clearViewer(UUID viewerId) {
         lastSent.keySet().removeIf(key -> key.viewerId().equals(viewerId));
+    }
+
+    public synchronized void retainViewers(Iterable<UUID> viewers) {
+        java.util.LinkedHashSet<UUID> active = new java.util.LinkedHashSet<>();
+        if (viewers != null) for (UUID viewer : viewers) {
+            if (viewer != null && active.size() < MAXIMUM_VIEWERS) active.add(viewer);
+        }
+        lastSent.keySet().removeIf(key -> !active.contains(key.viewerId()));
     }
 
     public synchronized void clear() { lastSent.clear(); }
