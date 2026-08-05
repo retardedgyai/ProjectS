@@ -27,9 +27,16 @@ public final class ClientBetaProtocolRuntimeModule extends AbstractTrack4Runtime
 
     public ClientBetaProtocolRuntime runtime() { return runtime; }
     @Override protected BetaRuntimeModuleResult startModule(BetaRuntimeModuleContext context) {
-        runtime.start();
-        if (elementPublisher != null) elementPublisher.start();
-        return BetaRuntimeModuleResult.running();
+        try {
+            runtime.start();
+            if (elementPublisher != null) elementPublisher.start();
+            return BetaRuntimeModuleResult.running();
+        } catch (RuntimeException failure) {
+            if (elementPublisher != null) try { elementPublisher.close(); }
+            catch (RuntimeException ignored) { }
+            try { runtime.close(); } catch (RuntimeException ignored) { }
+            throw failure;
+        }
     }
     @Override protected void stopModule() {
         if (elementPublisher != null) elementPublisher.close();
