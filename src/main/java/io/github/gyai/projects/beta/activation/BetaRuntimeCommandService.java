@@ -59,12 +59,14 @@ public final class BetaRuntimeCommandService {
 
     private Response status() {
         BetaRuntimeHealthSnapshot health = runtime.healthSnapshot();
-        return new Response(true, List.of(
+        ArrayList<String> lines = new ArrayList<>(List.of(
                 "Beta runtime status=" + health.status(),
                 "startedModules=" + health.moduleStates().values().stream()
                         .filter(value -> value == BetaRuntimeModuleState.RUNNING).count(),
                 "startCount=" + health.startCount() + " stopCount=" + health.stopCount(),
                 "restartRequired=" + health.restartRequired()));
+        lines.addAll(contributors.healthDetails());
+        return bounded(true, lines);
     }
 
     private Response policy() {

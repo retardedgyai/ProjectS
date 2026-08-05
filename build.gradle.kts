@@ -522,11 +522,21 @@ val betaCapabilityHandshakePreflightTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val elementSnapshotProtocolDiagnosticsTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.ElementSnapshotProtocolDiagnosticsTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
 
 tasks.named("check") {
+    dependsOn(elementSnapshotProtocolDiagnosticsTest)
     dependsOn(track3StagingItemWriterTest)
     dependsOn(track3EconomyOperationTest)
     dependsOn(track3RuntimeModuleTest)
