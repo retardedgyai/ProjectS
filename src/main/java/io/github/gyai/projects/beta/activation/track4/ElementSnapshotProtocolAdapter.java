@@ -10,6 +10,8 @@ import io.github.gyai.projects.network.beta.ElementDisplaySnapshot;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -39,23 +41,51 @@ public final class ElementSnapshotProtocolAdapter {
     }
 
     public synchronized Optional<ElementDisplaySnapshot> next(UUID viewerId, UUID targetId, long nowMillis) {
-        if (protocolState.get() != BetaRuntimeModuleState.RUNNING
-                || elementState.get() != BetaRuntimeModuleState.RUNNING
-                || !visibility.test(new Visibility(viewerId, targetId))) return Optional.empty();
+        return decide(viewerId, targetId, nowMillis).snapshot();
+    }
+
+    /**
+     * Purely describes the current delivery gate while retaining the existing
+     * revision gate semantics used by {@link #next(UUID, UUID, long)}.
+     */
+    public synchronized Decision decide(UUID viewerId, UUID targetId, long nowMillis) {
+        if (viewerId == null) return Decision.empty(DecisionStatus.VIEWER_MISSING);
+        if (targetId == null) return Decision.empty(DecisionStatus.TARGET_MISSING);
+        if (protocolState.get() != BetaRuntimeModuleState.RUNNING) {
+            return Decision.empty(DecisionStatus.PROTOCOL_NOT_RUNNING);
+        }
+        if (elementState.get() != BetaRuntimeModuleState.RUNNING) {
+            return Decision.empty(DecisionStatus.ELEMENTS_NOT_RUNNING);
+        }
+        if (!visibility.test(new Visibility(viewerId, targetId))) {
+            return Decision.empty(DecisionStatus.VISIBILITY_DENIED);
+        }
         BetaCapabilitySnapshot capability = capabilities.snapshot(viewerId);
-        if (capability == null || !capability.supports(BetaCapabilityId.ELEMENTS, 1)) return Optional.empty();
+        if (capability == null || !capability.supports(BetaCapabilityId.ELEMENTS, 1)) {
+            return Decision.empty(DecisionStatus.CAPABILITY_UNAVAILABLE);
+        }
         Optional<ElementRuntimeSnapshotPort.TargetSnapshot> found = snapshots.target(targetId);
-        if (found.isEmpty() || found.orElseThrow().snapshotExpiresAtMillis() <= nowMillis) {
+        if (found.isEmpty()) {
             lastSent.remove(new ViewerTarget(viewerId, targetId));
-            return Optional.empty();
+            return Decision.empty(DecisionStatus.SNAPSHOT_MISSING);
         }
         ElementRuntimeSnapshotPort.TargetSnapshot value = found.orElseThrow();
+        DecisionMetadata metadata = metadata(value);
+        if (value.snapshotExpiresAtMillis() <= nowMillis) {
+            lastSent.remove(new ViewerTarget(viewerId, targetId));
+            return new Decision(DecisionStatus.SNAPSHOT_EXPIRED, Optional.empty(),
+                    metadata.targetRuntimeId(), metadata.stateRevision(), metadata.fireStacks());
+        }
         lastSent.keySet().removeIf(key -> key.viewerId().equals(viewerId)
                 && !key.targetId().equals(targetId));
         ViewerTarget key = new ViewerTarget(viewerId, targetId);
-        if (value.stateRevision() <= lastSent.getOrDefault(key, -1L)) return Optional.empty();
+        if (value.stateRevision() <= lastSent.getOrDefault(key, -1L)) {
+            return new Decision(DecisionStatus.REVISION_NOT_ADVANCED, Optional.empty(),
+                    metadata.targetRuntimeId(), metadata.stateRevision(), metadata.fireStacks());
+        }
         remember(key, value.stateRevision());
-        return Optional.of(map(value));
+        return new Decision(DecisionStatus.READY, Optional.of(map(value)),
+                metadata.targetRuntimeId(), metadata.stateRevision(), metadata.fireStacks());
     }
 
     public synchronized void clearViewer(UUID viewerId) {
@@ -97,9 +127,58 @@ public final class ElementSnapshotProtocolAdapter {
         };
     }
 
+    private static DecisionMetadata metadata(ElementRuntimeSnapshotPort.TargetSnapshot value) {
+        return new DecisionMetadata(OptionalInt.of(value.targetRuntimeId()),
+                OptionalLong.of(value.stateRevision()), OptionalInt.of(value.fireStacks()));
+    }
+
     @FunctionalInterface public interface CapabilityPort {
         BetaCapabilitySnapshot snapshot(UUID viewerId);
     }
+
+    public enum DecisionStatus {
+        READY,
+        VIEWER_MISSING,
+        TARGET_MISSING,
+        PROTOCOL_NOT_RUNNING,
+        ELEMENTS_NOT_RUNNING,
+        VISIBILITY_DENIED,
+        CAPABILITY_UNAVAILABLE,
+        SNAPSHOT_MISSING,
+        SNAPSHOT_EXPIRED,
+        REVISION_NOT_ADVANCED
+    }
+
+    public record Decision(
+            DecisionStatus status,
+            Optional<ElementDisplaySnapshot> snapshot,
+            OptionalInt targetRuntimeId,
+            OptionalLong stateRevision,
+            OptionalInt fireStacks
+    ) {
+        public Decision {
+            if (status == null || snapshot == null || targetRuntimeId == null
+                    || stateRevision == null || fireStacks == null) {
+                throw new IllegalArgumentException("Decision fields are required");
+            }
+            if (status == DecisionStatus.READY && snapshot.isEmpty()) {
+                throw new IllegalArgumentException("READY decision requires a snapshot");
+            }
+            if (status != DecisionStatus.READY && snapshot.isPresent()) {
+                throw new IllegalArgumentException("Non-ready decision cannot contain a snapshot");
+            }
+        }
+
+        private static Decision empty(DecisionStatus status) {
+            return new Decision(status, Optional.empty(), OptionalInt.empty(),
+                    OptionalLong.empty(), OptionalInt.empty());
+        }
+    }
+
+    private record DecisionMetadata(OptionalInt targetRuntimeId,
+                                    OptionalLong stateRevision,
+                                    OptionalInt fireStacks) { }
+
     public record Visibility(UUID viewerId, UUID targetId) { }
     private record ViewerTarget(UUID viewerId, UUID targetId) { }
 }

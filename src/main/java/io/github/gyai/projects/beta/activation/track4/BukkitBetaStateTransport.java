@@ -8,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /** Main-thread Bukkit boundary. Player and Entity references are callback-local only. */
@@ -37,10 +38,20 @@ public final class BukkitBetaStateTransport implements BetaStateTransport {
     }
 
     @Override public void send(UUID viewerId, String channel, byte[] packet) {
+        sendResult(viewerId, channel, packet);
+    }
+
+    @Override public SendResult sendResult(UUID viewerId, String channel, byte[] packet) {
         requirePrimaryThread();
         Player player = Bukkit.getPlayer(viewerId);
-        if (player != null && player.isOnline()) {
+        if (player == null || !player.isOnline()) return SendResult.FAILED;
+        Set<String> listening = player.getListeningPluginChannels();
+        if (listening == null || !listening.contains(channel)) return SendResult.NOT_LISTENING;
+        try {
             player.sendPluginMessage(plugin, channel, packet.clone());
+            return SendResult.SENT;
+        } catch (RuntimeException failure) {
+            return SendResult.FAILED;
         }
     }
 

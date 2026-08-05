@@ -307,7 +307,12 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         (context, args) -> track4Result(track4Commands, context)),
                 entry("mob", BetaRuntimeModuleId.MOB_EDITOR_V2,
                         (context, args) -> track4Result(track4Commands, context))),
-                advertisementPublisher::diagnosticLines);
+                () -> {
+                    java.util.ArrayList<String> lines = new java.util.ArrayList<>();
+                    lines.addAll(publisher.diagnosticLines());
+                    lines.addAll(advertisementPublisher.diagnosticLines());
+                    return lines;
+                });
 
         ConfirmedDamageHitObserver observer = track2.confirmedHitObserver(
                 track2.combatElementsModule()::state, dummies, clock);

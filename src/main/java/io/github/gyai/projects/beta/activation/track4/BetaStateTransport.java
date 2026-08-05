@@ -8,6 +8,20 @@ public interface BetaStateTransport {
     List<UUID> viewers();
     UUID visibleTarget(UUID viewerId);
     void send(UUID viewerId, String channel, byte[] packet);
+
+    /** Existing send implementations remain source-compatible while publishers can classify delivery. */
+    default SendResult sendResult(UUID viewerId, String channel, byte[] packet) {
+        send(viewerId, channel, packet);
+        return SendResult.SENT;
+    }
+
     Cancellable schedule(Runnable task, long periodMillis);
+
+    enum SendResult {
+        SENT,
+        NOT_LISTENING,
+        FAILED
+    }
+
     interface Cancellable { void cancel(); boolean cancelled(); }
 }
