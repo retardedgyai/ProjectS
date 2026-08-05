@@ -2,8 +2,8 @@
 
 ## Baseline and scope
 
-Activation starts from Server integration
-`d4ac712fc70b7f780a6ccb026ba30b3160b4e710`. The compatible Client is
+Activation Runtime Adapter work starts from Kernel integration
+`3c385eeefec9ec2d1647f37d53f2ebc83cd5a9c3`. The compatible Client is
 `27f2c5e4b535dee19c860b711cac9662606540ff`. Compatibility is anchored by
 protocol manifest SHA-256
 `49d37172e5f5a95207876b328b52bf0d0a1a04aa6ec9a6f2e9f0bca8aa8937ac`
@@ -21,8 +21,10 @@ Foundation ownership remains unchanged:
 - G: Mob Editor v2 domain, repository, and history
 - H: Server/Client protocol, state displays, and command ports
 
-Phase 0 adds only the Runtime Kernel. No foundation is connected to gameplay,
-no Beta protocol channel is registered, and no feature is enabled.
+Phase 0 adds only the Runtime Kernel. Activation Wave 1 publishes unregistered
+Runtime Adapter providers and ports from a shared owner-decision base. No
+foundation is connected to gameplay, no Beta protocol channel is registered,
+and no feature is enabled.
 
 ## Runtime modules and dependencies
 
@@ -102,7 +104,7 @@ findings, all checks green, bounded healthy diagnostics, compatible protocol
 hashes, backup/restore evidence, no unplanned migration, and a successful
 rollback rehearsal.
 
-## Next Activation Tracks (documentation only)
+## Activation Wave 1 parallel Tracks
 
 1. Player persistence plus Equipment read adapter.
 2. Fire/Ice plus Training Dummy combat adapter.
@@ -110,5 +112,6 @@ rollback rehearsal.
 4. Party/quest/reward/Mob Editor/protocol adapter.
 
 Each Track implements `BetaRuntimeModule`; it does not add independent startup
-logic to `ProjectSPlugin`. These Tracks must not begin until this Runtime Kernel
-Draft is reviewed and integrated.
+logic to `ProjectSPlugin`. Track providers remain unregistered until a later
+Integration Gate. Shared staging fixtures, data isolation, and cross-Track
+ports are fixed by `wave-1-owner-decisions.md`.
