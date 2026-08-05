@@ -4,6 +4,10 @@ import io.github.gyai.projects.beta.activation.BetaRuntimeModule;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
 
 import java.time.Clock;
+import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
+import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.dummy.TrainingDummyManager;
+import java.util.function.Supplier;
 
 /** Concrete Track 2 provider discovered and registered only by the future Gate. */
 public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeModuleProvider {
@@ -44,5 +48,13 @@ public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeMod
 
     public TrainingDummyParticipationPort participation() {
         return runtime.participation();
+    }
+
+    public ConfirmedDamageHitObserver confirmedHitObserver(
+            Supplier<BetaRuntimeModuleState> state,
+            TrainingDummyManager dummies,
+            Clock clock
+    ) {
+        return new Track2ConfirmedHitObserver(state, runtime, dummies, clock);
     }
 }

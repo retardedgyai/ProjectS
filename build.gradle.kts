@@ -495,6 +495,15 @@ val track1ActivationFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val betaActivationWave1IntegratedTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath +
+            sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.beta.activation.BetaActivationWave1IntegratedTest")
+    jvmArgs("-ea")
+}
+
 tasks.test {
     failOnNoDiscoveredTests = false
 }
@@ -553,4 +562,5 @@ tasks.named("check") {
     dependsOn(activationTrack4RuntimeAdapterTest)
     dependsOn(combatElementsActivationRuntimeTest)
     dependsOn(track1ActivationFoundationTest)
+    dependsOn(betaActivationWave1IntegratedTest)
 }

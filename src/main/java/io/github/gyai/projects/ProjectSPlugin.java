@@ -82,6 +82,12 @@ import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
 import io.github.gyai.projects.beta.activation.BetaRuntime;
 import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
 import io.github.gyai.projects.beta.activation.BetaRuntimeFactory;
+import io.github.gyai.projects.beta.activation.BetaActivationWave1ModuleRegistry;
+import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
+import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
+import io.github.gyai.projects.beta.activation.track2.BukkitTrainingDummyElementBoundary;
+import io.github.gyai.projects.beta.activation.track2.CombatElementsRuntimeModuleProvider;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 
@@ -117,6 +123,9 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MobEditorChannel mobEditorChannel;
     private ShutdownSequence shutdownSequence;
     private BetaRuntime betaRuntime;
+    private CombatElementsRuntimeModuleProvider combatElementsProvider;
+    private ConfirmedDamageHitObserver betaConfirmedHitObserver =
+            ConfirmedDamageHitObserver.NO_OP;
 
     @Override
     public void onEnable() {
@@ -156,6 +165,19 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
+        Clock activationClock = Clock.systemUTC();
+        combatElementsProvider = new CombatElementsRuntimeModuleProvider(
+                new BukkitTrainingDummyElementBoundary(
+                        this, trainingDummyManager, damageService),
+                activationClock);
+        betaConfirmedHitObserver = combatElementsProvider.confirmedHitObserver(
+                () -> betaRuntime == null
+                        ? BetaRuntimeModuleState.DISABLED
+                        : betaRuntime.healthSnapshot().moduleStates().getOrDefault(
+                                BetaRuntimeModuleId.COMBAT_ELEMENTS,
+                                BetaRuntimeModuleState.DISABLED),
+                trainingDummyManager,
+                activationClock);
         Clock damageShadowClock = Clock.systemUTC();
         BukkitDamageShadowRuntimeContextResolver damageShadowContextResolver =
                 new BukkitDamageShadowRuntimeContextResolver(
@@ -252,7 +274,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
                 warriorCombatManager, balanceTuningManager,
-                damageShadowDispatcher);
+                damageShadowDispatcher, betaConfirmedHitObserver);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
                 trainingDummyManager, skillManager, damageService);
@@ -388,7 +410,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager,
-                        damageService, starterSwordDamageRouter), this);
+                        damageService, starterSwordDamageRouter,
+                        betaConfirmedHitObserver), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
@@ -460,9 +483,11 @@ public final class ProjectSPlugin extends JavaPlugin {
                             : activationSection.getValues(false),
                     message -> getLogger().warning(
                             "Beta activation config: " + message));
-            betaRuntime = BetaRuntimeFactory.empty(
+            betaRuntime = BetaRuntimeFactory.create(
                     activationPolicy,
                     featureFlags,
+                    BetaActivationWave1ModuleRegistry.disabledPlan().modules(),
+                    java.util.Set.of(),
                     Clock.systemUTC(),
                     (message, exception) -> getLogger().log(
                             Level.WARNING, "Beta runtime: " + message, exception));
@@ -471,9 +496,11 @@ public final class ProjectSPlugin extends JavaPlugin {
             getLogger().log(Level.SEVERE,
                     "Beta runtime initialization failed; legacy startup will continue",
                     exception);
-            betaRuntime = BetaRuntimeFactory.empty(
+            betaRuntime = BetaRuntimeFactory.create(
                     BetaActivationPolicy.defaults(),
                     FeatureFlagSnapshot.allDisabled(),
+                    BetaActivationWave1ModuleRegistry.disabledPlan().modules(),
+                    java.util.Set.of(),
                     Clock.systemUTC(),
                     (message, failure) -> getLogger().log(
                             Level.WARNING, "Beta runtime fallback: " + message, failure));
@@ -493,6 +520,9 @@ public final class ProjectSPlugin extends JavaPlugin {
 
         sequence.addIfPresent("betaRuntime.close",
                 betaRuntime, BetaRuntime::close);
+        sequence.addIfPresent("combatElementsProvider.close",
+                combatElementsProvider,
+                provider -> provider.combatElementsModule().close());
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",

@@ -318,7 +318,9 @@ public final class CombatElementsActivationRuntimeTest {
         try (var files = Files.walk(root)) {
             for (Path file : files.filter(path -> path.toString().endsWith(".java")
                     && !path.getFileName().toString().equals(
-                    "BukkitTrainingDummyElementBoundary.java")).toList()) {
+                    "BukkitTrainingDummyElementBoundary.java")
+                    && !path.getFileName().toString().equals(
+                    "Track2ConfirmedHitObserver.java")).toList()) {
                 source.append(Files.readString(file));
             }
         }
@@ -343,7 +345,9 @@ public final class CombatElementsActivationRuntimeTest {
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java"));
         String command = Files.readString(Path.of(
                 "src/main/java/io/github/gyai/projects/command/ProjectCommand.java"));
-        assert !plugin.contains("CombatElementsRuntimeModuleProvider");
+        assert plugin.contains("CombatElementsRuntimeModuleProvider");
+        assert plugin.contains("betaConfirmedHitObserver");
+        assert !plugin.contains("combatElementsProvider.combatElementsModule().start(");
         assert !command.contains("staging element");
     }
 

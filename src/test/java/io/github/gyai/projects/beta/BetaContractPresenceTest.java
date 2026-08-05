@@ -38,7 +38,7 @@ public final class BetaContractPresenceTest {
         exactlyEightTrackBriefsExist();
         allFeatureDefaultsAreFalse();
         integrationBranchRunsCiChecks();
-        activationKernelDoesNotWireGameplayModules();
+        activationKernelRegistersWave1WithoutGameplayResources();
     }
 
     private static void requiredContractsExistAndAreNonEmpty() throws IOException {
@@ -80,13 +80,13 @@ public final class BetaContractPresenceTest {
         assert !workflow.contains("deploy-and-start-server");
     }
 
-    private static void activationKernelDoesNotWireGameplayModules() throws IOException {
+    private static void activationKernelRegistersWave1WithoutGameplayResources() throws IOException {
         String plugin = read(
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java");
         assert plugin.contains("FeatureFlagService");
-        assert plugin.contains("BetaRuntimeFactory.empty(");
+        assert plugin.contains("BetaActivationWave1ModuleRegistry.disabledPlan().modules()");
         assert plugin.contains("initializeBetaRuntime();");
-        assert !plugin.contains("BetaRuntimeFactory.create(");
+        assert plugin.contains("BetaRuntimeFactory.create(");
         assert !plugin.contains("FeatureKey");
         assert !plugin.contains("SchemaVersions");
         assert !plugin.contains("projects:beta_");

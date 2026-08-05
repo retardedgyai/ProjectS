@@ -17,10 +17,19 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
     private static final int MAXIMUM_AUDIT_BYTES = 65_536;
     private final Path directory;
     private final StagingEquipmentCodec codec = new StagingEquipmentCodec();
+    private final StagingTransactionJournalRepository recoveryJournal;
 
     public FileStagingTransactionAuditSink(StagingEconomyPaths paths) {
+        this(paths, null);
+    }
+
+    public FileStagingTransactionAuditSink(
+            StagingEconomyPaths paths,
+            StagingTransactionJournalRepository recoveryJournal
+    ) {
         if (paths == null) throw new IllegalArgumentException("staging paths are required");
         directory = paths.transactionsDirectory();
+        this.recoveryJournal = recoveryJournal;
     }
 
     @Override
@@ -37,6 +46,18 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "item-payload-base64: " + Base64.getEncoder()
                 .encodeToString(document.payload()) + "\n";
         write(proposal.requestId(), "resolved", body);
+        if (recoveryJournal != null) recoveryJournal.save(
+                new StagingTransactionJournalRepository.Entry(
+                        proposal.requestId(),
+                        StagingTransactionJournalRepository.Stage.PRODUCED,
+                        proposal.playerId(), proposal.operationId(),
+                        proposal.inputs().stream().map(input ->
+                                input.inputId() + "@" + input.revision()).toList(),
+                        StagingTransactionJournalRepository.ReservationState.HELD,
+                        proposal.proposedItem().instanceId().map(UUID::toString)
+                                .orElse(proposal.canonicalFamilyId()),
+                        StagingTransactionJournalRepository.TerminalOutcome.NONE,
+                        System.currentTimeMillis()));
     }
 
     @Override
@@ -51,6 +72,40 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "completed-at: " + result.completedAt() + "\n"
                 + "reason: " + safe(result.reason()) + "\n";
         write(result.requestId(), "terminal", body);
+        if (recoveryJournal != null) recoveryJournal.save(terminalEntry(result));
+    }
+
+    private static StagingTransactionJournalRepository.Entry terminalEntry(
+            TransactionAuditResult result
+    ) {
+        StagingTransactionJournalRepository.Stage stage;
+        StagingTransactionJournalRepository.TerminalOutcome outcome;
+        switch (result.outcome()) {
+            case COMMITTED -> {
+                stage = StagingTransactionJournalRepository.Stage.COMMITTED;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.COMMITTED;
+            }
+            case ROLLED_BACK, REJECTED, INPUT_CONFLICT, TERMINAL_LIMIT,
+                    REPLAY_CONFLICT, DUPLICATE_ACTIVE, ACTIVE_LIMIT, CLOSED -> {
+                stage = StagingTransactionJournalRepository.Stage.ROLLED_BACK;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.ROLLED_BACK;
+            }
+            case ROLLBACK_FAILED, COMMIT_UNCERTAIN -> {
+                stage = StagingTransactionJournalRepository.Stage.COMMIT_UNCERTAIN;
+                outcome = StagingTransactionJournalRepository.TerminalOutcome.COMMIT_UNCERTAIN;
+            }
+            default -> throw new IllegalStateException("unknown transaction outcome");
+        }
+        return new StagingTransactionJournalRepository.Entry(
+                result.requestId(), stage, result.playerId(), result.operationId(),
+                result.inputs().stream().map(input ->
+                        input.inputId() + "@" + input.revision()).toList(),
+                stage == StagingTransactionJournalRepository.Stage.COMMITTED
+                        ? StagingTransactionJournalRepository.ReservationState.CONSUMED
+                        : StagingTransactionJournalRepository.ReservationState.RELEASED,
+                result.output().map(output -> output.outputId()
+                        + ":" + output.quantity()).orElse(""),
+                outcome, result.completedAt().toEpochMilli());
     }
 
     private void write(UUID requestId, String kind, String body) {

@@ -226,7 +226,9 @@ public class ProjectCommand implements CommandExecutor {
             return true;
         }
         BetaRuntimeCommandService.Response response = betaRuntimeCommandService.execute(
-                args.length >= 2 ? args[1] : "status",
+                args.length >= 2
+                        ? java.util.Arrays.asList(args).subList(1, args.length)
+                        : java.util.List.of("status"),
                 sender.hasPermission("projects.dev"));
         String color = response.success() ? "§e" : "§c";
         for (String message : response.messages()) sender.sendMessage(color + message);
