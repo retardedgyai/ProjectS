@@ -1,5 +1,6 @@
 package io.github.gyai.projects.command;
 
+import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
@@ -38,6 +39,7 @@ public class ProjectCommand implements CommandExecutor {
     private final PlayerManager playerManager;
     private final DamageShadowCommandRouter damageShadowCommandRouter;
     private final StarterSwordRouteCommandService damageRouteCommandService;
+    private final BetaRuntimeCommandService betaRuntimeCommandService;
 
     public ProjectCommand(
             ItemManager itemManager,
@@ -54,7 +56,7 @@ public class ProjectCommand implements CommandExecutor {
         this(itemManager, dummyManager, devMenuManager, enhancementListener,
                 monsterManager, crowdControlManager, statusEffectManager,
                 playerManager, damageShadowCommandService, null,
-                damageRouteCommandService);
+                damageRouteCommandService, null);
     }
 
     public ProjectCommand(
@@ -70,6 +72,26 @@ public class ProjectCommand implements CommandExecutor {
             DamageShadowCommandService spinSlashShadowCommandService,
             StarterSwordRouteCommandService damageRouteCommandService
     ) {
+        this(itemManager, dummyManager, devMenuManager, enhancementListener,
+                monsterManager, crowdControlManager, statusEffectManager,
+                playerManager, damageShadowCommandService,
+                spinSlashShadowCommandService, damageRouteCommandService, null);
+    }
+
+    public ProjectCommand(
+            ItemManager itemManager,
+            TrainingDummyManager dummyManager,
+            DevMenuManager devMenuManager,
+            EnhancementListener enhancementListener,
+            MonsterManager monsterManager,
+            CrowdControlManager crowdControlManager,
+            StatusEffectManager statusEffectManager,
+            PlayerManager playerManager,
+            DamageShadowCommandService damageShadowCommandService,
+            DamageShadowCommandService spinSlashShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService,
+            BetaRuntimeCommandService betaRuntimeCommandService
+    ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
         this.devMenuManager = devMenuManager;
@@ -81,6 +103,7 @@ public class ProjectCommand implements CommandExecutor {
         damageShadowCommandRouter = new DamageShadowCommandRouter(
                 damageShadowCommandService, spinSlashShadowCommandService);
         this.damageRouteCommandService = damageRouteCommandService;
+        this.betaRuntimeCommandService = betaRuntimeCommandService;
     }
 
     @Override
@@ -97,6 +120,9 @@ public class ProjectCommand implements CommandExecutor {
         if (args.length > 0
                 && args[0].equalsIgnoreCase("damage-route")) {
             return handleDamageRouteCommand(sender, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("beta")) {
+            return handleBetaCommand(sender, args);
         }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("このコマンドはゲーム内で実行してください。");
@@ -191,6 +217,19 @@ public class ProjectCommand implements CommandExecutor {
         for (String message : response.messages()) {
             sender.sendMessage(color + message);
         }
+        return true;
+    }
+
+    private boolean handleBetaCommand(CommandSender sender, String[] args) {
+        if (betaRuntimeCommandService == null) {
+            sender.sendMessage("§cBeta runtime diagnostics are unavailable.");
+            return true;
+        }
+        BetaRuntimeCommandService.Response response = betaRuntimeCommandService.execute(
+                args.length >= 2 ? args[1] : "status",
+                sender.hasPermission("projects.dev"));
+        String color = response.success() ? "§e" : "§c";
+        for (String message : response.messages()) sender.sendMessage(color + message);
         return true;
     }
 

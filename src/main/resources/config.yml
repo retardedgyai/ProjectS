@@ -21,6 +21,15 @@ features:
   reward-v2: false
   mob-editor-v2: false
   client-beta-ui: false
+beta:
+  activation:
+    audience: OFF
+    target-scope: TRAINING_DUMMY_ONLY
+    mutation-policy: READ_ONLY
+    allowlisted-player-uuids: []
+    allowed-worlds: []
+    fail-closed: true
+    require-compatible-client: false
 combat:
   damage-foundation:
     starter-sword-authoritative-enabled: false

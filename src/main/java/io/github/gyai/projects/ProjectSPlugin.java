@@ -78,6 +78,12 @@ import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
 import io.github.gyai.projects.combat.damage.SpinSlashDamageShadow;
 import io.github.gyai.projects.lifecycle.ShutdownSequence;
+import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
+import io.github.gyai.projects.beta.activation.BetaRuntime;
+import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
+import io.github.gyai.projects.beta.activation.BetaRuntimeFactory;
+import io.github.gyai.projects.feature.FeatureFlagService;
+import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 
 import java.time.Clock;
 import java.util.logging.Level;
@@ -110,11 +116,13 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
     private ShutdownSequence shutdownSequence;
+    private BetaRuntime betaRuntime;
 
     @Override
     public void onEnable() {
         shutdownSequence = null;
         saveDefaultConfig();
+        initializeBetaRuntime();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
         statusEffectManager = new StatusEffectManager(this);
@@ -426,7 +434,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                     crowdControlManager, statusEffectManager,
                     playerManager, damageShadowCommandService,
                     spinSlashShadowCommandService,
-                    damageRouteCommandService));
+                    damageRouteCommandService,
+                    new BetaRuntimeCommandService(betaRuntime)));
         }
 
         getLogger().info("ProjectS has started!");
@@ -435,6 +444,41 @@ public final class ProjectSPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         shutdownSequence().run();
+    }
+
+    private void initializeBetaRuntime() {
+        try {
+            org.bukkit.configuration.ConfigurationSection featureSection =
+                    getConfig().getConfigurationSection("features");
+            FeatureFlagSnapshot featureFlags = new FeatureFlagService(
+                    featureSection == null ? java.util.Map.of()
+                            : featureSection.getValues(false)).snapshot();
+            org.bukkit.configuration.ConfigurationSection activationSection =
+                    getConfig().getConfigurationSection("beta.activation");
+            BetaActivationPolicy activationPolicy = BetaActivationPolicy.parse(
+                    activationSection == null ? java.util.Map.of()
+                            : activationSection.getValues(false),
+                    message -> getLogger().warning(
+                            "Beta activation config: " + message));
+            betaRuntime = BetaRuntimeFactory.empty(
+                    activationPolicy,
+                    featureFlags,
+                    Clock.systemUTC(),
+                    (message, exception) -> getLogger().log(
+                            Level.WARNING, "Beta runtime: " + message, exception));
+            betaRuntime.start();
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE,
+                    "Beta runtime initialization failed; legacy startup will continue",
+                    exception);
+            betaRuntime = BetaRuntimeFactory.empty(
+                    BetaActivationPolicy.defaults(),
+                    FeatureFlagSnapshot.allDisabled(),
+                    Clock.systemUTC(),
+                    (message, failure) -> getLogger().log(
+                            Level.WARNING, "Beta runtime fallback: " + message, failure));
+            betaRuntime.start();
+        }
     }
 
     private synchronized ShutdownSequence shutdownSequence() {
@@ -447,6 +491,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "ProjectS cleanup failed: " + name,
                         exception));
 
+        sequence.addIfPresent("betaRuntime.close",
+                betaRuntime, BetaRuntime::close);
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",
