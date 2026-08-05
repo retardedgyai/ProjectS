@@ -59,6 +59,7 @@ public final class Track1ActivationFoundationTest {
         stagingWriteIsIsolatedAndReconnects();
         staleSaveAndDisableDrain();
         malformedSourceIsQuarantinedWithoutMutation();
+        repositoryExceptionsFailSafe();
         comparisonDetectsLegacyDifferences();
         allowlistAndWorldDenials();
         equipmentInspectionIsReadOnly();
@@ -144,6 +145,22 @@ public final class Track1ActivationFoundationTest {
         var observed = service.onJoin(snapshot(1, 0), WORLD, true);
         assert observed.status() == PlayerProgressObservationStatus.QUARANTINED;
         assert store.saved.isEmpty();
+        service.close();
+    }
+
+    private static void repositoryExceptionsFailSafe() {
+        FakeStore store = new FakeStore();
+        store.throwOnLoad = true;
+        var service = new StagingPlayerProgressService(
+                policy(BetaMutationPolicy.STAGING_WRITE), store, CLOCK);
+        service.start();
+        assert service.onJoin(snapshot(1, 0), WORLD, true).status()
+                == PlayerProgressObservationStatus.QUARANTINED;
+        store.throwOnLoad = false;
+        service.onJoin(snapshot(1, 0), WORLD, true);
+        store.throwOnSave = true;
+        assert service.onQuit(snapshot(1, 0), WORLD, true).toCompletableFuture().join().status()
+                == PlayerProgressSaveObservation.Status.FAILED;
         service.close();
     }
 
@@ -363,8 +380,15 @@ public final class Track1ActivationFoundationTest {
         private final List<PlayerProgressSnapshot> saved = new ArrayList<>();
         private int loads;
         private boolean closed;
-        @Override public Load load(UUID playerId) { loads++; return load; }
+        private boolean throwOnLoad;
+        private boolean throwOnSave;
+        @Override public Load load(UUID playerId) {
+            loads++;
+            if (throwOnLoad) throw new IllegalStateException("fixture load failure");
+            return load;
+        }
         @Override public CompletionStage<PlayerProgressSaveObservation> save(PlayerProgressSnapshot snapshot) {
+            if (throwOnSave) throw new IllegalStateException("fixture save failure");
             saved.add(snapshot);
             return CompletableFuture.completedFuture(new PlayerProgressSaveObservation(
                     snapshot.playerId(), saveStatus, snapshot.revision(), Optional.empty(), "fixture"));

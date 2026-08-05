@@ -21,38 +21,64 @@ public final class BukkitTrack1PlayerListener implements Listener {
     private final StagingPlayerProgressService progress;
     private final EquipmentInspectionService equipment;
     private final CompatibleClientResolver compatibleClients;
+    private final Track1DiagnosticSink diagnostics;
 
     public BukkitTrack1PlayerListener(PlayerManager playerManager,
                                       StagingPlayerProgressService progress,
                                       EquipmentInspectionService equipment) {
-        this(playerManager, progress, equipment, ignored -> false);
+        this(playerManager, progress, equipment, ignored -> false,
+                (operation, exception) -> { });
     }
 
     public BukkitTrack1PlayerListener(PlayerManager playerManager,
                                       StagingPlayerProgressService progress,
                                       EquipmentInspectionService equipment,
                                       CompatibleClientResolver compatibleClients) {
+        this(playerManager, progress, equipment, compatibleClients,
+                (operation, exception) -> { });
+    }
+
+    public BukkitTrack1PlayerListener(PlayerManager playerManager,
+                                      StagingPlayerProgressService progress,
+                                      EquipmentInspectionService equipment,
+                                      CompatibleClientResolver compatibleClients,
+                                      Track1DiagnosticSink diagnostics) {
         this.playerManager = Objects.requireNonNull(playerManager, "playerManager");
         this.progress = Objects.requireNonNull(progress, "progress");
         this.equipment = Objects.requireNonNull(equipment, "equipment");
         this.compatibleClients = Objects.requireNonNull(compatibleClients, "compatibleClients");
+        this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics");
         projector = new LegacyPlayerProgressProjector();
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        PlayerProgressSnapshot snapshot = projector.project(playerManager.getPlayerData(player));
-        progress.onJoin(snapshot, player.getWorld().getName(),
-                compatibleClients.hasCompatibleClient(player.getUniqueId()));
+        try {
+            PlayerProgressSnapshot snapshot = projector.project(playerManager.getPlayerData(player));
+            progress.onJoin(snapshot, player.getWorld().getName(),
+                    compatibleClients.hasCompatibleClient(player.getUniqueId()));
+        } catch (RuntimeException exception) {
+            report("join-shadow", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
-        PlayerProgressSnapshot snapshot = projector.project(playerManager.getPlayerData(player));
-        progress.onQuit(snapshot, player.getWorld().getName(),
-                compatibleClients.hasCompatibleClient(player.getUniqueId()));
-        equipment.remove(player.getUniqueId());
+        try {
+            PlayerProgressSnapshot snapshot = projector.project(playerManager.getPlayerData(player));
+            progress.onQuit(snapshot, player.getWorld().getName(),
+                    compatibleClients.hasCompatibleClient(player.getUniqueId()));
+        } catch (RuntimeException exception) {
+            report("quit-shadow", exception);
+        } finally {
+            equipment.remove(player.getUniqueId());
+        }
+    }
+
+    private void report(String operation, RuntimeException exception) {
+        try { diagnostics.report(operation, exception); }
+        catch (RuntimeException ignored) { }
     }
 }

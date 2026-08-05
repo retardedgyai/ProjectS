@@ -2,6 +2,8 @@ package io.github.gyai.projects.beta.activation.track1.player;
 
 import io.github.gyai.projects.persistence.player.FilePlayerProgressRepository;
 import io.github.gyai.projects.persistence.player.PlayerProgressSaveResult;
+import io.github.gyai.projects.persistence.player.PlayerProgressRepository;
+import io.github.gyai.projects.persistence.player.StagingPlayerProgressRepositoryFactory;
 import io.github.gyai.projects.persistence.player.StagingPlayerProgressYamlReader;
 import io.github.gyai.projects.player.progress.PlayerProgressRecordV1;
 import io.github.gyai.projects.player.progress.PlayerProgressSnapshot;
@@ -19,15 +21,17 @@ import java.util.concurrent.CompletionStage;
 public final class StagingPlayerProgressFileStore implements StagingPlayerProgressStore {
     private final Path playersDirectory;
     private final StagingPlayerProgressYamlReader reader;
-    private FilePlayerProgressRepository writeRepository;
+    private final Set<String> settingWhitelist;
+    private PlayerProgressRepository writeRepository;
     private boolean closed;
 
     public StagingPlayerProgressFileStore(Path playersDirectory, Set<String> settingWhitelist) {
         if (playersDirectory == null) throw new IllegalArgumentException("players path is required");
         this.playersDirectory = playersDirectory.toAbsolutePath().normalize();
         requireStagingPlayersPath(this.playersDirectory);
-        reader = new StagingPlayerProgressYamlReader(
+        this.settingWhitelist = Set.copyOf(
                 settingWhitelist == null ? Set.of() : settingWhitelist);
+        reader = new StagingPlayerProgressYamlReader(this.settingWhitelist);
     }
 
     @Override
@@ -66,7 +70,8 @@ public final class StagingPlayerProgressFileStore implements StagingPlayerProgre
                 result(snapshot, PlayerProgressSaveObservation.Status.CLOSED,
                         null, "store is closed"));
         if (writeRepository == null) {
-            writeRepository = new FilePlayerProgressRepository(playersDirectory);
+            writeRepository = StagingPlayerProgressRepositoryFactory.create(
+                    playersDirectory, settingWhitelist);
         }
         UUID requestId = UUID.nameUUIDFromBytes((snapshot.playerId() + ":" + snapshot.revision())
                 .getBytes(StandardCharsets.UTF_8));

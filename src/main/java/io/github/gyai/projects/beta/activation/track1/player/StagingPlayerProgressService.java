@@ -76,7 +76,15 @@ public final class StagingPlayerProgressService implements StagingPlayerProgress
                     legacySnapshot, Optional.empty(), false, List.of("sessionCapacity"),
                     legacySnapshot.revision()));
         }
-        StagingPlayerProgressStore.Load loaded = store.load(playerId);
+        StagingPlayerProgressStore.Load loaded;
+        try {
+            loaded = store.load(playerId);
+        } catch (RuntimeException exception) {
+            loaded = new StagingPlayerProgressStore.Load(
+                    StagingPlayerProgressStore.Load.Status.MALFORMED,
+                    Optional.empty(), "staging load failed: "
+                    + exception.getClass().getSimpleName());
+        }
         PlayerProgressObservation result;
         if (loaded.status() == StagingPlayerProgressStore.Load.Status.LOADED) {
             PlayerProgressSnapshot staging = loaded.snapshot().orElseThrow();
@@ -127,7 +135,14 @@ public final class StagingPlayerProgressService implements StagingPlayerProgress
                 .revision(Math.max(legacySnapshot.revision(), session.observedRevision()) + 1)
                 .lastSavedAt(clock.instant())
                 .build();
-        return store.save(next);
+        try {
+            return store.save(next).exceptionally(exception -> save(next,
+                    PlayerProgressSaveObservation.Status.FAILED,
+                    "staging save failed: " + exception.getClass().getSimpleName()));
+        } catch (RuntimeException exception) {
+            return completed(save(next, PlayerProgressSaveObservation.Status.FAILED,
+                    "staging save failed: " + exception.getClass().getSimpleName()));
+        }
     }
 
     @Override
