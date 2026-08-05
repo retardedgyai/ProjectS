@@ -243,11 +243,16 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     private static boolean supported(AttackInput input) {
         if (input.origin() != IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT
                 && input.origin() != IceElementEngine.DamageOrigin.SKILL_DIRECT) return false;
+        if (!input.metadata().elements().equals(ElementProfile.EMPTY)) return false;
         return switch (input.attackType()) {
             case STARTER_SWORD_NORMAL -> "starter_sword".equals(input.attackId())
-                    && input.origin() == IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT;
+                    && input.origin() == IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT
+                    && input.metadata().tags().equals(Set.of(
+                    AttackTag.NORMAL_ATTACK, AttackTag.MELEE, AttackTag.PHYSICAL));
             case SPIN_SLASH -> "spin_slash".equals(input.attackId())
-                    && input.origin() == IceElementEngine.DamageOrigin.SKILL_DIRECT;
+                    && input.origin() == IceElementEngine.DamageOrigin.SKILL_DIRECT
+                    && input.metadata().tags().equals(Set.of(
+                    AttackTag.SKILL, AttackTag.MELEE, AttackTag.PHYSICAL));
             case OTHER -> false;
         };
     }

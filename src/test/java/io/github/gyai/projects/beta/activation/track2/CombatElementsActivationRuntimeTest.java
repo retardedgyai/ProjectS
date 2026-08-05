@@ -190,6 +190,14 @@ public final class CombatElementsActivationRuntimeTest {
                 IceElementEngine.DamageOrigin.AUTOMATIC_SECONDARY, SPIN, 100,
                 true, true, false, false, 2);
         assert !fixture.runtime.observe(secondary).observed();
+        var malformedMetadata = new TrainingDummyElementRuntime.AttackInput(
+                "malformed", PLAYER_A, CENTER, "starter_sword",
+                TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL,
+                IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT,
+                new AttackMetadata(Set.of(AttackTag.NORMAL_ATTACK, AttackTag.MELEE,
+                        AttackTag.PHYSICAL, AttackTag.MAGIC), null),
+                100, true, true, false, false, 3);
+        assert !fixture.runtime.observe(malformedMetadata).observed();
         assert fixture.boundary.secondary.isEmpty();
         assert fixture.runtime.snapshots().targets().isEmpty();
     }

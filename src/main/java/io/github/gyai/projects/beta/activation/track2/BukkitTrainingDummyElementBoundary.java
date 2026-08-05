@@ -113,8 +113,8 @@ public final class BukkitTrainingDummyElementBoundary implements TrainingDummyEl
         Objects.requireNonNull(event, "event");
         Entity entity = Bukkit.getEntity(event.targetId());
         if (!(entity instanceof LivingEntity target) || !dummyManager.isTrainingDummy(entity)) return;
-        long previous = lastVisualAt.getOrDefault(event.targetId(), Long.MIN_VALUE);
-        if (event.occurredAtMillis() - previous < VISUAL_RATE_MILLIS) return;
+        Long previous = lastVisualAt.get(event.targetId());
+        if (previous != null && event.occurredAtMillis() - previous < VISUAL_RATE_MILLIS) return;
         if (!lastVisualAt.containsKey(event.targetId())
                 && lastVisualAt.size() >= MAXIMUM_VISUAL_RATE_KEYS) {
             lastVisualAt.remove(lastVisualAt.keySet().iterator().next());
