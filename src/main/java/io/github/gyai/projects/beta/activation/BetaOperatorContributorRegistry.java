@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /** One bounded command registry for all staging contributors. */
 public final class BetaOperatorContributorRegistry {
@@ -13,8 +14,16 @@ public final class BetaOperatorContributorRegistry {
             "Beta module is disabled. Restart with approved staging policy.";
     public static final int MAXIMUM_CONTRIBUTORS = 16;
     private final Map<String, Entry> entries;
+    private final Supplier<List<String>> healthDetails;
 
     public BetaOperatorContributorRegistry(List<Entry> source) {
+        this(source, List::of);
+    }
+
+    public BetaOperatorContributorRegistry(
+            List<Entry> source,
+            Supplier<List<String>> healthDetails
+    ) {
         if (source == null || source.size() > MAXIMUM_CONTRIBUTORS) {
             throw new IllegalArgumentException("invalid contributor registry");
         }
@@ -25,6 +34,7 @@ public final class BetaOperatorContributorRegistry {
             }
         }
         entries = Map.copyOf(copy);
+        this.healthDetails = healthDetails == null ? List::of : healthDetails;
     }
 
     public static BetaOperatorContributorRegistry disabledDefaults(BetaRuntime runtime) {
@@ -73,6 +83,21 @@ public final class BetaOperatorContributorRegistry {
     }
 
     public int size() { return entries.size(); }
+
+    public List<String> healthDetails() {
+        List<String> source;
+        try {
+            source = healthDetails.get();
+        } catch (RuntimeException failure) {
+            return List.of("handshakeDiagnostics=unavailable");
+        }
+        ArrayList<String> result = new ArrayList<>();
+        if (source != null) for (String line : source) {
+            if (result.size() >= 8) break;
+            result.add(BetaRuntimeModuleResult.bounded(line));
+        }
+        return List.copyOf(result);
+    }
 
     private static Result bounded(Result source) {
         ArrayList<String> lines = new ArrayList<>();

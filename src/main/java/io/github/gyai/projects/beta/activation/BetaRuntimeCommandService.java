@@ -108,6 +108,7 @@ public final class BetaRuntimeCommandService {
                     + (diagnostic.moduleId() == null ? "runtime" : diagnostic.moduleId())
                     + " detail=" + diagnostic.detail());
         }
+        lines.addAll(contributors.healthDetails());
         return bounded(true, lines);
     }
 

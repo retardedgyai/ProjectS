@@ -70,13 +70,13 @@ public final class BetaCapabilitySessionService implements AutoCloseable {
         requirePlayer(playerId);
         if (closed) return AcknowledgeStatus.CLOSED;
         if (!globallyEnabled) return AcknowledgeStatus.FEATURE_DISABLED;
-        expire();
         MutableSession session = sessions.get(playerId);
         if (session == null) return AcknowledgeStatus.UNKNOWN_SESSION;
         if (clock.instant().isAfter(session.expiresAt)) {
             sessions.remove(playerId);
             return AcknowledgeStatus.EXPIRED;
         }
+        expire();
         if (!session.sessionId.equals(acknowledgement.sessionId())) {
             return AcknowledgeStatus.UNKNOWN_SESSION;
         }

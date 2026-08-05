@@ -58,6 +58,33 @@ Normal Fire state has no repeating particle; only the detonation pulse may emit
 the short staging effect. The compatible-client fallback remains a rate-limited
 `projects.dev` ActionBar and is display-only.
 
+## Live capability handshake preflight
+
+The capability v1 runtime previously had encoding, session, ACK, and state
+gating support but no production advertisement trigger. The live Server path
+now registers a bounded lifecycle publisher with the protocol module. A
+`projects:beta_caps_v1` channel-registration event is the primary trigger;
+already-online players are checked on the next tick after module start. Join
+resets stale connection state and waits for channel registration. Quit, kick,
+reconnect, stop, and close clear pending advertisements, sessions, and viewer
+revision state.
+
+Advertisement is admitted only while the protocol module is `RUNNING`,
+`CLIENT_BETA_UI` is enabled, audience is `ALLOWLIST` or `GLOBAL`, the player is
+in the selected audience and world, and the Client is listening on the
+advertisement channel. `require-compatible-client` is deliberately not checked
+before advertising because the ACK establishes compatibility. The current
+composition advertises only `ELEMENTS`; Party and mob state remain absent.
+
+A duplicate registration before ACK resends the exact original packet and
+does not allocate a session. A duplicate after ACK sends nothing. ACKs are
+decoded by the existing codec and accepted by the existing bounded, expiring
+session service. Expired, old, malformed, or mismatched ACKs fail closed and do
+not kick the player. Read-only health output exposes only bounded aggregate
+send/resend/ACK/session counters and the last result, never player or packet
+identifiers. Full lifecycle and staging instructions are in
+`docs/beta/activation/capability-handshake-preflight.md`.
+
 ## Durable transaction recovery
 
 Recovery records live only under `beta-staging/transactions`. Each stable
@@ -98,7 +125,11 @@ bounded disabled commands, committed and rolled-back replay classification,
 incomplete and uncertain recovery behavior, idempotent restart classification,
 Fire snapshot mapping/revision gating, disabled packet behavior, the two
 single-application call sites, and the vanilla Fire API ban. All previous test
-tasks remain enabled.
+tasks remain enabled. `BetaCapabilityHandshakePreflightTest` additionally
+verifies default-zero behavior, live admission and ACK gating, duplicate and
+reconnect behavior, expiry and stale-ACK rejection, bounded retention,
+stop/failure cleanup, producer scoping, and the absence of retained Bukkit
+`Player` references.
 
 Rollback is the merge commit revert while flags remain false. No production
 data migration, staging policy change, deployment, Paper launch, or Client
@@ -108,6 +139,8 @@ launch is part of this gate.
 
 - Replace the fail-closed central descriptors with approved concrete provider
   instances in the staging configuration gate.
+- Exercise the capability advertisement and ACK with a matching real Client in
+  the later manual staging phase; this preflight performs no Client launch.
 - Exercise critical, shield, enhanced equipment, ordinary mob, elite, and boss
   paths in a later manual staging phase.
 - Resolve uncertain transaction records through an explicit audited operator
