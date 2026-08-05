@@ -6,7 +6,6 @@ import io.github.gyai.projects.combat.damage.DamageApplicationResult;
 import io.github.gyai.projects.combat.damage.DamageKind;
 import io.github.gyai.projects.combat.damage.DamageRequest;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
-import io.github.gyai.projects.dummy.TrainingDummyManager;
 import org.bukkit.entity.Player;
 
 import java.time.Clock;
@@ -17,20 +16,20 @@ import java.util.function.Supplier;
 public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObserver {
     private final Supplier<BetaRuntimeModuleState> moduleState;
     private final TrainingDummyElementRuntime runtime;
-    private final TrainingDummyManager dummies;
+    private final TrainingDummyTargetPort targets;
     private final Clock clock;
     private final CompatibleElementsClientPort compatibleElementsClient;
 
     public Track2ConfirmedHitObserver(
             Supplier<BetaRuntimeModuleState> moduleState,
             TrainingDummyElementRuntime runtime,
-            TrainingDummyManager dummies,
+            TrainingDummyTargetPort targets,
             Clock clock,
             CompatibleElementsClientPort compatibleElementsClient
     ) {
         this.moduleState = Objects.requireNonNull(moduleState, "moduleState");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
-        this.dummies = Objects.requireNonNull(dummies, "dummies");
+        this.targets = Objects.requireNonNull(targets, "targets");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.compatibleElementsClient = Objects.requireNonNull(
                 compatibleElementsClient, "compatibleElementsClient");
@@ -44,7 +43,7 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
         if (moduleState.get() != BetaRuntimeModuleState.RUNNING || request == null
                 || result == null || !result.attempted()
                 || request.target() instanceof Player
-                || !dummies.isTrainingDummy(request.target())
+                || !targets.isTrainingDummy(request.target())
                 || request.offenseSnapshot() != null) return; // secondary damage never recurses
         TrainingDummyElementRuntime.AttackType attackType;
         IceElementEngine.DamageOrigin origin;

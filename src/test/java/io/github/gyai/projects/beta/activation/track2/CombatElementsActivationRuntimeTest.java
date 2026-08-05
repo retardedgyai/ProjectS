@@ -353,7 +353,9 @@ public final class CombatElementsActivationRuntimeTest {
                     && !path.getFileName().toString().equals(
                     "BukkitTrainingDummyElementBoundary.java")
                     && !path.getFileName().toString().equals(
-                    "Track2ConfirmedHitObserver.java")).toList()) {
+                    "Track2ConfirmedHitObserver.java")
+                    && !path.getFileName().toString().equals(
+                    "TrainingDummyTargetPort.java")).toList()) {
                 source.append(Files.readString(file));
             }
         }

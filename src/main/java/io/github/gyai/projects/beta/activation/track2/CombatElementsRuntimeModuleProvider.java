@@ -66,6 +66,6 @@ public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeMod
             CompatibleElementsClientPort compatibleElementsClient
     ) {
         return new Track2ConfirmedHitObserver(
-                state, runtime, dummies, clock, compatibleElementsClient);
+                state, runtime, dummies::isTrainingDummy, clock, compatibleElementsClient);
     }
 }
