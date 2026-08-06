@@ -57,6 +57,9 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
             origin = IceElementEngine.DamageOrigin.SKILL_DIRECT;
         } else return;
         try {
+            if (request.iceDirectDamageMultiplier() > 1.0) {
+                runtime.recordDirectAmplification();
+            }
             boolean compatibleClient = resolveCompatible(
                     compatibleElementsClient, request.attacker().getUniqueId());
             runtime.observe(new TrainingDummyElementRuntime.AttackInput(
@@ -64,7 +67,7 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
                     attackType == TrainingDummyElementRuntime.AttackType.STARTER_SWORD_NORMAL
                             ? "starter_sword" : "spin_slash",
                     attackType, origin, request.attackMetadata(),
-                    preCritical(result),
+                    preCritical(result, request),
                     result.calculation().critical(), true, false, compatibleClient,
                     request.attacker().getWorld().getName(),
                     request.attacker().hasPermission("projects.dev"), clock.millis()));
@@ -83,8 +86,14 @@ public final class Track2ConfirmedHitObserver implements ConfirmedDamageHitObser
         }
     }
 
-    private static double preCritical(DamageApplicationResult result) {
+    private static double preCritical(
+            DamageApplicationResult result, DamageRequest request
+    ) {
         double resolved = result.calculation().offenseResolvedDamage();
+        double iceMultiplier = request.iceDirectDamageMultiplier();
+        if (iceMultiplier > 0.0 && Double.isFinite(iceMultiplier)) {
+            resolved /= iceMultiplier;
+        }
         if (!result.calculation().critical()) return resolved;
         double multiplier = result.calculation().criticalMultiplier();
         return multiplier > 0.0 && Double.isFinite(multiplier)

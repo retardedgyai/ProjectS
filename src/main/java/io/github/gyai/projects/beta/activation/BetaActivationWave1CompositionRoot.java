@@ -77,6 +77,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     private final ClientBetaProtocolRuntime protocol;
     private final BetaCapabilityAdvertisementPublisher advertisementPublisher;
     private final ElementSnapshotProtocolPublisher elementPublisher;
+    private final PreHitDamageModifier preHitDamageModifier;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
     private boolean closed;
 
@@ -98,6 +99,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             ClientBetaProtocolRuntime protocol,
             BetaCapabilityAdvertisementPublisher advertisementPublisher,
             ElementSnapshotProtocolPublisher elementPublisher,
+            PreHitDamageModifier preHitDamageModifier,
             ConfirmedDamageHitObserver confirmedHitObserver
     ) {
         this.track1 = track1; this.track2 = track2; this.track3 = track3; this.track4 = track4;
@@ -108,7 +110,9 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         this.operationJournal = operationJournal;
         this.rewardClaims = rewardClaims; this.protocol = protocol;
         this.advertisementPublisher = advertisementPublisher;
-        this.elementPublisher = elementPublisher; this.confirmedHitObserver = confirmedHitObserver;
+        this.elementPublisher = elementPublisher;
+        this.preHitDamageModifier = preHitDamageModifier;
+        this.confirmedHitObserver = confirmedHitObserver;
         modules = new BetaActivationWave1ProviderRegistry(
                 track1, track2, track3, track4).modules();
     }
@@ -309,12 +313,17 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         (context, args) -> track4Result(track4Commands, context))),
                 () -> {
                     java.util.ArrayList<String> lines = new java.util.ArrayList<>();
+                    lines.addAll(track2.combatElementsModule().latestIceDiagnostics());
                     lines.addAll(publisher.diagnosticLines());
                     lines.addAll(advertisementPublisher.diagnosticLines());
                     return lines;
                 });
 
         ConfirmedDamageHitObserver observer = track2.confirmedHitObserver(
+                track2.combatElementsModule()::state, dummies, clock,
+                playerId -> protocol.capabilitySnapshot(playerId)
+                        .supports(BetaCapabilityId.ELEMENTS, 1));
+        PreHitDamageModifier modifier = track2.preHitDamageModifier(
                 track2.combatElementsModule()::state, dummies, clock,
                 playerId -> protocol.capabilitySnapshot(playerId)
                         .supports(BetaCapabilityId.ELEMENTS, 1));
@@ -327,7 +336,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         "minecraft-plugin-messaging"),
                 operators, progress, equipment, transactionRepository, recovery,
                 auditSink, operationJournal, questProgress, rewardClaims, protocol,
-                advertisementPublisher, publisher, observer);
+                advertisementPublisher, publisher, modifier, observer);
     }
 
     private static BetaOperatorContributorRegistry.Entry entry(
@@ -407,6 +416,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     }
     public List<BetaRuntimeModule> modules() { return modules; }
     public BetaOperatorContributorRegistry operators() { return operators; }
+    public PreHitDamageModifier preHitDamageModifier() { return preHitDamageModifier; }
     public ConfirmedDamageHitObserver confirmedHitObserver() { return confirmedHitObserver; }
     public ElementRuntimeSnapshotPort elementSnapshots() { return track2.snapshots(); }
     public io.github.gyai.projects.beta.activation.track2.TrainingDummyParticipationPort participation() { return track2.participation(); }
