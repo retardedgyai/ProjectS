@@ -83,6 +83,7 @@ import io.github.gyai.projects.beta.activation.BetaRuntime;
 import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
 import io.github.gyai.projects.beta.activation.BetaActivationWave1CompositionRoot;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 
@@ -123,6 +124,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private FeatureFlagSnapshot betaFeatureFlags = FeatureFlagSnapshot.allDisabled();
     private ConfirmedDamageHitObserver betaConfirmedHitObserver =
             ConfirmedDamageHitObserver.NO_OP;
+    private PreHitDamageModifier betaPreHitDamageModifier = PreHitDamageModifier.NO_OP;
 
     @Override
     public void onEnable() {
@@ -259,7 +261,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
                 warriorCombatManager, balanceTuningManager,
-                damageShadowDispatcher, betaConfirmedHitObserver);
+                damageShadowDispatcher, betaPreHitDamageModifier, betaConfirmedHitObserver);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
                 trainingDummyManager, skillManager, damageService);
@@ -396,7 +398,7 @@ public final class ProjectSPlugin extends JavaPlugin {
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager,
                         damageService, starterSwordDamageRouter,
-                        betaConfirmedHitObserver), this);
+                        betaPreHitDamageModifier, betaConfirmedHitObserver), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
@@ -493,11 +495,13 @@ public final class ProjectSPlugin extends JavaPlugin {
             runtime.start();
             betaComposition = partial;
             betaRuntime = runtime;
+            betaPreHitDamageModifier = partial.preHitDamageModifier();
             betaConfirmedHitObserver = partial.confirmedHitObserver();
         } catch (RuntimeException exception) {
             if (partial != null) partial.close();
             betaComposition = null;
             betaRuntime = null;
+            betaPreHitDamageModifier = PreHitDamageModifier.NO_OP;
             betaConfirmedHitObserver = ConfirmedDamageHitObserver.NO_OP;
             getLogger().log(Level.SEVERE,
                     "Beta composition failed safely; legacy startup will continue",

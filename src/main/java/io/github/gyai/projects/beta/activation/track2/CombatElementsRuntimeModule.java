@@ -117,6 +117,10 @@ public final class CombatElementsRuntimeModule implements BetaRuntimeModule, Aut
                 runtime.running(), runtime.profileCount(), diagnostics);
     }
 
+    public synchronized List<String> latestIceDiagnostics() {
+        return runtime.latestIceDiagnostics(2);
+    }
+
     @Override
     public void close() {
         stop();

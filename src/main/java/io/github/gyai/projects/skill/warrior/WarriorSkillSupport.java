@@ -9,6 +9,7 @@ import io.github.gyai.projects.combat.damage.DamageRequestApplier;
 import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.damage.AttackMetadata;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
@@ -33,6 +34,7 @@ public final class WarriorSkillSupport {
     private final BalanceTuningManager balanceManager;
     private final DamageRequestApplier damageApplier;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
+    private final PreHitDamageModifier preHitDamageModifier;
 
     public WarriorSkillSupport(
             JavaPlugin plugin,
@@ -67,6 +69,17 @@ public final class WarriorSkillSupport {
             DamageRequestApplier damageApplier,
             ConfirmedDamageHitObserver confirmedHitObserver
     ) {
+        this(plugin, dummyManager, enhancementManager, combatManager, balanceManager,
+                damageApplier, PreHitDamageModifier.NO_OP, confirmedHitObserver);
+    }
+
+    public WarriorSkillSupport(
+            JavaPlugin plugin, TrainingDummyManager dummyManager,
+            EnhancementManager enhancementManager, WarriorCombatManager combatManager,
+            BalanceTuningManager balanceManager, DamageRequestApplier damageApplier,
+            PreHitDamageModifier preHitDamageModifier,
+            ConfirmedDamageHitObserver confirmedHitObserver
+    ) {
         this.plugin = plugin;
         this.dummyManager = dummyManager;
         this.enhancementManager = enhancementManager;
@@ -76,6 +89,8 @@ public final class WarriorSkillSupport {
                 damageApplier, "damageApplier");
         this.confirmedHitObserver = Objects.requireNonNull(
                 confirmedHitObserver, "confirmedHitObserver");
+        this.preHitDamageModifier = Objects.requireNonNull(
+                preHitDamageModifier, "preHitDamageModifier");
     }
 
     public boolean validateCaster(Player player) {
@@ -300,14 +315,18 @@ public final class WarriorSkillSupport {
         }
         enhancementManager.beginSkillDamage(player.getUniqueId());
         try (WarriorCombatManager.HitScope ignored = session.activate()) {
-            DamageRequest request = WarriorDamageRequestFactory.create(
+            DamageRequest legacyRequest = WarriorDamageRequestFactory.create(
                     player, target, fixedDamage, coefficient,
                     skillId, session.sessionId(), areaDamage,
                     modeMultiplier, attackMetadata);
+            String hitId = session.sessionId() + ":" + target.getUniqueId();
+            DamageRequest modifiedRequest;
+            try { modifiedRequest = preHitDamageModifier.modify(hitId, legacyRequest); }
+            catch (RuntimeException ignoredModifierFailure) { modifiedRequest = legacyRequest; }
+            final DamageRequest request = modifiedRequest;
             Runnable application = () -> {
                 var result = damageApplier.apply(request);
                 if (result.attempted()) {
-                    String hitId = session.sessionId() + ":" + target.getUniqueId();
                     try { confirmedHitObserver.confirmed(hitId, request, result); }
                     catch (RuntimeException ignoredObserverFailure) { }
                 }

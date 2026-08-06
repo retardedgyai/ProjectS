@@ -130,6 +130,32 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
         return running;
     }
 
+    /** Pure state read used by the direct-hit pre-application boundary. */
+    synchronized double directDamageMultiplier(
+            UUID attackerId, UUID targetId, String attackId,
+            IceElementEngine.DamageOrigin origin, AttackMetadata metadata,
+            String worldName, boolean compatibleClient, long nowMillis
+    ) {
+        if (!running || closed || attackerId == null || targetId == null || attackId == null
+                || origin == null || metadata == null || worldName == null || nowMillis < 0
+                || !activationPolicy.allowsWorld(worldName)
+                || !activationPolicy.allowsAudience(attackerId, compatibleClient)
+                || !activationPolicy.allowsTarget(BetaActivationTarget.TRAINING_DUMMY)
+                || registry.playerProfile(attackerId) != StagingElementProfile.ICE) return 1.0;
+        AttackType type = origin == IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT
+                ? AttackType.STARTER_SWORD_NORMAL : origin == IceElementEngine.DamageOrigin.SKILL_DIRECT
+                ? AttackType.SPIN_SLASH : AttackType.OTHER;
+        AttackInput input = new AttackInput("pre-hit", attackerId, targetId, attackId,
+                type, origin, metadata, 0.0, false, true, false, true,
+                worldName, false, nowMillis);
+        if (!supported(input)) return 1.0;
+        ElementStateRegistry.TargetState target = registry.existingTarget(targetId);
+        if (target == null || target.frozenSinceMillis < 0
+                || nowMillis - target.frozenSinceMillis >= ElementStateRegistry.FREEZE_DURATION_MILLIS) return 1.0;
+        IceElementEngine.StateSnapshot state = target.ice.snapshot().get(targetId.toString());
+        return state != null && state.frozen() ? target.ice.damageMultiplier(true, origin) : 1.0;
+    }
+
     public synchronized int profileCount() {
         return registry.profileCount();
     }
@@ -192,6 +218,8 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
         }
         publishVisual(input, StagingElementProfile.ICE, 0, false,
                 "stage=" + result.state().stage());
+        diagnosticIceState(result.state(), input.occurredAtMillis(),
+                result.frozeNow(), result.shatter().isPresent());
         return new AttackOutcome(metadata, result.directDamageMultiplier(),
                 result.frozeNow(), result.shatter().isPresent(),
                 secondaryApplications, result.accepted());
@@ -264,6 +292,31 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
     private synchronized void diagnostic(String value) {
         if (diagnostics.size() >= MAXIMUM_DIAGNOSTICS) diagnostics.remove(0);
         diagnostics.add(value.length() <= 160 ? value : value.substring(0, 160));
+    }
+
+    synchronized void recordDirectAmplification() {
+        diagnostic("ice direct-amplification=x1.08");
+    }
+
+    synchronized List<String> latestIceDiagnostics(int limit) {
+        if (limit < 1) return List.of();
+        ArrayList<String> result = new ArrayList<>();
+        for (int index = diagnostics.size() - 1; index >= 0 && result.size() < limit; index--) {
+            String value = diagnostics.get(index);
+            if (value.startsWith("ice ")) result.add(value);
+        }
+        java.util.Collections.reverse(result);
+        return List.copyOf(result);
+    }
+
+    private void diagnosticIceState(
+            IceElementEngine.StateSnapshot state, long nowMillis,
+            boolean frozeNow, boolean shattered
+    ) {
+        String immunity = state.refreezeImmuneUntilMillis() > nowMillis ? "active" : "none";
+        diagnostic("ice stage=" + state.stage() + " frozen=" + state.frozen()
+                + " cold=" + String.format(java.util.Locale.ROOT, "%.1f", state.coldValue())
+                + " immunity=" + immunity + " freeze=" + frozeNow + " shatter=" + shattered);
     }
 
     private static boolean supported(AttackInput input) {

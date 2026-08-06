@@ -70,7 +70,7 @@ public final class BukkitDamageSnapshotResolver {
         offenseDamage = StatCalculator.saturatedMultiply(
                 offenseDamage, criticalMultiplier);
         offenseDamage = StatCalculator.saturatedMultiply(
-                offenseDamage, request.modeMultiplier());
+                offenseDamage, request.calculationMultiplier());
         DamageOffenseSnapshot offenseSnapshot = new DamageOffenseSnapshot(
                 offenseDamage, critical, criticalMultiplier);
 
@@ -105,7 +105,7 @@ public final class BukkitDamageSnapshotResolver {
                 flatPenetration(request.damageType(), attackerStats),
                 StatCalculator.DEFAULT_DEFENSE_CONSTANT,
                 request.additionalDamageReductions(),
-                request.modeMultiplier(),
+                request.calculationMultiplier(),
                 attackerStats.get(StatType.LIFESTEAL_PERCENT),
                 request.lifeStealEfficiency(),
                 request.healingReductionPercent());

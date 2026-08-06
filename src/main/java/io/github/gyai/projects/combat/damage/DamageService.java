@@ -140,7 +140,7 @@ public final class DamageService implements Listener {
                 request.damageTakenIncreasePercent(), critical, criticalMultiplier,
                 defense, request.defenseReductionPercent(), penetrationPercent,
                 flatPenetration, StatCalculator.DEFAULT_DEFENSE_CONSTANT,
-                reductions, request.modeMultiplier(),
+                reductions, request.calculationMultiplier(),
                 request.target().getAbsorptionAmount(), request.target().getHealth(),
                 attackerStats.get(StatType.LIFESTEAL_PERCENT),
                 request.lifeStealEfficiency(), request.healingReductionPercent()));

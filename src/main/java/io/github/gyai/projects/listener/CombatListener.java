@@ -16,6 +16,7 @@ import io.github.gyai.projects.combat.damage.ElementProfile;
 import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
 import io.github.gyai.projects.network.SkillInputType;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.ArmorStand;
@@ -48,6 +49,7 @@ public class CombatListener implements Listener {
     private final DamageService damageService;
     private final StarterSwordDamageRouter starterSwordDamageRouter;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
+    private final PreHitDamageModifier preHitDamageModifier;
     private long confirmedHitSequence;
 
     public CombatListener(
@@ -61,7 +63,7 @@ public class CombatListener implements Listener {
     ) {
         this(itemManager, combatInputManager, hudManager, dummyManager,
                 enhancementManager, damageService, starterSwordDamageRouter,
-                ConfirmedDamageHitObserver.NO_OP);
+                PreHitDamageModifier.NO_OP, ConfirmedDamageHitObserver.NO_OP);
     }
 
     public CombatListener(
@@ -72,6 +74,7 @@ public class CombatListener implements Listener {
             EnhancementManager enhancementManager,
             DamageService damageService,
             StarterSwordDamageRouter starterSwordDamageRouter,
+            PreHitDamageModifier preHitDamageModifier,
             ConfirmedDamageHitObserver confirmedHitObserver
     ) {
         this.itemManager = itemManager;
@@ -81,6 +84,8 @@ public class CombatListener implements Listener {
         this.enhancementManager = enhancementManager;
         this.damageService = damageService;
         this.starterSwordDamageRouter = starterSwordDamageRouter;
+        this.preHitDamageModifier = java.util.Objects.requireNonNull(
+                preHitDamageModifier, "preHitDamageModifier");
         this.confirmedHitObserver = java.util.Objects.requireNonNull(
                 confirmedHitObserver, "confirmedHitObserver");
     }
@@ -115,10 +120,12 @@ public class CombatListener implements Listener {
                 .coefficient(1.0)
                 .attackMetadata(STARTER_SWORD_METADATA)
                 .build();
+        String hitId = "starter-sword:" + player.getUniqueId() + ":"
+                + target.getUniqueId() + ":" + (++confirmedHitSequence);
+        try { request = preHitDamageModifier.modify(hitId, request); }
+        catch (RuntimeException ignored) { }
         var result = starterSwordDamageRouter.apply(request);
         if (result.attempted()) {
-            String hitId = "starter-sword:" + player.getUniqueId() + ":"
-                    + target.getUniqueId() + ":" + (++confirmedHitSequence);
             try { confirmedHitObserver.confirmed(hitId, request, result); }
             catch (RuntimeException ignored) { }
         }

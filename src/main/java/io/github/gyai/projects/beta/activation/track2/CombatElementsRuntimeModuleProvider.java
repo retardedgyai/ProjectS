@@ -6,6 +6,7 @@ import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
 import java.time.Clock;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
 import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
 import java.util.function.Supplier;
 import java.util.UUID;
@@ -66,6 +67,16 @@ public final class CombatElementsRuntimeModuleProvider implements BetaRuntimeMod
             CompatibleElementsClientPort compatibleElementsClient
     ) {
         return new Track2ConfirmedHitObserver(
+                state, runtime, dummies::isTrainingDummy, clock, compatibleElementsClient);
+    }
+
+    public PreHitDamageModifier preHitDamageModifier(
+            Supplier<BetaRuntimeModuleState> state,
+            TrainingDummyManager dummies,
+            Clock clock,
+            CompatibleElementsClientPort compatibleElementsClient
+    ) {
+        return new Track2PreHitDamageModifier(
                 state, runtime, dummies::isTrainingDummy, clock, compatibleElementsClient);
     }
 }

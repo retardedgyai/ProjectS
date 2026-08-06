@@ -71,6 +71,10 @@ final class ElementStateRegistry implements ElementRuntimeSnapshotPort, Training
         return state;
     }
 
+    synchronized TargetState existingTarget(UUID targetId) {
+        return targetId == null ? null : targets.get(targetId);
+    }
+
     synchronized boolean firstHit(String key, long nowMillis) {
         cleanupHitKeys(nowMillis);
         if (hitKeys.containsKey(key)) return false;

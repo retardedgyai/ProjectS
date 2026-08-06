@@ -9,6 +9,7 @@ import io.github.gyai.projects.beta.activation.BetaRuntimeModuleContext;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleResult;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
+import io.github.gyai.projects.beta.activation.BetaOperatorContributorRegistry;
 import io.github.gyai.projects.beta.activation.track4.BetaChannelRegistrar;
 import io.github.gyai.projects.beta.activation.track4.BetaStateTransport;
 import io.github.gyai.projects.beta.activation.track4.ClientBetaProtocolRuntime;
@@ -22,6 +23,23 @@ import io.github.gyai.projects.combat.damage.DamageKind;
 import io.github.gyai.projects.combat.damage.DamageRequest;
 import io.github.gyai.projects.combat.damage.DamageResult;
 import io.github.gyai.projects.combat.damage.DamageType;
+import io.github.gyai.projects.combat.damage.DamageServiceStarterSwordRuntime;
+import io.github.gyai.projects.combat.damage.BukkitDamageSnapshotResolver;
+import io.github.gyai.projects.combat.damage.DamageShadowRuntimeContext;
+import io.github.gyai.projects.combat.damage.DamageShadowTargetType;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRouter;
+import io.github.gyai.projects.combat.damage.StarterSwordDamageRoutePolicy;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
+import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
+import io.github.gyai.projects.combat.damage.StarterSwordShadowRuntime;
+import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.DamageMode;
+import io.github.gyai.projects.combat.damage.DamageOffenseSnapshot;
+import io.github.gyai.projects.dummy.TrainingDummyManager;
+import io.github.gyai.projects.manager.EnhancementManager;
+import io.github.gyai.projects.manager.ItemManager;
+import io.github.gyai.projects.manager.PlayerManager;
+import io.github.gyai.projects.player.StatType;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
 import io.github.gyai.projects.network.beta.BetaCapabilityAcknowledgement;
 import io.github.gyai.projects.network.beta.BetaCapabilityDescriptor;
@@ -36,6 +54,7 @@ import io.github.gyai.projects.network.beta.ElementDisplaySnapshotCodec;
 import org.bukkit.World;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.PlayerInventory;
 
 import java.lang.reflect.Proxy;
 import java.time.Clock;
@@ -52,6 +71,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.lang.reflect.Field;
+import sun.misc.Unsafe;
 
 /** One executable regression path from confirmed hit through state packet delivery. */
 public final class Track2ConfirmedHitPublisherIntegrationTest {
@@ -76,6 +98,9 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
     public static void main(String[] args) {
         Fixture fixture = new Fixture(Duration.ofSeconds(5));
         fixture.run();
+        fixture.fullProductionIcePath();
+        fixture.criticalCompositionAndFreezeExpiry();
+        fixture.extremeMultiplierAndHealthPurity();
         System.out.println("Track2ConfirmedHitPublisherIntegrationTest passed");
     }
 
@@ -201,6 +226,191 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
             assert boundary.secondary.size() == secondaryBefore;
         }
 
+        /** Real DamageService calculate/apply plus pre-hit, confirmed, secondary and packet flow. */
+        private void fullProductionIcePath() {
+            UUID directTarget = TARGET_F;
+            targetId.set(directTarget);
+            currentTarget.set(directTarget);
+            AtomicReference<Double> health = new AtomicReference<>(10_000.0);
+            LivingEntity serviceTarget = damageTarget(directTarget, health);
+            DamageService service = realDamageService();
+            AtomicReference<DamageApplicationResult> secondaryResult = new AtomicReference<>();
+            boundary.secondaryApplier = secondary -> secondaryResult.set(
+                    applySecondary(service, serviceTarget, secondary));
+            Track2PreHitDamageModifier modifier = new Track2PreHitDamageModifier(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == serviceTarget, clock, ignored -> true);
+            Track2ConfirmedHitObserver directObserver = new Track2ConfirmedHitObserver(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == serviceTarget, clock, ignored -> true);
+            elements.setProfile(PLAYER, StagingElementProfile.ICE);
+            DamageRequest defaultOff = directRequest(serviceTarget, DamageKind.NORMAL_ATTACK);
+            DamageRequest unchanged = new Track2PreHitDamageModifier(
+                    () -> BetaRuntimeModuleState.DISABLED, elements,
+                    value -> value == serviceTarget, clock, ignored -> true)
+                    .modify("default-off", defaultOff);
+            assert unchanged == defaultOff && elements.diagnostics().isEmpty();
+
+            for (int hit = 0; hit < 4; hit++) {
+                DamageRequest request = directRequest(serviceTarget, DamageKind.NORMAL_ATTACK);
+                DamageApplicationResult result = service.apply(request);
+                directObserver.confirmed("real-freeze-" + hit, request, result);
+            }
+            var frozenState = elements.snapshots().target(directTarget).orElseThrow();
+            assert frozenState.frozen() : frozenState + " diagnostics=" + elements.diagnostics();
+
+            DamageRequest normal = modifier.modify("real-normal", directRequest(
+                    serviceTarget, DamageKind.NORMAL_ATTACK));
+            assert normal.iceDirectDamageMultiplier() == 1.08;
+            StarterSwordRouteController controller = new StarterSwordRouteController(
+                    true, new StarterSwordRouteTracker(), clock);
+            StarterSwordDamageRouter router = new StarterSwordDamageRouter(
+                    new DamageServiceStarterSwordRuntime(service), new AuthoritativeShadow(),
+                    controller, new StarterSwordDamageRoutePolicy());
+            DamageApplicationResult normalResult = router.apply(normal);
+            assert normalResult.attempted();
+            assert normalResult.calculation().finalRoundedDamage() == 108.0;
+            assert normalResult.calculation().equals(service.calculate(normal));
+            assert controller.snapshot().newRouteAppliedCount() == 1;
+            assert controller.snapshot().legacyFallbackCount() == 0;
+            directObserver.confirmed("real-normal", normal, normalResult);
+
+            DamageRequest spin = modifier.modify("real-spin", directRequest(
+                    serviceTarget, DamageKind.DIRECT_SKILL));
+            assert spin.iceDirectDamageMultiplier() == 1.08;
+            DamageApplicationResult spinResult = service.apply(spin);
+            assert spinResult.calculation().finalRoundedDamage() == 108.0;
+            directObserver.confirmed("real-spin", spin, spinResult);
+            assert boundary.secondary.size() == 1;
+            TrainingDummyElementBoundary.SecondaryDamage shatter = boundary.secondary.getFirst();
+            assert shatter.amount() == 135.0;
+            DamageApplicationResult appliedSecondary = secondaryResult.get();
+            assert appliedSecondary != null && appliedSecondary.attempted();
+            assert appliedSecondary.calculation().offenseResolvedDamage() == 135.0;
+            assert !appliedSecondary.calculation().critical();
+            assert appliedSecondary.calculation().lifeStealHealing() == 0.0;
+            var state = elements.snapshots().target(directTarget).orElseThrow();
+            assert state.cold() == 40.0 && !state.frozen();
+            assert state.refreezeImmuneUntilMillis() == clock.millis() + 3_000L;
+            publisher.publishOnce();
+            assert publisher.diagnostics().statePacketSentCount() >= 3;
+        }
+
+        private void extremeMultiplierAndHealthPurity() {
+            DamageRequest extreme = directRequest(target, DamageKind.NORMAL_ATTACK).toBuilder()
+                    .pveMultiplier(Double.MAX_VALUE).iceDirectDamageMultiplier(1.08).build();
+            assert extreme.calculationMultiplier()
+                    == io.github.gyai.projects.combat.stat.StatCalculator.MAX_SAFE_VALUE;
+            DamageRequest ordinary = extreme.toBuilder()
+                    .pveMultiplier(1.25).iceDirectDamageMultiplier(1.08).build();
+            assert Math.abs(ordinary.calculationMultiplier() - 1.35) < 1.0e-9;
+            DamageRequest copied = ordinary.toBuilder().build();
+            assert copied.attacker() == ordinary.attacker() && copied.target() == ordinary.target()
+                    && copied.skillId().equals(ordinary.skillId()) && copied.castId().equals(ordinary.castId())
+                    && copied.damageKind() == ordinary.damageKind()
+                    && copied.attackMetadata().equals(ordinary.attackMetadata())
+                    && copied.iceDirectDamageMultiplier() == 1.08
+                    && copied.calculationMultiplier() == ordinary.calculationMultiplier();
+
+            for (int hit = 0; hit < 6; hit++) {
+                DamageRequest request = directRequest(target, DamageKind.NORMAL_ATTACK);
+                observer.confirmed("health-ice-" + hit, request, result());
+            }
+            BetaOperatorContributorRegistry registry = new BetaOperatorContributorRegistry(
+                    List.of(), () -> {
+                        ArrayList<String> lines = new ArrayList<>(elements.latestIceDiagnostics(2));
+                        lines.addAll(publisher.diagnosticLines());
+                        return lines;
+                    });
+            List<String> beforeLines = registry.healthDetails();
+            var beforeDiagnostics = publisher.diagnostics();
+            var beforeTargets = elements.snapshots().targets();
+            var beforeRuntimeDiagnostics = elements.diagnostics();
+            assert beforeLines.stream().anyMatch(line -> line.startsWith("ice "));
+            assert beforeLines.stream().anyMatch(line -> line.startsWith("elementState sent="));
+            for (int read = 0; read < 100; read++) {
+                assert registry.healthDetails().equals(beforeLines);
+                assert publisher.diagnostics().equals(beforeDiagnostics);
+                assert elements.snapshots().targets().equals(beforeTargets);
+                assert elements.diagnostics().equals(beforeRuntimeDiagnostics);
+            }
+            for (String line : beforeLines) {
+                assert !line.contains(PLAYER.toString()) && !line.contains(TARGET_A.toString())
+                        && !line.contains("world") && line.length() <= 256;
+            }
+        }
+
+        private void criticalCompositionAndFreezeExpiry() {
+            PlayerManager players = new PlayerManager();
+            DamageService service = realDamageService(players);
+            players.getPlayerData(player).getStats().set(StatType.DAMAGE_INCREASE_PERCENT, .25);
+            players.getPlayerData(player).getStats().set(StatType.CRITICAL_CHANCE_PERCENT, 1.0);
+            players.getPlayerData(player).getStats().set(StatType.CRITICAL_DAMAGE_BONUS, .25);
+            AtomicReference<Double> health = new AtomicReference<>(10_000.0);
+            LivingEntity expiryTarget = damageTarget(TARGET_E, health);
+            Track2ConfirmedHitObserver expiryObserver = new Track2ConfirmedHitObserver(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == expiryTarget, clock, ignored -> true);
+            Track2PreHitDamageModifier expiryModifier = new Track2PreHitDamageModifier(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == expiryTarget, clock, ignored -> true);
+            for (int hit = 0; hit < 4; hit++) {
+                DamageRequest request = directRequest(expiryTarget, DamageKind.NORMAL_ATTACK)
+                        .toBuilder().criticalAllowed(true)
+                        .castId(UUID.nameUUIDFromBytes(("expiry-freeze-" + hit).getBytes()))
+                        .build();
+                expiryObserver.confirmed("expiry-freeze-" + hit, request, service.apply(request));
+            }
+            assert elements.snapshots().target(TARGET_E).orElseThrow().frozen();
+            clock.advance(Duration.ofMillis(2_999));
+            DamageRequest beforeExpiry = expiryModifier.modify("expiry-before", directRequest(
+                    expiryTarget, DamageKind.NORMAL_ATTACK).toBuilder().criticalAllowed(true)
+                    .castId(UUID.nameUUIDFromBytes("expiry-before".getBytes())).build());
+            assert beforeExpiry.iceDirectDamageMultiplier() == 1.08;
+            DamageApplicationResult composed = service.apply(beforeExpiry);
+            assert composed.calculation().critical();
+            assert composed.calculation().criticalMultiplier() == 2.0;
+            assert composed.calculation().finalRoundedDamage() == 270.0;
+            assert composed.calculation().finalRoundedDamage() != 291.6;
+            players.getPlayerData(player).getStats().set(StatType.SKILL_DAMAGE_INCREASE_PERCENT, .10);
+            DamageRequest spin = expiryModifier.modify("spin-snapshot", directRequest(
+                    expiryTarget, DamageKind.DIRECT_SKILL).toBuilder().pveMultiplier(1.20)
+                    .criticalAllowed(true).castId(UUID.nameUUIDFromBytes("spin-snapshot".getBytes()))
+                    .build());
+            DamageResult spinLegacy = service.calculate(spin);
+            var spinSnapshot = new BukkitDamageSnapshotResolver(players,
+                    allocate(FakeItems.class), allocate(FakeEnhancements.class))
+                    .resolve(spin, spinLegacy.critical());
+            assert spin.iceDirectDamageMultiplier() == 1.08;
+            assert spinLegacy.critical() && spinLegacy.finalRoundedDamage() == 349.92;
+            assert spinSnapshot.calculate().equals(spinLegacy);
+            clock.advance(Duration.ofMillis(1));
+            DamageRequest atExpiry = expiryModifier.modify("expiry-at", directRequest(
+                    expiryTarget, DamageKind.NORMAL_ATTACK));
+            assert atExpiry.iceDirectDamageMultiplier() == 1.0;
+        }
+
+        private DamageRequest directRequest(LivingEntity value, DamageKind kind) {
+            targetId.set(value.getUniqueId());
+            return DamageRequest.builder(player, value)
+                    .skillId(kind == DamageKind.NORMAL_ATTACK ? "normal_attack" : "spin_slash")
+                    .damageKind(kind).damageType(DamageType.PHYSICAL).mode(DamageMode.PVE)
+                    .fixedDamage(100.0).coefficient(0.0).criticalAllowed(false)
+                    .attackMetadata(kind == DamageKind.NORMAL_ATTACK ? STARTER : new AttackMetadata(
+                            Set.of(AttackTag.SKILL, AttackTag.MELEE, AttackTag.PHYSICAL), null))
+                    .build();
+        }
+
+        private DamageApplicationResult applySecondary(DamageService service, LivingEntity target,
+                                           TrainingDummyElementBoundary.SecondaryDamage damage) {
+            return service.apply(DamageRequest.builder(player, target).skillId(null)
+                    .damageType(DamageType.PHYSICAL).damageKind(DamageKind.DIRECT_SKILL)
+                    .mode(DamageMode.PVE).fixedDamage(damage.amount()).coefficient(0.0)
+                    .criticalAllowed(false).lifeStealEfficiency(0.0)
+                    .offenseSnapshot(new DamageOffenseSnapshot(damage.amount(), false, 1.0))
+                    .attackMetadata(damage.metadata()).build());
+        }
+
         private io.github.gyai.projects.network.beta.BetaCapabilityAdvertisement advertise() {
             return protocol.advertise(PLAYER, true).orElseThrow();
         }
@@ -265,6 +475,10 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
                     case "getUniqueId" -> PLAYER;
                     case "getWorld" -> world;
                     case "hasPermission" -> true;
+                    case "getInventory" -> Proxy.newProxyInstance(
+                            PlayerInventory.class.getClassLoader(), new Class<?>[]{PlayerInventory.class},
+                            (inventory, inventoryMethod, inventoryArgs) -> defaultValue(
+                                    inventoryMethod.getReturnType()));
                     default -> defaultValue(method.getReturnType());
                 });
     }
@@ -274,6 +488,76 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
                 LivingEntity.class.getClassLoader(), new Class<?>[]{LivingEntity.class},
                 (proxy, method, args) -> method.getName().equals("getUniqueId")
                         ? targetId.get() : defaultValue(method.getReturnType()));
+    }
+
+    private static LivingEntity damageTarget(UUID id, AtomicReference<Double> health) {
+        return (LivingEntity) Proxy.newProxyInstance(LivingEntity.class.getClassLoader(),
+                new Class<?>[]{LivingEntity.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "getUniqueId" -> id;
+                    case "isValid" -> true;
+                    case "getHealth" -> health.get();
+                    case "getAbsorptionAmount" -> 0.0;
+                    case "getEquipment" -> null;
+                    case "damage" -> { health.set(health.get() - (Double) args[0]); yield null; }
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static DamageService realDamageService() {
+        return realDamageService(new PlayerManager());
+    }
+
+    private static DamageService realDamageService(PlayerManager players) {
+        return new DamageService(players, allocate(FakeItems.class),
+                allocate(FakeEnhancements.class), allocate(FakeDummies.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T allocate(Class<T> type) {
+        try {
+            Field field = Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            return (T) ((Unsafe) field.get(null)).allocateInstance(type);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Unsafe fixture unavailable", exception);
+        }
+    }
+
+    private static final class FakeItems extends ItemManager {
+        private FakeItems() { super(null); }
+    }
+
+    private static final class AuthoritativeShadow implements StarterSwordShadowRuntime {
+        @Override public DamageApplicationResult apply(DamageRequest request) {
+            throw new AssertionError("authoritative router must not use shadow apply");
+        }
+        @Override public DamageShadowRuntimeContext resolveContext(DamageRequest request) {
+            return new DamageShadowRuntimeContext(START, PLAYER, request.target().getUniqueId(),
+                    DamageShadowTargetType.TRAINING_DUMMY, "starter_sword", 0);
+        }
+        @Override public boolean enabled() { return false; }
+        @Override public void compareLegacySafely(DamageShadowRuntimeContext context,
+                                                   DamageRequest request,
+                                                   DamageResult legacyResult) { }
+        @Override public java.util.Optional<io.github.gyai.projects.combat.damage.DamageShadowComparison>
+        comparePrecalculatedSafely(DamageShadowRuntimeContext context, DamageRequest request,
+                                   DamageResult legacyResult, DamageResult shadowResult,
+                                   io.github.gyai.projects.combat.damage.DamageCalculationSnapshot snapshot) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private static final class FakeEnhancements extends EnhancementManager {
+        private FakeEnhancements() { super(null, null, null); }
+        @Override public double getPhysicalAttackPower(Player player,
+                                                       org.bukkit.inventory.ItemStack item) { return 0.0; }
+        @Override public double getMagicalAttackPower(Player player,
+                                                      org.bukkit.inventory.ItemStack item) { return 0.0; }
+    }
+
+    private static final class FakeDummies extends TrainingDummyManager {
+        private FakeDummies() { super(null); }
+        @Override public boolean isTrainingDummy(org.bukkit.entity.Entity entity) { return false; }
     }
 
     private static Object defaultValue(Class<?> type) {
@@ -291,6 +575,7 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
     private static final class FakeBoundary implements TrainingDummyElementBoundary {
         private final Set<UUID> live;
         private final List<SecondaryDamage> secondary = new ArrayList<>();
+        private Consumer<SecondaryDamage> secondaryApplier = ignored -> { };
 
         private FakeBoundary(Set<UUID> live) { this.live = new LinkedHashSet<>(live); }
 
@@ -303,7 +588,10 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
         @Override public List<UUID> nearbyTrainingDummies(UUID centerId, double radius, int limit) {
             return List.of();
         }
-        @Override public void applySecondaryDamage(SecondaryDamage damage) { secondary.add(damage); }
+        @Override public void applySecondaryDamage(SecondaryDamage damage) {
+            secondary.add(damage);
+            secondaryApplier.accept(damage);
+        }
         @Override public void publishVisual(VisualEvent event) { }
         @Override public Cancellable scheduleCleanup(Runnable task, long periodMillis) {
             return new Cancellable() {
