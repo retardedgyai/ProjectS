@@ -426,6 +426,8 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
                     DamageKind.NORMAL_ATTACK);
             DamageRequest noneModified = modifier.modify("profile-b-none", noneRequest);
             assert noneModified.iceDirectDamageMultiplier() == 1.08;
+            DamageRequest noneModifiedTwice = modifier.modify("profile-b-none-twice", noneModified);
+            assert noneModifiedTwice.iceDirectDamageMultiplier() == 1.08;
             assert service.apply(noneModified).calculation().finalRoundedDamage() == 108.0;
             sharedObserver.confirmed("profile-b-none", noneModified, service.apply(noneModified));
             ElementRuntimeSnapshotPort.TargetSnapshot afterNone = elements.snapshots()
