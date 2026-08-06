@@ -4,9 +4,11 @@ import io.github.gyai.projects.beta.activation.BetaActivationAudience;
 import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
 import io.github.gyai.projects.beta.activation.BetaActivationTargetScope;
 import io.github.gyai.projects.beta.activation.BetaMutationPolicy;
+import io.github.gyai.projects.beta.activation.Track3ToTrack4Ports;
 import io.github.gyai.projects.beta.activation.track1.bukkit.BukkitEquipmentInventoryReader;
 import io.github.gyai.projects.beta.activation.track1.equipment.EquipmentInspectionService;
 import io.github.gyai.projects.beta.activation.track3.BoundedStagingOperationJournal;
+import io.github.gyai.projects.beta.activation.track3.BoundedStagingInventory;
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyCatalog;
 import io.github.gyai.projects.beta.activation.track3.StagingEquipmentInspectionFormatter;
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyOperationPort;
@@ -16,12 +18,17 @@ import io.github.gyai.projects.beta.activation.track3.StagingEquipmentDocument;
 import io.github.gyai.projects.beta.activation.track3.StagingEnhancementOutcomeRegistry;
 import io.github.gyai.projects.beta.activation.track3.StagingInventoryTransactionAdapter;
 import io.github.gyai.projects.beta.activation.track3.StagingOperationAccess;
+import io.github.gyai.projects.beta.activation.track3.StagingTransactionAuditSink;
+import io.github.gyai.projects.beta.activation.track4.StagingItemDeliveryPort;
 import io.github.gyai.projects.enhancement.v2.EnhancementOutcome;
 import io.github.gyai.projects.equipment.EquipmentItemV1;
 import io.github.gyai.projects.equipment.EquipmentTier;
 import io.github.gyai.projects.equipment.operation.EquipmentMutationProposal;
 import io.github.gyai.projects.equipment.operation.OperationResourcePlan;
 import io.github.gyai.projects.transaction.TransactionRequest;
+import io.github.gyai.projects.reward.RewardClaimKey;
+import io.github.gyai.projects.reward.RewardClaimRequest;
+import io.github.gyai.projects.reward.RewardDeliveryReceipt;
 import io.github.gyai.projects.dev.StagingWorkbenchPresenter;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
@@ -60,6 +67,10 @@ public final class BukkitStagingInventoryPortIntegrationTest {
         workbenchAccessMatrixUsesPresenterBoundary();
         productionAdapterCommittedLoreAndEnvelopeRoundTrips();
         freshDefaultOffLiveSnapshotAndTrack1Inspect();
+        vanillaMaterialsAreNotStagingResources();
+        tokenDeliveryCommitsReplaysAndRejectsFullLiveStorage();
+        track4TokenDeliveryUsesLiveTrack3StorageAndPreservesUncertainty();
+        nullModRollServiceIsRejectedAtConstruction();
     }
 
     private static void productionAdapterCommittedLoreAndEnvelopeRoundTrips() {
@@ -90,7 +101,7 @@ public final class BukkitStagingInventoryPortIntegrationTest {
                 "production adapter omitted staging envelope fields");
 
         UUID player = new UUID(0, 731);
-        MemoryAccess live = new MemoryAccess(player, new ItemStack[]{new TestStack(Material.IRON_INGOT, 3), null, null});
+        MemoryAccess live = new MemoryAccess(player, new ItemStack[]{resource(StagingEconomyCatalog.IRON_INGOT, 3), null, null});
         BukkitStagingInventoryPort inventory = new BukkitStagingInventoryPort(new BukkitStagingInventoryBridge(live), adapter);
         AtomicInteger ids = new AtomicInteger(731);
         StagingEconomyService service = service(inventory, new BoundedStagingOperationJournal(32),
@@ -123,7 +134,7 @@ public final class BukkitStagingInventoryPortIntegrationTest {
         UUID instanceId = new UUID(0, 741);
         StagingEquipmentDocument document = finalizedDocument(instanceId, 19);
         MemoryAccess live = new MemoryAccess(player, new ItemStack[]{
-                new TestStack(Material.RAW_IRON, 7), new TestStack(Material.IRON_INGOT, 2), adapter.committed(document)});
+                resource(StagingEconomyCatalog.IRON_ORE, 7), resource(StagingEconomyCatalog.IRON_INGOT, 2), adapter.committed(document)});
         ItemStack[] beforeReads = live.copy();
         AtomicInteger generatedIds = new AtomicInteger();
         BukkitStagingInventoryPort inventory = new BukkitStagingInventoryPort(new BukkitStagingInventoryBridge(live), adapter);
@@ -239,9 +250,143 @@ public final class BukkitStagingInventoryPortIntegrationTest {
         } finally { service.close(); }
     }
 
+    private static void vanillaMaterialsAreNotStagingResources() {
+        UUID player = new UUID(0, 760);
+        MemoryAccess live = new MemoryAccess(player, new ItemStack[]{
+                new TestStack(Material.RAW_IRON, 9), resource(StagingEconomyCatalog.IRON_ORE, 2),
+                new TestStack(Material.IRON_INGOT, 4), null});
+        StagingEconomyService service = service(inventory(live), new BoundedStagingOperationJournal(32),
+                () -> new UUID(0, 761));
+        try {
+            check(service.status(player).resources().equals(Map.of(StagingEconomyCatalog.IRON_ORE, 2L)),
+                    "vanilla materials leaked into the staging snapshot");
+            execute(service, request(762, allowed(player), StagingEconomyOperationPort.OperationKind.REFINE,
+                    null, 0));
+            check(count(live.copy(), Material.RAW_IRON) == 9,
+                    "refine consumed normal Minecraft raw iron");
+            check(count(live.copy(), Material.IRON_INGOT) == 5,
+                    "refine did not preserve normal ingots and add only the staging output");
+        } finally { service.close(); }
+    }
+
+    private static void nullModRollServiceIsRejectedAtConstruction() {
+        try {
+            new StagingInventoryTransactionAdapter(new BoundedStagingInventory(),
+                    new BoundedStagingOperationJournal(4), CLOCK, UUID::randomUUID, null);
+            throw new AssertionError("null MOD roll service was accepted");
+        } catch (IllegalArgumentException expected) {
+            check(expected.getMessage().contains("input missing"), "null MOD roll rejection was not explicit");
+        }
+    }
+
+    private static void track4TokenDeliveryUsesLiveTrack3StorageAndPreservesUncertainty() {
+        UUID player = new UUID(0, 780);
+        BetaActivationPolicy policy = allowed(player).activationPolicy();
+        StagingItemDeliveryPort.DeliveryContext context = new StagingItemDeliveryPort.DeliveryContext(
+                "staging_world", true, true);
+        MemoryAccess live = new MemoryAccess(player, new ItemStack[2]);
+        StagingEconomyService service = service(inventory(live), new BoundedStagingOperationJournal(32),
+                () -> new UUID(0, 781));
+        StagingItemDeliveryPort delivery = Track3ToTrack4Ports.delivery(service, policy, () -> true);
+        RewardClaimRequest claim = claim(player, 782);
+        try {
+            RewardDeliveryReceipt first = delivery.deliver(claim, StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(first.status() == RewardDeliveryReceipt.Status.DELIVERED && first.durable(),
+                    "Track 4 first token delivery did not reach live Track 3 storage");
+            ItemStack[] committed = live.copy();
+            RewardDeliveryReceipt replay = delivery.deliver(claim, StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(replay.status() == RewardDeliveryReceipt.Status.DELIVERED && replay.durable(),
+                    "Track 4 same-claim delivery did not replay as delivered");
+            check(same(committed, live.copy()) && count(live.copy(), Material.PAPER) == 1,
+                    "Track 4 replay duplicated a token in live storage");
+        } finally { service.close(); }
+
+        MemoryAccess full = new MemoryAccess(player, new ItemStack[]{
+                new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)});
+        StagingEconomyService fullService = service(inventory(full), new BoundedStagingOperationJournal(32),
+                () -> new UUID(0, 783));
+        try {
+            RewardDeliveryReceipt receipt = Track3ToTrack4Ports.delivery(fullService, policy, () -> true)
+                    .deliver(claim(player, 784), StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(receipt.status() == RewardDeliveryReceipt.Status.FULL_INVENTORY,
+                    "known-full live storage was not classified as FULL_INVENTORY: " + receipt);
+            check(same(new ItemStack[]{new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)}, full.copy()),
+                    "full Track 4 delivery changed live storage");
+        } finally { fullService.close(); }
+
+        MemoryAccess uncertain = new MemoryAccess(player, new ItemStack[2]);
+        StagingTransactionAuditSink losingAcknowledgement = new StagingTransactionAuditSink() {
+            @Override public void resolved(EquipmentMutationProposal proposal) { }
+            @Override public void terminal(io.github.gyai.projects.transaction.TransactionAuditResult result) {
+                throw new IllegalStateException("durable acknowledgement lost");
+            }
+        };
+        StagingEconomyService uncertainService = service(inventory(uncertain),
+                new BoundedStagingOperationJournal(32, losingAcknowledgement), () -> new UUID(0, 785));
+        StagingItemDeliveryPort uncertainDelivery = Track3ToTrack4Ports.delivery(
+                uncertainService, policy, () -> true);
+        RewardClaimRequest uncertainClaim = claim(player, 786);
+        try {
+            RewardDeliveryReceipt first = uncertainDelivery.deliver(uncertainClaim,
+                    StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(first.status() == RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN,
+                    "lost durable acknowledgement was not retained as commit uncertainty");
+            ItemStack[] exposed = uncertain.copy();
+            RewardDeliveryReceipt retry = uncertainDelivery.deliver(uncertainClaim,
+                    StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(retry.status() == RewardDeliveryReceipt.Status.REJECTED
+                            && same(exposed, uncertain.copy()) && count(uncertain.copy(), Material.PAPER) == 1,
+                    "uncertain token delivery was blindly retried or duplicated: first=" + first
+                            + ", retry=" + retry + ", papers=" + count(uncertain.copy(), Material.PAPER));
+        } finally { uncertainService.close(); }
+    }
+
+    private static RewardClaimRequest claim(UUID player, long id) {
+        return new RewardClaimRequest(new UUID(0, id), new RewardClaimKey(player,
+                "projects:staging-quest", new UUID(0, id + 10_000),
+                "projects:staging-token", 1), Instant.parse("2026-08-05T00:00:00Z"));
+    }
+
+    private static void tokenDeliveryCommitsReplaysAndRejectsFullLiveStorage() {
+        UUID player = new UUID(0, 770);
+        StagingOperationAccess access = allowed(player);
+        MemoryAccess live = new MemoryAccess(player, new ItemStack[2]);
+        StagingEconomyService service = service(inventory(live), new BoundedStagingOperationJournal(32),
+                () -> new UUID(0, 771));
+        try {
+            UUID requestId = new UUID(0, 772);
+            var first = service.deliver(access, requestId, StagingEconomyCatalog.TEST_TOKEN, 1);
+            check(first.status() == StagingEconomyOperationPort.Status.COMMITTED,
+                    "first token delivery did not commit to live storage");
+            check(service.status(player).resources().equals(Map.of(StagingEconomyCatalog.TEST_TOKEN, 1L)),
+                    "committed token was not recognized by the staging snapshot");
+            check(count(live.copy(), Material.PAPER) == 1,
+                    "committed token did not use its PAPER fixture material");
+            ItemStack[] committed = live.copy();
+            check(service.deliver(access, requestId, StagingEconomyCatalog.TEST_TOKEN, 1).status()
+                            == StagingEconomyOperationPort.Status.REPLAYED,
+                    "token delivery replay was not terminal");
+            check(same(committed, live.copy()), "token delivery replay duplicated the physical token");
+        } finally { service.close(); }
+
+        MemoryAccess full = new MemoryAccess(player, new ItemStack[]{
+                new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)});
+        StagingEconomyService fullService = service(inventory(full), new BoundedStagingOperationJournal(32),
+                () -> new UUID(0, 773));
+        try {
+            ItemStack[] before = full.copy();
+            var result = fullService.deliver(access, new UUID(0, 774),
+                    StagingEconomyCatalog.TEST_TOKEN, 1);
+            check(result.status() != StagingEconomyOperationPort.Status.COMMITTED
+                            && result.status() != StagingEconomyOperationPort.Status.REPLAYED,
+                    "full live storage accepted token delivery");
+            check(same(before, full.copy()), "full token delivery mutated live storage");
+        } finally { fullService.close(); }
+    }
+
     private static void liveStorageConflictsAndFailuresDoNotExposePartialResults() {
         UUID player = new UUID(0, 710);
-        MemoryAccess live = new MemoryAccess(player, new ItemStack[]{new TestStack(Material.RAW_IRON, 2), null});
+        MemoryAccess live = new MemoryAccess(player, new ItemStack[]{resource(StagingEconomyCatalog.IRON_ORE, 2), null});
         BukkitStagingInventoryPort inventory = inventory(live);
         BoundedStagingOperationJournal journal = new BoundedStagingOperationJournal(32);
         StagingEconomyService service = service(inventory, journal, () -> new UUID(0, 711));
@@ -274,7 +419,7 @@ public final class BukkitStagingInventoryPortIntegrationTest {
         } finally { service.close(); }
 
         ItemStack[] full = new ItemStack[2];
-        full[0] = new TestStack(Material.RAW_IRON, 2);
+        full[0] = resource(StagingEconomyCatalog.IRON_ORE, 2);
         full[1] = new TestStack(Material.IRON_SWORD, 1);
         MemoryAccess fullLive = new MemoryAccess(player, full);
         StagingEconomyService fullService = service(inventory(fullLive), new BoundedStagingOperationJournal(32),
@@ -294,7 +439,7 @@ public final class BukkitStagingInventoryPortIntegrationTest {
         UUID promotedId = new UUID(0, 751);
         MemoryAccess promoteLive = new MemoryAccess(player, new ItemStack[]{
                 TestStack.equipment(equipmentDocument(EquipmentTier.T1, 0, false, promotedId, 0)),
-                new TestStack(Material.IRON_INGOT, 2), null});
+                resource(StagingEconomyCatalog.IRON_INGOT, 2), null});
         StagingEconomyService promoteService = equipmentService(inventory(promoteLive), 752);
         try {
             ItemStack original = promoteLive.copy()[0];
@@ -483,7 +628,12 @@ public final class BukkitStagingInventoryPortIntegrationTest {
 
     private static BukkitStagingInventoryPort inventory(MemoryAccess live) {
         return new BukkitStagingInventoryPort(new BukkitStagingInventoryBridge(live),
-                TestStack::equipment, TestStack::new);
+                TestStack::equipment, (material, amount) -> new TestStack(material, amount, true));
+    }
+
+    private static ItemStack resource(String itemId, int amount) {
+        return new BukkitStagingResourceItemAdapter(
+                (material, stackAmount) -> new TestStack(material, stackAmount, true)).create(itemId, amount);
     }
 
     private static StagingOperationAccess allowed(UUID player) {

@@ -83,6 +83,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     private final ElementSnapshotProtocolPublisher elementPublisher;
     private final PreHitDamageModifier preHitDamageModifier;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
+    private final AutoCloseable workbenchRegistration;
     private boolean closed;
 
     private BetaActivationWave1CompositionRoot(
@@ -104,7 +105,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             BetaCapabilityAdvertisementPublisher advertisementPublisher,
             ElementSnapshotProtocolPublisher elementPublisher,
             PreHitDamageModifier preHitDamageModifier,
-            ConfirmedDamageHitObserver confirmedHitObserver
+            ConfirmedDamageHitObserver confirmedHitObserver,
+            AutoCloseable workbenchRegistration
     ) {
         this.track1 = track1; this.track2 = track2; this.track3 = track3; this.track4 = track4;
         this.infrastructure = Set.copyOf(infrastructure); this.operators = operators;
@@ -117,6 +119,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         this.elementPublisher = elementPublisher;
         this.preHitDamageModifier = preHitDamageModifier;
         this.confirmedHitObserver = confirmedHitObserver;
+        this.workbenchRegistration = workbenchRegistration;
         modules = new BetaActivationWave1ProviderRegistry(
                 track1, track2, track3, track4).modules();
     }
@@ -184,22 +187,6 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         Track3RuntimeModuleProvider track3 = new Track3RuntimeModuleProvider(economy, recovery);
         StagingEconomyOperatorContributor economyCommands =
                 new StagingEconomyOperatorContributor(economy);
-        // UI remains inert/read-only unless the policy and existing feature gates admit it.
-        DevMenuManager.installStagingWorkbench(economy, player -> new StagingOperationAccess(
-                player.getUniqueId(), player.getWorld().getName(), player.hasPermission("projects.dev"),
-                policy), () -> flags.isEnabled(FeatureKey.EQUIPMENT_V2)
-                && flags.isEnabled(FeatureKey.MOD_SYSTEM), (player, selected) -> {
-                    var inspected = equipment.inspectReadOnly(
-                            player.getUniqueId(), equipmentReader.scan(player));
-                    return stagingInspectionText(inspected.items().stream()
-                            .flatMap(value -> value.projection().stream()).toList(), selected);
-                }, () -> track3.track3Modules().stream().anyMatch(module ->
-                        module.id() == BetaRuntimeModuleId.GATHERING_CRAFTING
-                                && module.state() == BetaRuntimeModuleState.RUNNING),
-                () -> track3.track3Modules().stream().anyMatch(module ->
-                        module.id() == BetaRuntimeModuleId.ENHANCEMENT_REPAIR
-                                && module.state() == BetaRuntimeModuleState.RUNNING));
-
         FileStagingQuestProgressPort questProgress = new FileStagingQuestProgressPort(
                 data.resolve("beta-staging").resolve("players").resolve("quests"));
         Track1QuestProgressPort questProgressPort =
@@ -349,6 +336,21 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                 track2.combatElementsModule()::state, dummies, clock,
                 playerId -> protocol.capabilitySnapshot(playerId)
                         .supports(BetaCapabilityId.ELEMENTS, 1));
+        // Install only after all fallible graph construction has succeeded; the root owns removal.
+        AutoCloseable workbenchRegistration = DevMenuManager.installStagingWorkbench(economy, player -> new StagingOperationAccess(
+                player.getUniqueId(), player.getWorld().getName(), player.hasPermission("projects.dev"),
+                policy), () -> flags.isEnabled(FeatureKey.EQUIPMENT_V2)
+                && flags.isEnabled(FeatureKey.MOD_SYSTEM), (player, selected) -> {
+                    var inspected = equipment.inspectReadOnly(
+                            player.getUniqueId(), equipmentReader.scan(player));
+                    return stagingInspectionText(inspected.items().stream()
+                            .flatMap(value -> value.projection().stream()).toList(), selected);
+                }, () -> track3.track3Modules().stream().anyMatch(module ->
+                        module.id() == BetaRuntimeModuleId.GATHERING_CRAFTING
+                                && module.state() == BetaRuntimeModuleState.RUNNING),
+                () -> track3.track3Modules().stream().anyMatch(module ->
+                        module.id() == BetaRuntimeModuleId.ENHANCEMENT_REPAIR
+                                && module.state() == BetaRuntimeModuleState.RUNNING));
         return new BetaActivationWave1CompositionRoot(track1, track2, track3, track4,
                 Set.of("track1.bukkit-listener", "track1.staging-player-store",
                         "track1.inventory-reader", "training-dummy-boundary",
@@ -358,7 +360,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         "minecraft-plugin-messaging"),
                 operators, progress, equipment, transactionRepository, recovery,
                 auditSink, operationJournal, questProgress, rewardClaims, protocol,
-                advertisementPublisher, publisher, modifier, observer);
+                advertisementPublisher, publisher, modifier, observer, workbenchRegistration);
     }
 
     private static BetaOperatorContributorRegistry.Entry entry(
@@ -469,6 +471,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
 
     @Override public synchronized void close() {
         if (closed) return; closed = true;
+        closeSafely(workbenchRegistration);
         closeSafely(elementPublisher);
         closeSafely(advertisementPublisher);
         closeSafely(protocol);

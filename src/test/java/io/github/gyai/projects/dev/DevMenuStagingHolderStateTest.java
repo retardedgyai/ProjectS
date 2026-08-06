@@ -44,6 +44,7 @@ public final class DevMenuStagingHolderStateTest {
         holderLifecycleRotatesSafeRequestsAndRetainsUncertainty();
         finalNavigationRefreshIsPageAware();
         quitCleanupClearsOpenStagingStateAndLogsOutIdempotently();
+        workbenchRegistrationIsOwnedAndSupersessionSafe();
     }
 
     private static void everyOutcomeLabelSurvivesStagingRefresh() {
@@ -136,6 +137,38 @@ public final class DevMenuStagingHolderStateTest {
                 "quit did not clear holder state and invoke staging logout");
         DevMenuManager.clearStagingStateAndLogout(holder, port, player);
         check(port.logoutCalls == 2, "close-after-quit cleanup was not safely repeatable");
+    }
+
+    private static void workbenchRegistrationIsOwnedAndSupersessionSafe() {
+        FakePort port = new FakePort(List.of());
+        try {
+            AutoCloseable first = DevMenuManager.installStagingWorkbench(port,
+                    player -> access(player.getUniqueId()));
+            check(workbenchPresent(), "install did not register the workbench");
+            first.close();
+            check(!workbenchPresent(), "closed root left the workbench registered");
+
+            AutoCloseable oldRoot = DevMenuManager.installStagingWorkbench(port,
+                    player -> access(player.getUniqueId()));
+            AutoCloseable newRoot = DevMenuManager.installStagingWorkbench(port,
+                    player -> access(player.getUniqueId()));
+            oldRoot.close();
+            check(workbenchPresent(), "closing an old root removed the newer registration");
+            newRoot.close();
+            check(!workbenchPresent(), "closing the current root did not unregister its workbench");
+        } catch (Exception failure) {
+            throw new AssertionError("workbench registration lifecycle failed", failure);
+        }
+    }
+
+    private static boolean workbenchPresent() {
+        try {
+            var field = DevMenuManager.class.getDeclaredField("stagingWorkbench");
+            field.setAccessible(true);
+            return field.get(null) != null;
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("unable to inspect workbench registration", failure);
+        }
     }
 
     private static UUID dispatch(DevMenuHolder holder, StagingWorkbenchPresenter presenter,

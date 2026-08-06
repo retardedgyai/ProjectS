@@ -38,7 +38,7 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
     private final BoundedStagingInventory transactions = new BoundedStagingInventory();
     private final StagingEquipmentCodec codec = new StagingEquipmentCodec();
     private final Function<StagingEquipmentDocument, ItemStack> equipmentStackFactory;
-    private final BiFunction<Material, Integer, ItemStack> resourceStackFactory;
+    private final BukkitStagingResourceItemAdapter resources;
     private final HashMap<UUID, HeldLive> liveBefore = new HashMap<>();
 
     public BukkitStagingInventoryPort(BukkitStagingInventoryBridge bridge) {
@@ -61,7 +61,8 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
     ) {
         this.bridge = java.util.Objects.requireNonNull(bridge);
         this.equipmentStackFactory = java.util.Objects.requireNonNull(equipmentStackFactory);
-        this.resourceStackFactory = java.util.Objects.requireNonNull(resourceStackFactory);
+        this.resources = new BukkitStagingResourceItemAdapter(
+                java.util.Objects.requireNonNull(resourceStackFactory));
     }
 
     @Override public synchronized void openSession(UUID playerId) {
@@ -88,7 +89,7 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
                 new IllegalStateException("staging player offline")).contents();
         ItemStack[] after = copy(before);
         for (OperationResourcePlan.MaterialCost cost : resources.materials()) {
-            remove(after, material(StagingEconomyCatalog.itemIdForTransactionResource(cost.materialId())),
+            remove(after, StagingEconomyCatalog.itemIdForTransactionResource(cost.materialId()),
                     cost.quantity());
         }
         removeEquipmentInputs(after, request);
@@ -130,7 +131,7 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
         ItemStack[] before = bridge.snapshot(playerId).orElseThrow(() ->
                 new IllegalStateException("staging player offline")).contents();
         ItemStack[] after = copy(before);
-        if (!add(after, material(resourceId), quantity)) {
+        if (!add(after, resourceId, quantity)) {
             return rollbackFailedCommit(playerId, requestId, reservation, "full");
         }
         BukkitStagingInventoryBridge.MutationResult live = bridge.replaceStorageAtomically(playerId, before, after);
@@ -170,9 +171,12 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
 
     private void synchronize(UUID playerId, ItemStack[] contents) {
         HashMap<String, Long> resources = new HashMap<>();
-        long ore = count(contents, Material.RAW_IRON), ingot = count(contents, Material.IRON_INGOT);
+        long ore = count(contents, StagingEconomyCatalog.IRON_ORE);
+        long ingot = count(contents, StagingEconomyCatalog.IRON_INGOT);
+        long token = count(contents, StagingEconomyCatalog.TEST_TOKEN);
         if (ore > 0) resources.put(StagingEconomyCatalog.IRON_ORE, ore);
         if (ingot > 0) resources.put(StagingEconomyCatalog.IRON_INGOT, ingot);
+        if (token > 0) resources.put(StagingEconomyCatalog.TEST_TOKEN, token);
         java.util.ArrayList<EquipmentItemV1> equipment = new java.util.ArrayList<>();
         for (ItemStack item : contents) staging(item).ifPresent(equipment::add);
         transactions.synchronizePlayerSnapshot(playerId, resources, equipment);
@@ -247,18 +251,11 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
             throw new IllegalArgumentException("invalid equipment input ID", invalid);
         }
     }
-    private static Material material(String id) {
-        return switch (id) {
-            case StagingEconomyCatalog.IRON_ORE -> Material.RAW_IRON;
-            case StagingEconomyCatalog.IRON_INGOT -> Material.IRON_INGOT;
-            default -> throw new IllegalArgumentException("unsupported live staging resource");
-        };
-    }
-    private static void remove(ItemStack[] values, Material material, long amount) {
+    private void remove(ItemStack[] values, String itemId, long amount) {
         long remaining = amount;
         for (int index = 0; index < values.length; index++) {
             ItemStack item = values[index];
-            if (item == null || item.getType() != material) continue;
+            if (!resources.matches(item, itemId)) continue;
             int used = (int) Math.min(remaining, item.getAmount()); item.setAmount(item.getAmount() - used);
             remaining -= used;
             if (item.getAmount() == 0) values[index] = null;
@@ -266,19 +263,25 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
         }
         throw new IllegalStateException("live resource disappeared");
     }
-    private boolean add(ItemStack[] values, Material material, long amount) {
+    private boolean add(ItemStack[] values, String itemId, long amount) {
         long remaining = amount;
-        for (ItemStack item : values) if (item != null && item.getType() == material && item.getAmount() < STAGING_RESOURCE_STACK_LIMIT) {
+        for (ItemStack item : values) if (resources.matches(item, itemId)
+                && item.getAmount() < STAGING_RESOURCE_STACK_LIMIT) {
             int add = (int) Math.min(remaining, STAGING_RESOURCE_STACK_LIMIT - item.getAmount()); item.setAmount(item.getAmount() + add); remaining -= add;
             if (remaining == 0) return true;
         }
         for (int i = 0; i < values.length && remaining > 0; i++) if (values[i] == null || values[i].getType() == Material.AIR) {
-            int add = (int) Math.min(remaining, STAGING_RESOURCE_STACK_LIMIT); values[i] = resourceStackFactory.apply(material, add); remaining -= add;
+            int add = (int) Math.min(remaining, STAGING_RESOURCE_STACK_LIMIT);
+            values[i] = resources.create(itemId, add);
+            remaining -= add;
         }
         return remaining == 0;
     }
     private static boolean insert(ItemStack[] values, ItemStack item) { for (int i = 0; i < values.length; i++) if (values[i] == null || values[i].getType() == Material.AIR) { values[i] = item; return true; } return false; }
-    private static long count(ItemStack[] values, Material material) { return Arrays.stream(values).filter(item -> item != null && item.getType() == material).mapToLong(ItemStack::getAmount).sum(); }
+    private long count(ItemStack[] values, String itemId) {
+        return Arrays.stream(values).filter(item -> resources.matches(item, itemId))
+                .mapToLong(ItemStack::getAmount).sum();
+    }
     private static ItemStack[] copy(ItemStack[] values) { return Arrays.stream(values).map(item -> item == null ? null : item.clone()).toArray(ItemStack[]::new); }
     private static ItemStack equipmentStack(StagingEquipmentDocument document) {
         ItemStack result = new ItemStack(Material.IRON_SWORD); var meta = result.getItemMeta();

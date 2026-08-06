@@ -73,35 +73,45 @@ public final class DevMenuManager implements Listener {
     private static volatile DevMenuManager installedManager;
 
     /** Installed by the beta composition root; absent means safe read-only. */
-    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+    public static AutoCloseable installStagingWorkbench(StagingEconomyOperationPort operations,
                                                 Function<Player, StagingOperationAccess> access) {
-        installStagingWorkbench(operations, access, () -> false);
+        return installStagingWorkbench(operations, access, () -> false);
     }
-    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+    public static AutoCloseable installStagingWorkbench(StagingEconomyOperationPort operations,
                                                 Function<Player, StagingOperationAccess> access,
                                                 java.util.function.BooleanSupplier moddedCraftAllowed) {
-        installStagingWorkbench(operations, access, moddedCraftAllowed, player -> "inspection unavailable");
+        return installStagingWorkbench(operations, access, moddedCraftAllowed, player -> "inspection unavailable");
     }
-    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+    public static AutoCloseable installStagingWorkbench(StagingEconomyOperationPort operations,
                                                 Function<Player, StagingOperationAccess> access,
                                                 java.util.function.BooleanSupplier moddedCraftAllowed,
                                                 Function<Player, String> inspection) {
-        installStagingWorkbench(operations, access, moddedCraftAllowed,
+        return installStagingWorkbench(operations, access, moddedCraftAllowed,
                 (player, selected) -> inspection == null ? "inspection unavailable" : inspection.apply(player), () -> true, () -> true);
     }
-    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+    public static AutoCloseable installStagingWorkbench(StagingEconomyOperationPort operations,
                                                 Function<Player, StagingOperationAccess> access,
                                                 java.util.function.BooleanSupplier moddedCraftAllowed,
                                                 java.util.function.BiFunction<Player, java.util.Optional<UUID>, String> inspection,
                                                 java.util.function.BooleanSupplier gatheringRunning,
                                                 java.util.function.BooleanSupplier enhancementRunning) {
-        stagingWorkbench = operations == null || access == null ? null : new StagingWorkbench(operations, access,
+        if (operations == null || access == null) return () -> { };
+        StagingWorkbench installed = new StagingWorkbench(operations, access,
                 moddedCraftAllowed == null ? () -> false : moddedCraftAllowed,
                 inspection == null ? (player, selected) -> "inspection unavailable" : inspection,
                 new StagingWorkbenchPresenter(operations,
                         gatheringRunning == null ? () -> false : gatheringRunning,
                         enhancementRunning == null ? () -> false : enhancementRunning,
                         moddedCraftAllowed == null ? () -> false : moddedCraftAllowed));
+        stagingWorkbench = installed;
+        return new AutoCloseable() {
+            private boolean closed;
+            @Override public synchronized void close() {
+                if (closed) return;
+                closed = true;
+                if (stagingWorkbench == installed) stagingWorkbench = null;
+            }
+        };
     }
 
     public static boolean openStagingWorkbench(Player player) {

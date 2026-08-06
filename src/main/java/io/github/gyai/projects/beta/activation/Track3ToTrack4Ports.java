@@ -1,6 +1,7 @@
 package io.github.gyai.projects.beta.activation;
 
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyService;
+import io.github.gyai.projects.beta.activation.track3.StagingEconomyOperationPort;
 import io.github.gyai.projects.beta.activation.track3.StagingOperationAccess;
 import io.github.gyai.projects.beta.activation.track4.StagingItemDeliveryPort;
 import io.github.gyai.projects.reward.RewardClaimRequest;
@@ -36,8 +37,11 @@ public final class Track3ToTrack4Ports {
                 return switch (result.status()) {
                     case COMMITTED, REPLAYED -> new RewardDeliveryReceipt(
                             RewardDeliveryReceipt.Status.DELIVERED, result.detail(), true);
-                    case COMMIT_UNCERTAIN -> new RewardDeliveryReceipt(
-                            RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN, result.detail(), false);
+                    case COMMIT_UNCERTAIN -> knownSafeFullInventory(result)
+                            ? new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.FULL_INVENTORY,
+                            result.detail(), false)
+                            : new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN,
+                            result.detail(), false);
                     case ROLLED_BACK -> new RewardDeliveryReceipt(
                             RewardDeliveryReceipt.Status.PERSIST_FAILURE, result.detail(), false);
                     case REJECTED, FAILED -> rejected(result.detail());
@@ -62,5 +66,19 @@ public final class Track3ToTrack4Ports {
     private static RewardDeliveryReceipt rejected(String reason) {
         return new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.REJECTED,
                 reason == null ? "" : reason, false);
+    }
+
+    /**
+     * Bukkit storage reports this before any output is exposed and restores the
+     * reservation snapshot. It is therefore a deterministic capacity result,
+     * not an acknowledgement ambiguity. Keep this deliberately exact: every
+     * other commit uncertainty remains non-retryable custody.
+     */
+    private static boolean knownSafeFullInventory(
+            StagingEconomyOperationPort.OperationResult result
+    ) {
+        return result.transaction().map(transaction ->
+                transaction.operationId().equals("projects:staging-resource")
+                        && transaction.reason().equals("commit=full")).orElse(false);
     }
 }

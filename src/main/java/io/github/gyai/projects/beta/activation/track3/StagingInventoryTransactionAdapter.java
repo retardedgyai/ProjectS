@@ -39,7 +39,7 @@ public final class StagingInventoryTransactionAdapter implements AutoCloseable {
             Supplier<UUID> itemUuidSource,
             StagingModRollService modRolls
     ) {
-        if (inventory == null || journal == null || clock == null || itemUuidSource == null) {
+        if (inventory == null || journal == null || clock == null || itemUuidSource == null || modRolls == null) {
             throw new IllegalArgumentException("transaction adapter input missing");
         }
         this.inventory = inventory;
