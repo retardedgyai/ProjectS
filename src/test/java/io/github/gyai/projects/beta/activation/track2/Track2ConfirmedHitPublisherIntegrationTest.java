@@ -79,6 +79,10 @@ import sun.misc.Unsafe;
 public final class Track2ConfirmedHitPublisherIntegrationTest {
     private static final UUID PLAYER = UUID.fromString(
             "00000000-0000-0000-0000-000000000201");
+    private static final UUID PLAYER_A = UUID.fromString(
+            "00000000-0000-0000-0000-000000000202");
+    private static final UUID PLAYER_B = UUID.fromString(
+            "00000000-0000-0000-0000-000000000203");
     private static final UUID TARGET_A = UUID.fromString(
             "10000000-0000-0000-0000-000000000201");
     private static final UUID TARGET_B = UUID.fromString(
@@ -91,6 +95,8 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
             "10000000-0000-0000-0000-000000000205");
     private static final UUID TARGET_F = UUID.fromString(
             "10000000-0000-0000-0000-000000000206");
+    private static final UUID TARGET_G = UUID.fromString(
+            "10000000-0000-0000-0000-000000000207");
     private static final Instant START = Instant.parse("2026-08-06T00:00:00Z");
     private static final AttackMetadata STARTER = new AttackMetadata(
             Set.of(AttackTag.NORMAL_ATTACK, AttackTag.MELEE, AttackTag.PHYSICAL), null);
@@ -101,13 +107,14 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
         fixture.fullProductionIcePath();
         fixture.criticalCompositionAndFreezeExpiry();
         fixture.extremeMultiplierAndHealthPurity();
+        fixture.profileIndependentFreezeAndExclusions();
         System.out.println("Track2ConfirmedHitPublisherIntegrationTest passed");
     }
 
     private static final class Fixture {
         private final MutableClock clock = new MutableClock(START);
         private final UUID[] targets = {
-                TARGET_A, TARGET_B, TARGET_C, TARGET_D, TARGET_E, TARGET_F};
+                TARGET_A, TARGET_B, TARGET_C, TARGET_D, TARGET_E, TARGET_F, TARGET_G};
         private final FakeBoundary boundary = new FakeBoundary(Set.of(targets));
         private final TrainingDummyElementRuntime elements =
                 new TrainingDummyElementRuntime(boundary, clock);
@@ -161,7 +168,7 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
                     BetaActivationAudience.ALLOWLIST,
                     BetaActivationTargetScope.TRAINING_DUMMY_ONLY,
                     BetaMutationPolicy.READ_ONLY,
-                    Set.of(PLAYER), Set.of("world"), true, true));
+                    Set.of(PLAYER, PLAYER_A, PLAYER_B), Set.of("world"), true, true));
             elements.start();
             elements.setProfile(PLAYER, StagingElementProfile.FIRE);
             publisher.start();
@@ -390,10 +397,89 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
             assert atExpiry.iceDirectDamageMultiplier() == 1.0;
         }
 
+        private void profileIndependentFreezeAndExclusions() {
+            UUID targetUuid = TARGET_G;
+            AtomicReference<Double> health = new AtomicReference<>(10_000.0);
+            LivingEntity sharedTarget = damageTarget(targetUuid, health);
+            Player playerA = playerProxy(PLAYER_A);
+            Player playerB = playerProxy(PLAYER_B);
+            Track2ConfirmedHitObserver sharedObserver = new Track2ConfirmedHitObserver(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == sharedTarget, clock, ignored -> true);
+            Track2PreHitDamageModifier modifier = new Track2PreHitDamageModifier(
+                    () -> BetaRuntimeModuleState.RUNNING, elements,
+                    value -> value == sharedTarget, clock, ignored -> true);
+            DamageService service = realDamageService();
+
+            elements.setProfile(PLAYER_A, StagingElementProfile.ICE);
+            for (int hit = 0; hit < 4; hit++) {
+                DamageRequest request = directRequest(playerA, sharedTarget,
+                        DamageKind.NORMAL_ATTACK);
+                sharedObserver.confirmed("profile-a-freeze-" + hit, request, service.apply(request));
+            }
+            ElementRuntimeSnapshotPort.TargetSnapshot frozen = elements.snapshots()
+                    .target(targetUuid).orElseThrow();
+            assert frozen.cold() == 100.0 && frozen.frozen();
+
+            elements.setProfile(PLAYER_B, StagingElementProfile.NONE);
+            DamageRequest noneRequest = directRequest(playerB, sharedTarget,
+                    DamageKind.NORMAL_ATTACK);
+            DamageRequest noneModified = modifier.modify("profile-b-none", noneRequest);
+            assert noneModified.iceDirectDamageMultiplier() == 1.08;
+            assert service.apply(noneModified).calculation().finalRoundedDamage() == 108.0;
+            sharedObserver.confirmed("profile-b-none", noneModified, service.apply(noneModified));
+            ElementRuntimeSnapshotPort.TargetSnapshot afterNone = elements.snapshots()
+                    .target(targetUuid).orElseThrow();
+            assert afterNone.cold() == 100.0 && afterNone.frozen();
+
+            elements.setProfile(PLAYER_B, StagingElementProfile.FIRE);
+            DamageRequest fireRequest = directRequest(playerB, sharedTarget,
+                    DamageKind.NORMAL_ATTACK);
+            DamageRequest fireModified = modifier.modify("profile-b-fire", fireRequest);
+            assert fireModified.iceDirectDamageMultiplier() == 1.08;
+            sharedObserver.confirmed("profile-b-fire", fireModified, service.apply(fireModified));
+            ElementRuntimeSnapshotPort.TargetSnapshot afterFire = elements.snapshots()
+                    .target(targetUuid).orElseThrow();
+            assert afterFire.cold() == 100.0 && afterFire.frozen()
+                    && afterFire.fireStacks() == 1;
+
+            DamageRequest pvp = directRequest(playerB, sharedTarget, DamageKind.NORMAL_ATTACK)
+                    .toBuilder().mode(DamageMode.PVP).build();
+            assert modifier.modify("profile-b-pvp", pvp) == pvp;
+            assert pvp.iceDirectDamageMultiplier() == 1.0;
+
+            DamageRequest dot = directRequest(playerB, sharedTarget, DamageKind.DAMAGE_OVER_TIME);
+            assert modifier.modify("profile-b-dot", dot) == dot;
+            DamageRequest secondary = directRequest(playerB, sharedTarget, DamageKind.DIRECT_SKILL)
+                    .toBuilder().offenseSnapshot(new DamageOffenseSnapshot(10.0, false, 1.0))
+                    .build();
+            assert modifier.modify("profile-b-secondary", secondary) == secondary;
+
+            elements.setProfile(PLAYER_B, StagingElementProfile.ICE);
+            int secondaryBefore = boundary.secondary.size();
+            DamageRequest spin = modifier.modify("profile-b-spin",
+                    directRequest(playerB, sharedTarget, DamageKind.DIRECT_SKILL));
+            assert spin.iceDirectDamageMultiplier() == 1.08;
+            sharedObserver.confirmed("profile-b-spin", spin, service.apply(spin));
+            assert boundary.secondary.size() == secondaryBefore + 1;
+            TrainingDummyElementBoundary.SecondaryDamage shatter = boundary.secondary.getLast();
+            assert shatter.amount() == 135.0 && !shatter.criticalAllowed();
+            ElementRuntimeSnapshotPort.TargetSnapshot afterShatter = elements.snapshots()
+                    .target(targetUuid).orElseThrow();
+            assert afterShatter.cold() == 40.0 && !afterShatter.frozen();
+            assert afterShatter.refreezeImmuneUntilMillis() == clock.millis() + 3_000L;
+        }
+
         private DamageRequest directRequest(LivingEntity value, DamageKind kind) {
+            return directRequest(player, value, kind);
+        }
+
+        private DamageRequest directRequest(Player attacker, LivingEntity value, DamageKind kind) {
             targetId.set(value.getUniqueId());
-            return DamageRequest.builder(player, value)
-                    .skillId(kind == DamageKind.NORMAL_ATTACK ? "normal_attack" : "spin_slash")
+            String skillId = kind == DamageKind.NORMAL_ATTACK ? "normal_attack"
+                    : kind == DamageKind.DIRECT_SKILL ? "spin_slash" : "dot";
+            return DamageRequest.builder(attacker, value)
+                    .skillId(skillId)
                     .damageKind(kind).damageType(DamageType.PHYSICAL).mode(DamageMode.PVE)
                     .fixedDamage(100.0).coefficient(0.0).criticalAllowed(false)
                     .attackMetadata(kind == DamageKind.NORMAL_ATTACK ? STARTER : new AttackMetadata(
@@ -465,6 +551,10 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
     }
 
     private static Player playerProxy() {
+        return playerProxy(PLAYER);
+    }
+
+    private static Player playerProxy(UUID playerId) {
         World world = (World) Proxy.newProxyInstance(
                 World.class.getClassLoader(), new Class<?>[]{World.class},
                 (proxy, method, args) -> method.getName().equals("getName")
@@ -472,7 +562,7 @@ public final class Track2ConfirmedHitPublisherIntegrationTest {
         return (Player) Proxy.newProxyInstance(
                 Player.class.getClassLoader(), new Class<?>[]{Player.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "getUniqueId" -> PLAYER;
+                    case "getUniqueId" -> playerId;
                     case "getWorld" -> world;
                     case "hasPermission" -> true;
                     case "getInventory" -> Proxy.newProxyInstance(

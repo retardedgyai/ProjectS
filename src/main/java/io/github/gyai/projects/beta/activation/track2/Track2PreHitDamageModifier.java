@@ -3,6 +3,7 @@ package io.github.gyai.projects.beta.activation.track2;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
 import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import io.github.gyai.projects.combat.damage.DamageKind;
+import io.github.gyai.projects.combat.damage.DamageMode;
 import io.github.gyai.projects.combat.damage.DamageRequest;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
 
@@ -34,6 +35,7 @@ final class Track2PreHitDamageModifier implements PreHitDamageModifier {
         try {
             if (request == null || hitId == null || hitId.isBlank()
                     || moduleState.get() != BetaRuntimeModuleState.RUNNING
+                    || request.mode() != DamageMode.PVE
                     || request.offenseSnapshot() != null
                     || !targets.isTrainingDummy(request.target())) return request;
             IceElementEngine.DamageOrigin origin = origin(request);

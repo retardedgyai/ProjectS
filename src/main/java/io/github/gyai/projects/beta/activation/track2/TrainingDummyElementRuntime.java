@@ -140,8 +140,7 @@ public final class TrainingDummyElementRuntime implements AutoCloseable {
                 || origin == null || metadata == null || worldName == null || nowMillis < 0
                 || !activationPolicy.allowsWorld(worldName)
                 || !activationPolicy.allowsAudience(attackerId, compatibleClient)
-                || !activationPolicy.allowsTarget(BetaActivationTarget.TRAINING_DUMMY)
-                || registry.playerProfile(attackerId) != StagingElementProfile.ICE) return 1.0;
+                || !activationPolicy.allowsTarget(BetaActivationTarget.TRAINING_DUMMY)) return 1.0;
         AttackType type = origin == IceElementEngine.DamageOrigin.NORMAL_ATTACK_DIRECT
                 ? AttackType.STARTER_SWORD_NORMAL : origin == IceElementEngine.DamageOrigin.SKILL_DIRECT
                 ? AttackType.SPIN_SLASH : AttackType.OTHER;
