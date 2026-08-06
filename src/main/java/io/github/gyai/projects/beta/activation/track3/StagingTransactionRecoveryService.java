@@ -44,6 +44,10 @@ public final class StagingTransactionRecoveryService implements AutoCloseable {
                     if (operationJournal == null) {
                         terminal++;
                     } else {
+                        if (entry.stage() == StagingTransactionJournalRepository.Stage.COMMITTED) {
+                            finalized(entry).ifPresent(item -> operationJournal
+                                    .restoreFinalizedEquipment(entry.requestId(), item));
+                        }
                         operationJournal.restoreTerminal(toTerminal(entry));
                         terminal++;
                     }
@@ -112,6 +116,19 @@ public final class StagingTransactionRecoveryService implements AutoCloseable {
                 entry.reason(), true, Instant.ofEpochMilli(entry.updatedAtMillis()));
     }
 
+    private static Optional<io.github.gyai.projects.equipment.EquipmentItemV1> finalized(
+            StagingTransactionJournalRepository.Entry entry
+    ) {
+        String value = entry.proposedOutputIdentity();
+        if (!value.startsWith("equipment:")) return Optional.empty();
+        try {
+            byte[] payload = java.util.Base64.getUrlDecoder().decode(value.substring("equipment:".length()));
+            return Optional.of(new StagingEquipmentCodec().decode(payload).item());
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("invalid finalized staging equipment", invalid);
+        }
+    }
+
     private static TransactionRequest.InputRevision input(String value) {
         int separator = value.lastIndexOf('@');
         if (separator <= 0 || separator == value.length() - 1) {
@@ -126,6 +143,9 @@ public final class StagingTransactionRecoveryService implements AutoCloseable {
     ) {
         String value = entry.proposedOutputIdentity();
         if (value.isBlank()) return Optional.empty();
+        // Finalized equipment is restored separately into the operation journal;
+        // it is not a scalar OutputProposal payload.
+        if (value.startsWith("equipment:")) return Optional.empty();
         int separator = value.lastIndexOf(':');
         if (separator <= 0 || separator == value.length() - 1) return Optional.empty();
         return Optional.of(new OutputProposal(value.substring(0, separator),

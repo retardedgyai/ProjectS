@@ -5,6 +5,7 @@ import io.github.gyai.projects.beta.activation.track2.StagingElementProfile;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionJournalRepository;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionRecoveryService;
 import io.github.gyai.projects.beta.activation.track3.BoundedStagingOperationJournal;
+import io.github.gyai.projects.beta.activation.track3.StagingEconomyCatalog;
 import io.github.gyai.projects.beta.activation.track4.ElementSnapshotProtocolAdapter;
 import io.github.gyai.projects.combat.element.ice.IceElementEngine;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
@@ -21,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import io.github.gyai.projects.equipment.EquipmentItemV1;
+import io.github.gyai.projects.equipment.EquipmentTier;
 
 public final class BetaActivationWave1IntegratedTest {
     private BetaActivationWave1IntegratedTest() { }
@@ -28,6 +31,7 @@ public final class BetaActivationWave1IntegratedTest {
     public static void main(String[] arguments) throws Exception {
         centralPlanIsRegisteredButCompletelyDisabled();
         operatorRegistryIsBoundedAndRestartOnly();
+        workbenchInspectionFiltersMixedInventoryToStagingItems();
         durableRecoveryNeverRetriesUncertainWork();
         corruptRecoveryJournalRemainsBlocking();
         fireSnapshotIsRevisionGatedAndProtocolCompatible();
@@ -84,6 +88,30 @@ public final class BetaActivationWave1IntegratedTest {
         assert response.messages().equals(List.of(
                 BetaOperatorContributorRegistry.DISABLED_MESSAGE));
         assert response.messages().size() <= BetaRuntimeCommandService.MAXIMUM_RESPONSE_LINES;
+    }
+
+    private static void workbenchInspectionFiltersMixedInventoryToStagingItems() {
+        UUID legacyId = new UUID(0, 61), stagingId = new UUID(0, 62);
+        EquipmentItemV1 base = StagingEconomyCatalog.previewBlade(EquipmentTier.T1);
+        EquipmentItemV1 legacy = identified(base, "projects:legacy-sword", legacyId);
+        EquipmentItemV1 staging = identified(base, StagingEconomyCatalog.TEST_BLADE_T1, stagingId);
+        String fallback = BetaActivationWave1CompositionRoot.stagingInspectionText(
+                List.of(legacy, staging), Optional.empty());
+        assert fallback.contains("UUID=" + stagingId) && !fallback.contains(legacyId.toString());
+        String selected = BetaActivationWave1CompositionRoot.stagingInspectionText(
+                List.of(legacy, staging), Optional.of(stagingId));
+        assert selected.contains("UUID=" + stagingId);
+        assert BetaActivationWave1CompositionRoot.stagingInspectionText(
+                List.of(legacy, staging), Optional.of(legacyId)).equals("装備なし");
+        assert base.instanceId().isEmpty() && staging.instanceId().orElseThrow().equals(stagingId)
+                : "read-only inspection minted or changed a UUID";
+    }
+
+    private static EquipmentItemV1 identified(EquipmentItemV1 base, String itemId, UUID id) {
+        return new EquipmentItemV1(base.schemaVersion(), itemId, base.category(), base.slot(),
+                base.tier(), base.itemLevel(), base.rarity(), base.quality(), base.baseStatRolls(),
+                base.modSlots(), base.crafter(), base.enhancementLevel(), base.broken(),
+                base.binding(), base.tradePolicy(), Optional.of(id));
     }
 
     private static void durableRecoveryNeverRetriesUncertainWork() throws Exception {

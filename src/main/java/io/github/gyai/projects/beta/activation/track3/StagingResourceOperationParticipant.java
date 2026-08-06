@@ -59,6 +59,10 @@ final class StagingResourceOperationParticipant implements TransactionParticipan
 
     @Override
     public void consume(TransactionRequest value, ReservationToken token) {
+        if (!request.equals(value)) throw new IllegalStateException("operation-plan-request-mismatch");
+        // This is intentionally before adapter.consume(), whose Bukkit-backed
+        // implementation performs the first live inventory mutation.
+        journal.recordResourceIntent(value, output);
         adapter.consume(value, resources, token);
     }
 

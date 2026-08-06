@@ -12,6 +12,8 @@ import io.github.gyai.projects.transaction.TransactionAuditResult;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class Track3EconomyOperationTest {
     private Track3EconomyOperationTest() {
@@ -23,6 +25,7 @@ public final class Track3EconomyOperationTest {
         breakAndRepairPreserveTargetAndConsumeDonor();
         fullInventoryAndEveryFailureBoundaryAreSafe();
         accessGatesAndLogoutFailClosed();
+        craftRequiresEquipmentAndModFeaturesBeforeSharedTransactionWork();
     }
 
     private static void resourceRefineCraftAndPromotionUseTransactions() {
@@ -106,7 +109,7 @@ public final class Track3EconomyOperationTest {
                     : "reserved enhancement did not consume its one-shot outcome";
             var replay = action(fixture, uuid(24), access,
                     StagingEconomyOperationPort.OperationKind.ENHANCE);
-            assert replay.status() == StagingEconomyOperationPort.Status.REPLAYED;
+            assert replay.status() == StagingEconomyOperationPort.Status.COMMIT_UNCERTAIN;
             assert replay.transaction().orElseThrow().outcome()
                     == TransactionAuditResult.Outcome.COMMIT_UNCERTAIN;
             fixture.service().logout(player);
@@ -208,6 +211,63 @@ public final class Track3EconomyOperationTest {
             fixture.service().close();
             fixture.service().close();
         }
+    }
+
+    private static void craftRequiresEquipmentAndModFeaturesBeforeSharedTransactionWork() {
+        UUID player = uuid(6);
+        AtomicBoolean equipmentEnabled = new AtomicBoolean(false);
+        AtomicBoolean modsEnabled = new AtomicBoolean(false);
+        AtomicLong generatedIds = new AtomicLong();
+        BoundedStagingInventory inventory = new BoundedStagingInventory(4);
+        BoundedStagingOperationJournal journal = new BoundedStagingOperationJournal(16);
+        StagingInventoryTransactionAdapter transactions = new StagingInventoryTransactionAdapter(
+                inventory, journal, Track3TestFixtures.CLOCK,
+                () -> new UUID(1, generatedIds.incrementAndGet()));
+        try (StagingEconomyService service = new StagingEconomyService(
+                inventory, journal, transactions, new StagingEnhancementOutcomeRegistry(),
+                () -> equipmentEnabled.get() && modsEnabled.get())) {
+            service.setGroupRunning(StagingEconomyService.OperationGroup.GATHERING_CRAFTING, true);
+            StagingOperationAccess access = Track3TestFixtures.access(player);
+            inventory.seedResource(player, StagingEconomyCatalog.IRON_INGOT, 3);
+            StagingInventoryPort.InventorySnapshot before = inventory.snapshot(player);
+
+            assertFeatureRejected(service, access, equipmentEnabled, modsEnabled,
+                    false, false, 60, before, inventory, generatedIds);
+            assertFeatureRejected(service, access, equipmentEnabled, modsEnabled,
+                    false, true, 61, before, inventory, generatedIds);
+            assertFeatureRejected(service, access, equipmentEnabled, modsEnabled,
+                    true, false, 62, before, inventory, generatedIds);
+
+            equipmentEnabled.set(true);
+            modsEnabled.set(true);
+            var committed = service.execute(StagingEconomyOperationPort.OperationRequest.action(
+                    uuid(63), access, StagingEconomyOperationPort.OperationKind.CRAFT));
+            assert committed.status() == StagingEconomyOperationPort.Status.COMMITTED : committed;
+            assert generatedIds.get() == 1 : "enabled craft did not mint exactly one item ID";
+        }
+    }
+
+    private static void assertFeatureRejected(
+            StagingEconomyService service,
+            StagingOperationAccess access,
+            AtomicBoolean equipmentEnabled,
+            AtomicBoolean modsEnabled,
+            boolean equipment,
+            boolean mods,
+            long requestId,
+            StagingInventoryPort.InventorySnapshot expected,
+            BoundedStagingInventory inventory,
+            AtomicLong generatedIds
+    ) {
+        equipmentEnabled.set(equipment);
+        modsEnabled.set(mods);
+        var rejected = service.execute(StagingEconomyOperationPort.OperationRequest.action(
+                uuid(requestId), access, StagingEconomyOperationPort.OperationKind.CRAFT));
+        assert rejected.status() == StagingEconomyOperationPort.Status.REJECTED : rejected;
+        assert rejected.detail().equals("equipment-mod-features-disabled") : rejected;
+        assert inventory.snapshot(access.playerId()).equals(expected)
+                : "disabled craft touched inventory";
+        assert generatedIds.get() == 0 : "disabled craft generated an item ID";
     }
 
     private static StagingEconomyOperationPort.OperationResult action(

@@ -207,6 +207,24 @@ public final class BoundedStagingInventory implements StagingInventoryPort {
         }
     }
 
+    /** Replaces the bounded mirror from a fresh live snapshot only when not reserved. */
+    public synchronized void synchronizePlayerSnapshot(UUID playerId, Map<String, Long> resources,
+                                                        List<EquipmentItemV1> equipment) {
+        requireOpen();
+        if (reservations.values().stream().anyMatch(value -> value.playerId.equals(playerId))) return;
+        PlayerState state = player(playerId);
+        Map<String, Long> safeResources = Map.copyOf(resources == null ? Map.of() : resources);
+        LinkedHashMap<UUID, EquipmentItemV1> safeEquipment = new LinkedHashMap<>();
+        for (EquipmentItemV1 item : equipment == null ? List.<EquipmentItemV1>of() : equipment) {
+            UUID id = item.instanceId().orElseThrow(() -> new IllegalArgumentException("live staging item lacks UUID"));
+            safeEquipment.put(id, item);
+        }
+        if (state.resources.equals(safeResources) && state.equipment.equals(safeEquipment)) return;
+        state.resources.clear(); state.resources.putAll(safeResources);
+        state.equipment.clear(); state.equipment.putAll(safeEquipment);
+        state.revision = Math.addExact(state.revision, 1);
+    }
+
     @Override
     public synchronized void logout(UUID playerId) {
         if (playerId == null) return;

@@ -48,6 +48,24 @@ public final class EquipmentInspectionService implements EquipmentInspectionPort
     public synchronized EquipmentInspectionSnapshot inspect(
             UUID playerId, List<EquipmentScanEntry> entries) {
         if (!running || closed || playerId == null) throw new IllegalStateException("service is not running");
+        EquipmentInspectionSnapshot snapshot = project(playerId, entries);
+        latest.remove(playerId);
+        latest.put(playerId, snapshot);
+        while (latest.size() > maximumPlayers) latest.remove(latest.keySet().iterator().next());
+        return snapshot;
+    }
+
+    /**
+     * Projects an immutable inspection snapshot without requiring the runtime module to start.
+     * It intentionally neither retains the result nor changes ItemStack/PDC, legacy data, or IDs.
+     */
+    public synchronized EquipmentInspectionSnapshot inspectReadOnly(
+            UUID playerId, List<EquipmentScanEntry> entries) {
+        if (closed || playerId == null) throw new IllegalStateException("service is closed");
+        return project(playerId, entries);
+    }
+
+    private EquipmentInspectionSnapshot project(UUID playerId, List<EquipmentScanEntry> entries) {
         List<EquipmentScanEntry> source = entries == null ? List.of() : entries;
         if (source.size() > EquipmentInspectionSnapshot.MAXIMUM_ITEMS) {
             throw new IllegalArgumentException("inventory scan is oversized");
@@ -76,12 +94,8 @@ public final class EquipmentInspectionService implements EquipmentInspectionPort
                     validation, entry.unknownMods().stream().map(value -> value.modId()).toList(),
                     sha256(entry.serializedBefore())));
         }
-        EquipmentInspectionSnapshot snapshot = new EquipmentInspectionSnapshot(
+        return new EquipmentInspectionSnapshot(
                 playerId, clock.instant(), items, readable, valid, unknown);
-        latest.remove(playerId);
-        latest.put(playerId, snapshot);
-        while (latest.size() > maximumPlayers) latest.remove(latest.keySet().iterator().next());
-        return snapshot;
     }
 
     @Override

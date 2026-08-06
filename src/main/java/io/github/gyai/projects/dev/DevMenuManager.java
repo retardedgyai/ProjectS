@@ -29,6 +29,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemFlag;
@@ -45,6 +46,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import io.github.gyai.projects.beta.activation.track3.StagingEconomyOperationPort;
+import io.github.gyai.projects.beta.activation.track3.StagingOperationAccess;
 
 public final class DevMenuManager implements Listener {
     public static final String PERMISSION = "projects.dev";
@@ -65,6 +69,48 @@ public final class DevMenuManager implements Listener {
     private final EnhancementManager enhancementManager;
     private final HardControlTestTool hardControlTestTool;
     private final Map<UUID, org.bukkit.Location> savedLocations = new HashMap<>();
+    private static volatile StagingWorkbench stagingWorkbench;
+    private static volatile DevMenuManager installedManager;
+
+    /** Installed by the beta composition root; absent means safe read-only. */
+    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+                                                Function<Player, StagingOperationAccess> access) {
+        installStagingWorkbench(operations, access, () -> false);
+    }
+    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+                                                Function<Player, StagingOperationAccess> access,
+                                                java.util.function.BooleanSupplier moddedCraftAllowed) {
+        installStagingWorkbench(operations, access, moddedCraftAllowed, player -> "inspection unavailable");
+    }
+    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+                                                Function<Player, StagingOperationAccess> access,
+                                                java.util.function.BooleanSupplier moddedCraftAllowed,
+                                                Function<Player, String> inspection) {
+        installStagingWorkbench(operations, access, moddedCraftAllowed,
+                (player, selected) -> inspection == null ? "inspection unavailable" : inspection.apply(player), () -> true, () -> true);
+    }
+    public static void installStagingWorkbench(StagingEconomyOperationPort operations,
+                                                Function<Player, StagingOperationAccess> access,
+                                                java.util.function.BooleanSupplier moddedCraftAllowed,
+                                                java.util.function.BiFunction<Player, java.util.Optional<UUID>, String> inspection,
+                                                java.util.function.BooleanSupplier gatheringRunning,
+                                                java.util.function.BooleanSupplier enhancementRunning) {
+        stagingWorkbench = operations == null || access == null ? null : new StagingWorkbench(operations, access,
+                moddedCraftAllowed == null ? () -> false : moddedCraftAllowed,
+                inspection == null ? (player, selected) -> "inspection unavailable" : inspection,
+                new StagingWorkbenchPresenter(operations,
+                        gatheringRunning == null ? () -> false : gatheringRunning,
+                        enhancementRunning == null ? () -> false : enhancementRunning,
+                        moddedCraftAllowed == null ? () -> false : moddedCraftAllowed));
+    }
+
+    public static boolean openStagingWorkbench(Player player) {
+        if (player == null) return false;
+        DevMenuManager manager = installedManager;
+        if (manager == null || stagingWorkbench == null) return false;
+        manager.open(player, Page.STAGING, 0);
+        return true;
+    }
 
     public DevMenuManager(
             ProjectSPlugin plugin,
@@ -92,6 +138,7 @@ public final class DevMenuManager implements Listener {
         this.resourceManager = resourceManager;
         this.enhancementManager = enhancementManager;
         this.hardControlTestTool = hardControlTestTool;
+        installedManager = this;
     }
 
     public void open(Player player) {
@@ -103,11 +150,22 @@ public final class DevMenuManager implements Listener {
     }
 
     private void open(Player player, Page page, int pageNumber) {
+        open(player, page, pageNumber, null);
+    }
+
+    private void open(Player player, Page page, int pageNumber, UUID selectedEquipment) {
+        open(player, page, pageNumber, selectedEquipment, null);
+    }
+
+    private void open(Player player, Page page, int pageNumber, UUID selectedEquipment,
+                      DevMenuHolder stagingState) {
         if (!player.hasPermission(PERMISSION)) {
             player.closeInventory();
             return;
         }
         DevMenuHolder holder = new DevMenuHolder(page, Math.max(0, pageNumber));
+        holder.copyStagingStateFrom(stagingState);
+        holder.selectEquipment(selectedEquipment);
         Inventory inventory = Bukkit.createInventory(holder, 54, Component.text(page.title));
         holder.setInventory(inventory);
         fillBackground(inventory);
@@ -122,9 +180,15 @@ public final class DevMenuManager implements Listener {
             case STATS -> renderStats(holder, inventory, player);
             case DEBUG -> renderDebug(holder, inventory, player);
             case CLASSES -> renderClasses(holder, inventory, player);
+            case STAGING -> renderStaging(holder, inventory, player);
             case CONFIRM_CLEAR, CONFIRM_REMOVE_ALL -> renderConfirmation(holder, inventory);
         }
         player.openInventory(inventory);
+    }
+
+    private void refreshStaging(Player player, DevMenuHolder holder) {
+        holder.beginStagingRefresh();
+        open(player, Page.STAGING, 0, holder.selectedEquipment(), holder);
     }
 
     private void renderMain(DevMenuHolder holder, Inventory inventory) {
@@ -138,6 +202,7 @@ public final class DevMenuManager implements Listener {
         category(holder, inventory, 34, Material.COMPARATOR, "デバッグ情報", Page.DEBUG);
         category(holder, inventory, 26, Material.NETHERITE_SWORD,
                 "手持ち武器の個体補正", Page.STATS);
+        category(holder, inventory, 24, Material.CRAFTING_TABLE, "生産・MODテスト", Page.STAGING);
         button(holder, inventory, 49, Material.SUNFLOWER, "更新", List.of("表示内容を再取得"),
                 (player, click) -> open(player, Page.MAIN, 0));
         button(holder, inventory, 50, Material.BARRIER, "閉じる", List.of(), (player, click) -> player.closeInventory());
@@ -198,6 +263,100 @@ public final class DevMenuManager implements Listener {
                     (target, click) -> { painter.cycleQuality(); open(target, Page.CLASSES, 0); });
         }
         navigation(holder, inventory, false, false);
+    }
+
+    private void renderStaging(DevMenuHolder holder, Inventory inventory, Player player) {
+        StagingWorkbench workbench = stagingWorkbench;
+        if (workbench == null) {
+            button(holder, inventory, 22, Material.BARRIER, "生産・MODテスト", List.of("Beta staging is unavailable", "読み取り専用"), null);
+            navigation(holder, inventory, false, false); return;
+        }
+        StagingOperationAccess access = workbench.access.apply(player);
+        var view = workbench.presenter.view(access, java.util.Optional.ofNullable(holder.selectedEquipment()));
+        var snapshot = view.snapshot();
+        boolean writable = view.readOnlyReason().isBlank();
+        button(holder, inventory, 4, Material.BOOK, "Staging 状態", List.of(
+                "revision=" + snapshot.revision(), "ore=" + snapshot.resources().getOrDefault("projects:staging/iron-ore", 0L),
+                "ingot=" + snapshot.resources().getOrDefault("projects:staging/iron-ingot", 0L),
+                "equipment=" + snapshot.equipment().size(), "reserved=" + snapshot.activeReservations(),
+                "GATHERING_CRAFTING=" + (view.gatheringRunning() ? "RUNNING" : "not RUNNING"),
+                "ENHANCEMENT_REPAIR=" + (view.enhancementRunning() ? "RUNNING" : "not RUNNING"),
+                "mutation=" + access.activationPolicy().mutationPolicy(),
+                writable ? "STAGING_WRITE: allowed" : "読み取り専用: " + view.readOnlyReason(),
+                holder.stagingOutcome().isBlank() ? "last operation: none"
+                        : "last operation: " + holder.stagingOutcome()), null);
+        stagingAction(holder, inventory, 20, Material.RAW_IRON, "テスト鉱石を10個取得", "give", writable,
+                StagingEconomyOperationPort.OperationKind.GIVE, "projects:staging/iron-ore", 10, player);
+        stagingAction(holder, inventory, 22, Material.BLAST_FURNACE, "精錬 (鉱石2 → インゴット1)", "refine", writable,
+                StagingEconomyOperationPort.OperationKind.REFINE, null, 0, player);
+        stagingAction(holder, inventory, 24, Material.IRON_SWORD, "T1テスト武器を作成", "craft", writable,
+                StagingEconomyOperationPort.OperationKind.CRAFT, null, 0, player);
+        button(holder, inventory, 30, Material.CHEST, "装備一覧", List.of("staging equipment=" + snapshot.equipment().size(), "クリックで選択を切替"),
+                (target, click) -> {
+                    var equipment = workbench.operations.status(target.getUniqueId()).equipment();
+                    if (!equipment.isEmpty()) {
+                        int selected = java.util.stream.IntStream.range(0, equipment.size()).filter(i -> equipment.get(i).instanceId().equals(java.util.Optional.ofNullable(holder.selectedEquipment()))).findFirst().orElse(-1);
+                        holder.selectEquipment(equipment.get((selected + 1) % equipment.size()).instanceId().orElse(null));
+                    }
+                    refreshStaging(target, holder);
+                });
+        button(holder, inventory, 31, Material.SPYGLASS, "選択装備を検査", snapshot.equipment().isEmpty()
+                ? List.of("装備なし") : List.of(workbench.inspection.apply(player, java.util.Optional.ofNullable(holder.selectedEquipment()))),
+                snapshot.equipment().isEmpty() ? null : (target, click) -> target.sendMessage(Component.text(
+                        workbench.inspection.apply(target, java.util.Optional.ofNullable(holder.selectedEquipment())))));
+        navigation(holder, inventory, false, false);
+    }
+
+    private void stagingAction(DevMenuHolder holder, Inventory inventory, int slot, Material icon,
+                               String name, String action, boolean writable,
+                               StagingEconomyOperationPort.OperationKind kind, String item, long quantity,
+                               Player viewer) {
+        StagingWorkbench workbench = stagingWorkbench;
+        String denial = workbench == null ? "staging unavailable" : workbench.presenter.denial(workbench.access.apply(viewer), kind);
+        boolean allowed = writable && denial.isBlank();
+        List<String> lore = allowed ? List.of("クリックで実行") : List.of("読み取り専用: " + denial);
+        button(holder, inventory, slot, allowed ? icon : Material.BARRIER, name, lore,
+                allowed ? (target, click) -> {
+                    StagingWorkbench activeWorkbench = stagingWorkbench;
+                    if (activeWorkbench == null) return;
+                    if (!holder.begin(action)) return;
+                    final StagingWorkbenchPresenter.Action actionResult;
+                    try {
+                        actionResult = activeWorkbench.presenter.action(holder.requestId(action),
+                                activeWorkbench.access.apply(target), kind,
+                                java.util.Optional.ofNullable(item), quantity);
+                    } catch (RuntimeException dispatchFailure) {
+                        // The operation may have crossed a live boundary. Retain its id for a
+                        // safe replay attempt, but release the synchronous click debounce.
+                        holder.finish(action);
+                        holder.stagingOutcome("COMMIT_UNCERTAIN: dispatch failed safely");
+                        target.sendMessage(Component.text(holder.stagingOutcome(), NamedTextColor.RED));
+                        refreshStaging(target, holder);
+                        return;
+                    }
+                    holder.finish(action);
+                    var result = actionResult.result().orElseGet(() -> StagingEconomyOperationPort.OperationResult.rejected(actionResult.denial()));
+                    holder.completeRequest(action, result.status());
+                    String outcome = operationOutcome(result);
+                    holder.stagingOutcome(outcome);
+                    target.sendMessage(Component.text(outcome,
+                            result.status() == StagingEconomyOperationPort.Status.COMMITTED
+                                    || result.status() == StagingEconomyOperationPort.Status.REPLAYED
+                                    ? NamedTextColor.GREEN : NamedTextColor.RED));
+                    refreshStaging(target, holder);
+                } : null);
+    }
+
+    private static String describe(io.github.gyai.projects.equipment.EquipmentItemV1 item) {
+        return "ID=" + item.itemId() + " UUID=" + item.instanceId().map(Object::toString).orElse("none")
+                + " Tier=" + item.tier() + " ILv=" + item.itemLevel();
+    }
+
+    /** Shared verbatim text for the chat confirmation and refreshed holder lore. */
+    static String operationOutcome(StagingEconomyOperationPort.OperationResult result) {
+        if (result == null) return StagingEconomyOperationPort.Status.REJECTED.name();
+        return result.status().name()
+                + (result.detail().isBlank() ? "" : ": " + result.detail());
     }
 
     private void renderItems(DevMenuHolder holder, Inventory inventory, boolean weapons) {
@@ -454,7 +613,9 @@ public final class DevMenuManager implements Listener {
         button(holder, inventory, 48, Material.OAK_DOOR, "戻る", List.of(),
                 (player, click) -> open(player, Page.MAIN, 0));
         button(holder, inventory, 49, Material.SUNFLOWER, "更新", List.of(),
-                (player, click) -> open(player, holder.page(), holder.pageNumber()));
+                refreshActionFor(holder.page(),
+                        (player, click) -> refreshStaging(player, holder),
+                        (player, click) -> open(player, holder.page(), holder.pageNumber())));
         button(holder, inventory, 50, Material.BARRIER, "閉じる", List.of(), (player, click) -> player.closeInventory());
         if (next) button(holder, inventory, 53, Material.ARROW, "次のページ", List.of(),
                 (player, click) -> open(player, holder.page(), holder.pageNumber() + 1));
@@ -570,14 +731,46 @@ public final class DevMenuManager implements Listener {
         }
     }
 
+    @EventHandler
+    public void onClose(InventoryCloseEvent event) {
+        if (event.getInventory().getHolder(false) instanceof DevMenuHolder holder
+                && holder.page() == Page.STAGING && event.getPlayer() instanceof Player player
+                && stagingWorkbench != null) {
+            if (holder.consumeStagingRefresh()) return;
+            clearStagingStateAndLogout(holder, stagingWorkbench.operations, player.getUniqueId());
+        }
+    }
+
     public void removePlayer(Player player) {
         savedLocations.remove(player.getUniqueId());
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        removePlayer(event.getPlayer());
-        inputListener.removePlayer(event.getPlayer());
+        Player player = event.getPlayer();
+        if (stagingWorkbench != null) {
+            var top = player.getOpenInventory().getTopInventory();
+            if (top.getHolder(false) instanceof DevMenuHolder holder) {
+                clearStagingStateAndLogout(holder, stagingWorkbench.operations, player.getUniqueId());
+            }
+        }
+        removePlayer(player);
+        inputListener.removePlayer(player);
+    }
+
+    /** Final navigation-layer selection: staging cannot be overwritten by a generic refresh. */
+    static MenuAction refreshActionFor(Page page, MenuAction stagingRefresh,
+                                       MenuAction genericRefresh) {
+        return page == Page.STAGING ? stagingRefresh : genericRefresh;
+    }
+
+    /** Shared close/quit boundary; repeated logout calls are safe at the operation port. */
+    static void clearStagingStateAndLogout(DevMenuHolder holder,
+                                           StagingEconomyOperationPort operations,
+                                           UUID playerId) {
+        if (holder == null || holder.page() != Page.STAGING) return;
+        holder.clearStagingState();
+        if (operations != null && playerId != null) operations.logout(playerId);
     }
 
     enum Page {
@@ -586,6 +779,7 @@ public final class DevMenuManager implements Listener {
         PLAYER("開発メニュー - プレイヤー操作"), COMBAT("開発メニュー - 戦闘テスト"),
         STATS("開発メニュー - 手持ち武器の個体補正"),
         CLASSES("開発メニュー - 職業テスト"), DEBUG("開発メニュー - デバッグ情報"),
+        STAGING("生産・MODテスト"),
         CONFIRM_CLEAR("確認 - インベントリ削除"), CONFIRM_REMOVE_ALL("確認 - ダミー全削除");
         private final String title;
         Page(String title) { this.title = title; }
@@ -595,4 +789,9 @@ public final class DevMenuManager implements Listener {
     @FunctionalInterface private interface EntryAction<T> { void run(T value, Player player, boolean shift); }
     private record CommandEntry(String path, String description, String note, boolean executable,
                                 java.util.function.Consumer<Player> action) { }
+    private record StagingWorkbench(StagingEconomyOperationPort operations,
+                                   Function<Player, StagingOperationAccess> access,
+                                   java.util.function.BooleanSupplier moddedCraftAllowed,
+                                   java.util.function.BiFunction<Player, java.util.Optional<UUID>, String> inspection,
+                                   StagingWorkbenchPresenter presenter) { }
 }
