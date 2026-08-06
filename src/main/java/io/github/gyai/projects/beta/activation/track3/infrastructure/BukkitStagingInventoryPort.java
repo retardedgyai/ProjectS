@@ -5,6 +5,7 @@ import io.github.gyai.projects.beta.activation.track3.StagingEconomyCatalog;
 import io.github.gyai.projects.beta.activation.track3.StagingEquipmentCodec;
 import io.github.gyai.projects.beta.activation.track3.StagingEquipmentDocument;
 import io.github.gyai.projects.beta.activation.track3.StagingInventoryPort;
+import io.github.gyai.projects.crafting.OutputProposal;
 import io.github.gyai.projects.equipment.EquipmentItemV1;
 import io.github.gyai.projects.equipment.operation.OperationResourcePlan;
 import io.github.gyai.projects.transaction.InventoryCapacityProposal;
@@ -76,6 +77,39 @@ public final class BukkitStagingInventoryPort implements StagingInventoryPort {
             TransactionRequest request, OperationResourcePlan resources) {
         if (bridge.snapshot(playerId).isEmpty()) return Optional.empty();
         return transactions.validate(playerId, request, resources);
+    }
+
+    @Override public synchronized ResourceValidation validateResource(
+            UUID playerId,
+            TransactionRequest request,
+            OperationResourcePlan resources,
+            OutputProposal output
+    ) {
+        if (output == null || output.quantity() != request.expectedOutputUnits()) {
+            return ResourceValidation.rejected("invalid-resource-output");
+        }
+        Optional<InventoryCapacityProposal> capacity = transactions.validate(playerId, request, resources);
+        if (capacity.isEmpty()) {
+            return ResourceValidation.rejected("output-capacity-or-resources-unavailable");
+        }
+        Optional<BukkitStagingInventoryBridge.InventorySnapshot> live = bridge.snapshot(playerId);
+        if (live.isEmpty()) {
+            return ResourceValidation.rejected("output-capacity-or-resources-unavailable");
+        }
+        ItemStack[] afterInputs = copy(live.orElseThrow().contents());
+        try {
+            for (OperationResourcePlan.MaterialCost cost : resources.materials()) {
+                remove(afterInputs, StagingEconomyCatalog.itemIdForTransactionResource(cost.materialId()),
+                        cost.quantity());
+            }
+            removeEquipmentInputs(afterInputs, request);
+        } catch (IllegalArgumentException | IllegalStateException unavailable) {
+            return ResourceValidation.rejected("output-capacity-or-resources-unavailable");
+        }
+        if (!add(afterInputs, output.outputId(), output.quantity())) {
+            return ResourceValidation.rejected("full-inventory");
+        }
+        return ResourceValidation.accepted(capacity.orElseThrow());
     }
 
     @Override public synchronized ReservationToken reserve(UUID playerId, TransactionRequest request,

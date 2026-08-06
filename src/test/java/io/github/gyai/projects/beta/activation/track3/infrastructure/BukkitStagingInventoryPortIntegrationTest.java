@@ -303,15 +303,45 @@ public final class BukkitStagingInventoryPortIntegrationTest {
 
         MemoryAccess full = new MemoryAccess(player, new ItemStack[]{
                 new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)});
-        StagingEconomyService fullService = service(inventory(full), new BoundedStagingOperationJournal(32),
+        AtomicInteger fullIntents = new AtomicInteger();
+        AtomicInteger fullTerminals = new AtomicInteger();
+        BoundedStagingOperationJournal fullJournal = new BoundedStagingOperationJournal(32,
+                new StagingTransactionAuditSink() {
+                    @Override public void resolved(EquipmentMutationProposal proposal) { }
+                    @Override public void resourceIntent(TransactionRequest request, io.github.gyai.projects.crafting.OutputProposal output) {
+                        fullIntents.incrementAndGet();
+                    }
+                    @Override public void terminal(io.github.gyai.projects.transaction.TransactionAuditResult result) {
+                        fullTerminals.incrementAndGet();
+                    }
+                });
+        StagingEconomyService fullService = service(inventory(full), fullJournal,
                 () -> new UUID(0, 783));
+        RewardClaimRequest fullClaim = claim(player, 784);
         try {
             RewardDeliveryReceipt receipt = Track3ToTrack4Ports.delivery(fullService, policy, () -> true)
-                    .deliver(claim(player, 784), StagingEconomyCatalog.TEST_TOKEN, 1, context);
+                    .deliver(fullClaim, StagingEconomyCatalog.TEST_TOKEN, 1, context);
             check(receipt.status() == RewardDeliveryReceipt.Status.FULL_INVENTORY,
                     "known-full live storage was not classified as FULL_INVENTORY: " + receipt);
             check(same(new ItemStack[]{new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)}, full.copy()),
                     "full Track 4 delivery changed live storage");
+            check(fullJournal.size() == 0 && fullIntents.get() == 0 && fullTerminals.get() == 0
+                            && fullService.status(player).activeReservations() == 0,
+                    "full Track 4 delivery entered a resource or terminal journal stage");
+
+            full.storage[1] = null;
+            StagingItemDeliveryPort retryDelivery = Track3ToTrack4Ports.delivery(fullService, policy, () -> true);
+            RewardDeliveryReceipt delivered = retryDelivery.deliver(fullClaim,
+                    StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(delivered.status() == RewardDeliveryReceipt.Status.DELIVERED && delivered.durable()
+                            && count(full.copy(), Material.PAPER) == 1,
+                    "same Track 4 claim did not commit exactly one token after freeing a slot: " + delivered);
+            ItemStack[] committed = full.copy();
+            RewardDeliveryReceipt replay = retryDelivery.deliver(fullClaim,
+                    StagingEconomyCatalog.TEST_TOKEN, 1, context);
+            check(replay.status() == RewardDeliveryReceipt.Status.DELIVERED && replay.durable()
+                            && same(committed, full.copy()) && fullIntents.get() == 1 && fullTerminals.get() == 1,
+                    "successful Track 4 claim replay duplicated a token or rewrote custody: " + replay);
         } finally { fullService.close(); }
 
         MemoryAccess uncertain = new MemoryAccess(player, new ItemStack[2]);
@@ -371,16 +401,31 @@ public final class BukkitStagingInventoryPortIntegrationTest {
 
         MemoryAccess full = new MemoryAccess(player, new ItemStack[]{
                 new TestStack(Material.STONE, 1), new TestStack(Material.DIRT, 1)});
-        StagingEconomyService fullService = service(inventory(full), new BoundedStagingOperationJournal(32),
+        BoundedStagingOperationJournal fullJournal = new BoundedStagingOperationJournal(32);
+        StagingEconomyService fullService = service(inventory(full), fullJournal,
                 () -> new UUID(0, 773));
         try {
             ItemStack[] before = full.copy();
-            var result = fullService.deliver(access, new UUID(0, 774),
+            UUID requestId = new UUID(0, 774);
+            var result = fullService.deliver(access, requestId,
                     StagingEconomyCatalog.TEST_TOKEN, 1);
-            check(result.status() != StagingEconomyOperationPort.Status.COMMITTED
-                            && result.status() != StagingEconomyOperationPort.Status.REPLAYED,
-                    "full live storage accepted token delivery");
-            check(same(before, full.copy()), "full token delivery mutated live storage");
+            check(result.status() == StagingEconomyOperationPort.Status.REJECTED
+                            && result.detail().equals("full-inventory"),
+                    "full live storage was not rejected at capacity validation: " + result);
+            check(same(before, full.copy()) && fullJournal.size() == 0
+                            && fullService.status(player).activeReservations() == 0,
+                    "full token delivery mutated storage or retained custody");
+
+            full.storage[1] = null;
+            var committed = fullService.deliver(access, requestId, StagingEconomyCatalog.TEST_TOKEN, 1);
+            check(committed.status() == StagingEconomyOperationPort.Status.COMMITTED
+                            && count(full.copy(), Material.PAPER) == 1,
+                    "same direct delivery did not commit after freeing a slot: " + committed);
+            ItemStack[] delivered = full.copy();
+            check(fullService.deliver(access, requestId, StagingEconomyCatalog.TEST_TOKEN, 1).status()
+                            == StagingEconomyOperationPort.Status.REPLAYED
+                            && same(delivered, full.copy()),
+                    "same direct delivery replay duplicated the committed token");
         } finally { fullService.close(); }
     }
 
