@@ -47,6 +47,7 @@ docs/research/
 ├─ harvest-template.md
 └─ sources/
    ├─ wynncraft.md
+   ├─ monumenta.md
    └─ <other-source>.md
 ```
 
@@ -64,6 +65,7 @@ docs/research/
 | Source | Status | File | Notes |
 |---|---|---|---|
 | Wynncraft GitHub | HARVESTED | `sources/wynncraft.md` | アルゴリズム検証、JMH、データ駆動、旧ネットワーク管理基盤 |
+| Team Monumenta GitHub | HARVESTED | `sources/monumenta.md` | Skill/VFX/Hitbox/Damage/ItemStat/Boss/Market/Item migration/Quest DSL/Mob library/Client sync |
 | Other research runs | pending import | - | 他チャット・他プロンプトの結果を同形式で後から統合 |
 
 ## 後で統合するときの流れ
