@@ -20,7 +20,7 @@ ProjectSで参考にした外部プロジェクト・MMO・Minecraftサーバー
 3. **採用判断は横断比較後。**
    - 他ソースにもっと良い実装・設計がある可能性を残す。
 4. **候補にはIDを付ける。**
-   - 例: `WYNN-001`, `MONU-001`。
+   - 例: `WYNN-001`, `MONU-001`, `LEPI-001`。
    - 後から統合表で重複・競合を処理しやすくする。
 
 ## ステータス
@@ -48,6 +48,7 @@ docs/research/
 └─ sources/
    ├─ wynncraft.md
    ├─ monumenta.md
+   ├─ lepinoid.md
    └─ <other-source>.md
 ```
 
@@ -66,6 +67,7 @@ docs/research/
 |---|---|---|---|
 | Wynncraft GitHub | HARVESTED | `sources/wynncraft.md` | アルゴリズム検証、JMH、データ駆動、旧ネットワーク管理基盤 |
 | Team Monumenta GitHub | HARVESTED | `sources/monumenta.md` | Skill/VFX/Hitbox/Damage/ItemStat/Boss/Market/Item migration/Quest DSL/Mob library/Client sync |
+| Lepinoid GitHub | HARVESTED | `sources/lepinoid.md` | Blockbench pure schema、DSL設計、Shared CI、Renovate、Model/Protocol共有、GitOps/運用基盤 |
 | Other research runs | pending import | - | 他チャット・他プロンプトの結果を同形式で後から統合 |
 
 ## 後で統合するときの流れ
