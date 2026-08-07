@@ -1,6 +1,7 @@
 package io.github.gyai.projects.command;
 
 import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
+import io.github.gyai.projects.ability.DevAbilityService;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
@@ -40,6 +41,7 @@ public class ProjectCommand implements CommandExecutor {
     private final DamageShadowCommandRouter damageShadowCommandRouter;
     private final StarterSwordRouteCommandService damageRouteCommandService;
     private final BetaRuntimeCommandService betaRuntimeCommandService;
+    private final DevAbilityService devAbilityService;
 
     public ProjectCommand(
             ItemManager itemManager,
@@ -56,7 +58,7 @@ public class ProjectCommand implements CommandExecutor {
         this(itemManager, dummyManager, devMenuManager, enhancementListener,
                 monsterManager, crowdControlManager, statusEffectManager,
                 playerManager, damageShadowCommandService, null,
-                damageRouteCommandService, null);
+                damageRouteCommandService, null, null);
     }
 
     public ProjectCommand(
@@ -75,7 +77,7 @@ public class ProjectCommand implements CommandExecutor {
         this(itemManager, dummyManager, devMenuManager, enhancementListener,
                 monsterManager, crowdControlManager, statusEffectManager,
                 playerManager, damageShadowCommandService,
-                spinSlashShadowCommandService, damageRouteCommandService, null);
+                spinSlashShadowCommandService, damageRouteCommandService, null, null);
     }
 
     public ProjectCommand(
@@ -92,6 +94,21 @@ public class ProjectCommand implements CommandExecutor {
             StarterSwordRouteCommandService damageRouteCommandService,
             BetaRuntimeCommandService betaRuntimeCommandService
     ) {
+        this(itemManager, dummyManager, devMenuManager, enhancementListener, monsterManager,
+                crowdControlManager, statusEffectManager, playerManager, damageShadowCommandService,
+                spinSlashShadowCommandService, damageRouteCommandService, betaRuntimeCommandService, null);
+    }
+
+    public ProjectCommand(
+            ItemManager itemManager, TrainingDummyManager dummyManager, DevMenuManager devMenuManager,
+            EnhancementListener enhancementListener, MonsterManager monsterManager,
+            CrowdControlManager crowdControlManager, StatusEffectManager statusEffectManager,
+            PlayerManager playerManager, DamageShadowCommandService damageShadowCommandService,
+            DamageShadowCommandService spinSlashShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService,
+            BetaRuntimeCommandService betaRuntimeCommandService,
+            DevAbilityService devAbilityService
+    ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
         this.devMenuManager = devMenuManager;
@@ -104,6 +121,7 @@ public class ProjectCommand implements CommandExecutor {
                 damageShadowCommandService, spinSlashShadowCommandService);
         this.damageRouteCommandService = damageRouteCommandService;
         this.betaRuntimeCommandService = betaRuntimeCommandService;
+        this.devAbilityService = devAbilityService;
     }
 
     @Override
@@ -123,6 +141,9 @@ public class ProjectCommand implements CommandExecutor {
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("beta")) {
             return handleBetaCommand(sender, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("ability")) {
+            return handleAbilityCommand(sender, args);
         }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("このコマンドはゲーム内で実行してください。");
@@ -182,6 +203,16 @@ public class ProjectCommand implements CommandExecutor {
         player.sendMessage("§aProjectSの剣を受け取りました！");
 
         return true;
+    }
+
+    private boolean handleAbilityCommand(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("projects.dev")) { sender.sendMessage("§cこのコマンドを実行する権限がありません。"); return true; }
+        if (!(sender instanceof Player player)) { sender.sendMessage("このコマンドはゲーム内で実行してください。"); return true; }
+        if (devAbilityService == null) { sender.sendMessage("§cAbility runtime is unavailable."); return true; }
+        DevAbilityService.Result result = args.length >= 2 && args[1].equalsIgnoreCase("player")
+                ? devAbilityService.castPlayer(player) : args.length >= 2 && args[1].equalsIgnoreCase("mob")
+                ? devAbilityService.castMob(player) : new DevAbilityService.Result(false, "使用法: /projects ability [player|mob]");
+        sender.sendMessage((result.success() ? "§a" : "§c") + result.message()); return true;
     }
 
     private boolean handleDamageShadowCommand(

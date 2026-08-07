@@ -72,6 +72,20 @@ val telegraphFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val abilityRuntimeFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.AbilityRuntimeFoundationTest")
+    jvmArgs("-ea")
+}
+
+val mobAbilityDamageParityTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.combat.damage.MobAbilityDamageParityTest")
+    jvmArgs("-ea")
+}
+
 val statFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -554,6 +568,8 @@ tasks.test {
 }
 
 tasks.named("check") {
+    dependsOn(abilityRuntimeFoundationTest)
+    dependsOn(mobAbilityDamageParityTest)
     dependsOn(elementSnapshotProtocolDiagnosticsTest)
     dependsOn(track3StagingItemWriterTest)
     dependsOn(track3EconomyOperationTest)
