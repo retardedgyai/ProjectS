@@ -2,8 +2,13 @@ package io.github.gyai.projects.beta.activation.track3;
 
 import io.github.gyai.projects.equipment.EquipmentItemV1;
 import io.github.gyai.projects.equipment.EquipmentModSlot;
+import io.github.gyai.projects.equipment.EquipmentRarity;
 import io.github.gyai.projects.equipment.EquipmentTier;
+import io.github.gyai.projects.mod.ModDefinition;
+import io.github.gyai.projects.mod.ModRank;
 import io.github.gyai.projects.mod.UnknownModEntry;
+import io.github.gyai.projects.beta.activation.track3.infrastructure.BukkitStagingInventoryPortIntegrationTest;
+import io.github.gyai.projects.beta.activation.track3.infrastructure.StagingEquipmentInspectionPresentationTest;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -23,8 +28,15 @@ public final class Track3StagingItemWriterTest {
     public static void main(String[] args) {
         catalogAndCodecRoundTripAreBounded();
         unsupportedModsRemainDisabled();
+        duplicateModIdsAreNeverInsertedAcrossSlots();
+        ineligibleStagingFixtureNeverConsumesModRng();
         uuidIsGeneratedOnlyAtCommitAndOnlyOnce();
         auditWritesOnlyToTheStagingTransactionRoot();
+        StagingEquipmentInspectionPresentationTest.runAll();
+        BukkitStagingInventoryPortIntegrationTest.runAll();
+        Track3CraftFailureSafetyTest.runAll();
+        Track3FinalizedOutputRecoveryTest.runAll();
+        io.github.gyai.projects.dev.DevMenuStagingHolderStateTest.runAll();
     }
 
     private static void catalogAndCodecRoundTripAreBounded() {
@@ -69,6 +81,73 @@ public final class Track3StagingItemWriterTest {
         opaque[0] = 99;
         assert ((UnknownModEntry) decoded.item().modSlots().getFirst()
                 .entry().orElseThrow()).payload()[0] == 1 : "opaque payload leaked";
+        String rendered = StagingEquipmentInspectionFormatter.format(decoded.item());
+        assert rendered.contains("ID=" + item.itemId()) && rendered.contains("Tier=")
+                && rendered.contains("ILv=") && rendered.contains("Rarity=")
+                && rendered.contains("Category=") && rendered.contains("Slot=")
+                && rendered.contains("UNKNOWN / 効果無効");
+    }
+
+    private static void duplicateModIdsAreNeverInsertedAcrossSlots() {
+        EquipmentItemV1 preview = StagingEconomyCatalog.previewBlade(EquipmentTier.T1);
+        var roller = new StagingModRollService(StagingModRollService.defaultCandidates(), () -> .25);
+        var known = roller.resolve(preview).modSlots().getFirst().entry().orElseThrow();
+        EquipmentItemV1 knownDuplicate = withSlots(preview, List.of(
+                new EquipmentModSlot(0, Optional.of(known)), EquipmentModSlot.empty(1)));
+        java.util.concurrent.atomic.AtomicInteger rolls = new java.util.concurrent.atomic.AtomicInteger();
+        EquipmentItemV1 knownResult = new StagingModRollService(
+                StagingModRollService.defaultCandidates(), () -> {
+                    rolls.incrementAndGet(); return .25;
+                }).resolve(knownDuplicate);
+        assert knownResult.equals(knownDuplicate) && rolls.get() == 0
+                : "known duplicate MOD was inserted into another slot";
+
+        UnknownModEntry opaque = new UnknownModEntry(0, "future-mod", 99,
+                StagingModRollService.KEEN_EDGE, new byte[]{1, 2, 3});
+        EquipmentItemV1 opaqueDuplicate = withSlots(preview, List.of(
+                new EquipmentModSlot(0, Optional.of(opaque)), EquipmentModSlot.empty(1)));
+        EquipmentItemV1 opaqueResult = new StagingModRollService(
+                StagingModRollService.defaultCandidates(), () -> .25).resolve(opaqueDuplicate);
+        assert opaqueResult.equals(opaqueDuplicate)
+                && opaqueResult.modSlots().get(1).entry().isEmpty()
+                : "opaque duplicate MOD was inserted into another slot";
+    }
+
+    private static EquipmentItemV1 withSlots(EquipmentItemV1 base, List<EquipmentModSlot> slots) {
+        return new EquipmentItemV1(base.schemaVersion(), base.itemId(), base.category(), base.slot(),
+                base.tier(), base.itemLevel(), EquipmentRarity.UNCOMMON, base.quality(), base.baseStatRolls(),
+                slots, base.crafter(), base.enhancementLevel(), base.broken(), base.binding(),
+                base.tradePolicy(), base.instanceId());
+    }
+
+    private static void ineligibleStagingFixtureNeverConsumesModRng() {
+        EquipmentItemV1 preview = StagingEconomyCatalog.previewBlade(EquipmentTier.T1);
+        assertNoRoll(preview, EquipmentTier.T1, 2, StagingModRollService.defaultCandidates(),
+                "ILv other than the staging fixture ILv 1 accepted a MOD");
+        assertNoRoll(preview, EquipmentTier.T2, 16, StagingModRollService.defaultCandidates(),
+                "wrong tier accepted a staging T1 MOD");
+
+        ModDefinition source = StagingModRollService.defaultCandidates().getFirst().definition();
+        ModDefinition wrongRank = new ModDefinition(source.schemaVersion(), source.modId(),
+                ModRank.RANK_2, source.allowedSlots(), source.requiredTags(), source.excludedTags(),
+                source.tagMatchPolicy(), source.statId(), source.minimumValue(), source.maximumValue(),
+                source.stackingLayer(), source.source(), source.display(), source.definitionRevision());
+        assertNoRoll(preview, EquipmentTier.T1, 1,
+                List.of(new StagingModRollService.Candidate(wrongRank, 1.0)),
+                "wrong rank candidate consumed RNG or populated a MOD");
+    }
+
+    private static void assertNoRoll(EquipmentItemV1 base, EquipmentTier tier, int itemLevel,
+                                     List<StagingModRollService.Candidate> candidates, String message) {
+        EquipmentItemV1 mutated = new EquipmentItemV1(base.schemaVersion(), base.itemId(),
+                base.category(), base.slot(), tier, itemLevel, base.rarity(), base.quality(),
+                base.baseStatRolls(), base.modSlots(), base.crafter(), base.enhancementLevel(),
+                base.broken(), base.binding(), base.tradePolicy(), base.instanceId());
+        AtomicInteger rolls = new AtomicInteger();
+        EquipmentItemV1 result = new StagingModRollService(candidates, () -> {
+            rolls.incrementAndGet(); return .25;
+        }).resolve(mutated);
+        assert result.equals(mutated) && rolls.get() == 0 : message;
     }
 
     private static void uuidIsGeneratedOnlyAtCommitAndOnlyOnce() {
@@ -100,11 +179,15 @@ public final class Track3StagingItemWriterTest {
         assert result.status() == StagingEconomyOperationPort.Status.COMMITTED : result;
         assert uuidCalls.get() == 1;
         assert result.equipment().orElseThrow().instanceId().orElseThrow().equals(generated);
+        assert result.equipment().orElseThrow().modSlots().getFirst().entry().isPresent()
+                : "craft did not resolve the staging MOD after reservation";
 
         var replay = service.execute(StagingEconomyOperationPort.OperationRequest.action(
                 request, access, StagingEconomyOperationPort.OperationKind.CRAFT));
         assert replay.status() == StagingEconomyOperationPort.Status.REPLAYED;
         assert uuidCalls.get() == 1 : "duplicate request allocated another UUID";
+        assert replay.equipment().orElseThrow().equals(result.equipment().orElseThrow())
+                : "replay did not retain the finalized item";
         assert inventory.snapshot(player).equipment().size() == 1;
         service.close();
     }

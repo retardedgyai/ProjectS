@@ -70,7 +70,8 @@ public final class BetaOperatorContributorRegistry {
         }
         Entry entry = entries.get(arguments.get(1).toLowerCase(Locale.ROOT));
         if (entry == null) return new Result(false, List.of("unknown staging subject"));
-        if (health.moduleStates().get(entry.moduleId()) != BetaRuntimeModuleState.RUNNING) {
+        if (health.moduleStates().get(entry.moduleId()) != BetaRuntimeModuleState.RUNNING
+                && !allowsReadOnlyEconomyUi(entry, arguments, context)) {
             return new Result(false, List.of(DISABLED_MESSAGE));
         }
         try {
@@ -106,6 +107,20 @@ public final class BetaOperatorContributorRegistry {
             lines.add(BetaRuntimeModuleResult.bounded(line));
         }
         return new Result(source.success(), lines);
+    }
+
+    /**
+     * The staging workbench is a read-only diagnostic surface until its own
+     * presenter admits writes. Keep this exception deliberately narrower than
+     * a general economy bypass: it needs the exact UI path and projects.dev.
+     */
+    private static boolean allowsReadOnlyEconomyUi(
+            Entry entry, List<String> arguments, Context context
+    ) {
+        return context != null && context.projectsDev()
+                && "economy".equals(entry.subject())
+                && arguments.size() == 3
+                && "ui".equalsIgnoreCase(arguments.get(2));
     }
 
     public record Entry(String subject, BetaRuntimeModuleId moduleId, Contributor contributor) {

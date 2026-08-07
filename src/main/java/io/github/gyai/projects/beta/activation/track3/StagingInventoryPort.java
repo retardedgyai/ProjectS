@@ -2,6 +2,7 @@ package io.github.gyai.projects.beta.activation.track3;
 
 import io.github.gyai.projects.equipment.EquipmentItemV1;
 import io.github.gyai.projects.equipment.operation.OperationResourcePlan;
+import io.github.gyai.projects.crafting.OutputProposal;
 import io.github.gyai.projects.transaction.InventoryCapacityProposal;
 import io.github.gyai.projects.transaction.ReservationToken;
 import io.github.gyai.projects.transaction.TransactionRequest;
@@ -20,6 +21,17 @@ public interface StagingInventoryPort extends AutoCloseable {
             UUID playerId,
             TransactionRequest request,
             OperationResourcePlan resources);
+
+    /**
+     * Validates a scalar resource output against the live inventory layout
+     * after its declared inputs would be consumed.  A rejected result at this
+     * boundary is safe to retry and must not acquire a reservation.
+     */
+    ResourceValidation validateResource(
+            UUID playerId,
+            TransactionRequest request,
+            OperationResourcePlan resources,
+            OutputProposal output);
 
     ReservationToken reserve(
             UUID playerId,
@@ -71,6 +83,28 @@ public interface StagingInventoryPort extends AutoCloseable {
             equipment = equipment == null ? Optional.empty() : equipment;
             status = status == null ? "" : status;
             if (status.length() > 128) throw new IllegalArgumentException("status is oversized");
+        }
+    }
+
+    record ResourceValidation(
+            Optional<InventoryCapacityProposal> capacity,
+            String reason
+    ) {
+        public ResourceValidation {
+            capacity = capacity == null ? Optional.empty() : capacity;
+            reason = reason == null ? "" : reason;
+            if (reason.length() > 128) throw new IllegalArgumentException("reason is oversized");
+            if (capacity.isPresent() != reason.isEmpty()) {
+                throw new IllegalArgumentException("resource validation must be accepted or rejected");
+            }
+        }
+
+        public static ResourceValidation accepted(InventoryCapacityProposal capacity) {
+            return new ResourceValidation(Optional.of(java.util.Objects.requireNonNull(capacity)), "");
+        }
+
+        public static ResourceValidation rejected(String reason) {
+            return new ResourceValidation(Optional.empty(), reason);
         }
     }
 

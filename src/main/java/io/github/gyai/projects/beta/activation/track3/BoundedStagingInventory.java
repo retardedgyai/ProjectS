@@ -3,6 +3,7 @@ package io.github.gyai.projects.beta.activation.track3;
 import io.github.gyai.projects.equipment.EquipmentItemV1;
 import io.github.gyai.projects.equipment.operation.EquipmentMutationProposal;
 import io.github.gyai.projects.equipment.operation.OperationResourcePlan;
+import io.github.gyai.projects.crafting.OutputProposal;
 import io.github.gyai.projects.transaction.InventoryCapacityProposal;
 import io.github.gyai.projects.transaction.ReservationToken;
 import io.github.gyai.projects.transaction.TransactionRequest;
@@ -69,6 +70,22 @@ public final class BoundedStagingInventory implements StagingInventoryPort {
         }
         return Optional.of(InventoryCapacityProposal.reservedInventory(
                 request.expectedOutputUnits()));
+    }
+
+    @Override
+    public synchronized ResourceValidation validateResource(
+            UUID playerId,
+            TransactionRequest request,
+            OperationResourcePlan resources,
+            OutputProposal output
+    ) {
+        if (output == null || output.quantity() != request.expectedOutputUnits()) {
+            return ResourceValidation.rejected("invalid-resource-output");
+        }
+        return validate(playerId, request, resources)
+                .map(ResourceValidation::accepted)
+                .orElseGet(() -> ResourceValidation.rejected(
+                        "output-capacity-or-resources-unavailable"));
     }
 
     @Override
@@ -205,6 +222,24 @@ public final class BoundedStagingInventory implements StagingInventoryPort {
                 || state.equipment.putIfAbsent(item.instanceId().orElseThrow(), item) != null) {
             throw new IllegalStateException("staging equipment seed rejected");
         }
+    }
+
+    /** Replaces the bounded mirror from a fresh live snapshot only when not reserved. */
+    public synchronized void synchronizePlayerSnapshot(UUID playerId, Map<String, Long> resources,
+                                                        List<EquipmentItemV1> equipment) {
+        requireOpen();
+        if (reservations.values().stream().anyMatch(value -> value.playerId.equals(playerId))) return;
+        PlayerState state = player(playerId);
+        Map<String, Long> safeResources = Map.copyOf(resources == null ? Map.of() : resources);
+        LinkedHashMap<UUID, EquipmentItemV1> safeEquipment = new LinkedHashMap<>();
+        for (EquipmentItemV1 item : equipment == null ? List.<EquipmentItemV1>of() : equipment) {
+            UUID id = item.instanceId().orElseThrow(() -> new IllegalArgumentException("live staging item lacks UUID"));
+            safeEquipment.put(id, item);
+        }
+        if (state.resources.equals(safeResources) && state.equipment.equals(safeEquipment)) return;
+        state.resources.clear(); state.resources.putAll(safeResources);
+        state.equipment.clear(); state.equipment.putAll(safeEquipment);
+        state.revision = Math.addExact(state.revision, 1);
     }
 
     @Override

@@ -7,6 +7,9 @@ import io.github.gyai.projects.beta.activation.BetaMutationPolicy;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleContext;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleId;
 import io.github.gyai.projects.beta.activation.BetaRuntimeModuleState;
+import io.github.gyai.projects.beta.activation.BetaOperatorContributorRegistry;
+import io.github.gyai.projects.beta.activation.BetaRuntimeHealthSnapshot;
+import io.github.gyai.projects.beta.activation.BetaRuntimeHealthStatus;
 import io.github.gyai.projects.enhancement.v2.EnhancementOutcome;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
@@ -17,10 +20,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class Track3RuntimeModuleTest {
     private Track3RuntimeModuleTest() {
@@ -30,6 +35,9 @@ public final class Track3RuntimeModuleTest {
         providerPublishesTwoUnregisteredModules();
         lifecycleAndFeatureGatesAreFailClosedAndIdempotent();
         contributorIsPermissionBoundAndUnregistered();
+        uiCanOpenReadOnlyWhileWritesRemainRejected();
+        registryRoutesOnlyReadOnlyUiWhenEconomyIsNotRunning();
+        contributorInspectionIsBoundedWithoutDroppingNormalItemSummary();
         publicDomainPortsContainNoBukkitTypes();
         repositoryDefaultsAndProductionPathsRemainUntouched();
     }
@@ -103,7 +111,7 @@ public final class Track3RuntimeModuleTest {
                      Track3RuntimeModuleProvider.unregisteredStaging(Track3TestFixtures.CLOCK)) {
             StagingEconomyOperatorContributor contributor =
                     new StagingEconomyOperatorContributor(provider.service());
-            assert contributor.commandPaths().size() == 9;
+            assert contributor.commandPaths().size() == 11;
             assert contributor.commandPaths().contains(
                     "/projects beta staging economy enhance");
             UUID player = uuid(2);
@@ -112,6 +120,83 @@ public final class Track3RuntimeModuleTest {
                     player, allowed.worldName(), false, allowed.activationPolicy());
             assert !contributor.execute(denied, List.of("status")).success();
             assert contributor.execute(allowed, List.of("status")).success();
+        }
+    }
+
+    private static void uiCanOpenReadOnlyWhileWritesRemainRejected() {
+        UUID player = uuid(3);
+        AtomicReference<UUID> opened = new AtomicReference<>();
+        try (Track3RuntimeModuleProvider provider =
+                     Track3RuntimeModuleProvider.unregisteredStaging(Track3TestFixtures.CLOCK)) {
+            StagingEconomyOperatorContributor contributor = new StagingEconomyOperatorContributor(
+                    provider.service(), id -> {
+                        opened.set(id);
+                        return true;
+                    });
+            StagingOperationAccess readOnly = new StagingOperationAccess(
+                    player, "staging_world", true, BetaActivationPolicy.defaults());
+            assert contributor.execute(readOnly, List.of("ui")).success();
+            assert player.equals(opened.get()) : "read-only UI did not resolve the command player";
+            assert !contributor.execute(readOnly, List.of(
+                    "give", StagingEconomyCatalog.IRON_ORE, "1")).success()
+                    : "read-only UI access gained a write path";
+        }
+    }
+
+    /** Exercises the production-shaped registry -> contributor path, not the contributor alone. */
+    private static void registryRoutesOnlyReadOnlyUiWhenEconomyIsNotRunning() {
+        UUID player = uuid(31);
+        AtomicReference<UUID> opened = new AtomicReference<>();
+        try (Track3RuntimeModuleProvider provider =
+                     Track3RuntimeModuleProvider.unregisteredStaging(Track3TestFixtures.CLOCK)) {
+            StagingEconomyOperatorContributor contributor = new StagingEconomyOperatorContributor(
+                    provider.service(), id -> {
+                        opened.set(id);
+                        return true;
+                    });
+            BetaOperatorContributorRegistry registry = new BetaOperatorContributorRegistry(List.of(
+                    new BetaOperatorContributorRegistry.Entry("economy",
+                            BetaRuntimeModuleId.GATHERING_CRAFTING, (context, args) -> {
+                        var result = contributor.execute(new StagingOperationAccess(
+                                context.actorId(), context.worldName(), context.projectsDev(),
+                                BetaActivationPolicy.defaults()), args);
+                        return new BetaOperatorContributorRegistry.Result(result.success(),
+                                List.of(result.message()));
+                    })));
+            var health = new BetaRuntimeHealthSnapshot(Instant.EPOCH,
+                    BetaRuntimeHealthStatus.DISABLED,
+                    java.util.Map.of(BetaRuntimeModuleId.GATHERING_CRAFTING,
+                            BetaRuntimeModuleState.DISABLED), java.util.Map.of(), List.of(),
+                    0, 0, "", true);
+            var context = new BetaOperatorContributorRegistry.Context(
+                    player, "staging_world", true, false);
+            assert registry.execute(List.of("staging", "economy", "ui"), health, context).success();
+            assert player.equals(opened.get()) : "registry preempted read-only UI";
+            assert !registry.execute(List.of("staging", "economy", "status"), health, context).success();
+            assert !registry.execute(List.of("staging", "economy", "give",
+                    StagingEconomyCatalog.IRON_ORE, "1"), health, context).success();
+            assert !registry.execute(List.of("staging", "economy", "ui", "extra"),
+                    health, context).success();
+        }
+    }
+
+    private static void contributorInspectionIsBoundedWithoutDroppingNormalItemSummary() {
+        UUID player = uuid(4);
+        try (Track3TestFixtures.Fixture fixture = Track3TestFixtures.fixture(4)) {
+            StagingOperationAccess access = Track3TestFixtures.access(player);
+            fixture.inventory().seedResource(player, StagingEconomyCatalog.IRON_INGOT, 3);
+            assert fixture.service().execute(StagingEconomyOperationPort.OperationRequest.action(
+                    uuid(40), access, StagingEconomyOperationPort.OperationKind.CRAFT)).status()
+                    == StagingEconomyOperationPort.Status.COMMITTED;
+            StagingEconomyOperatorContributor contributor = new StagingEconomyOperatorContributor(
+                    fixture.service(), ignored -> true);
+            String message = contributor.execute(access, List.of("inspect")).message();
+            assert message.length() <= 256;
+            for (String field : List.of("ID=", "UUID=", "Tier=", "ILv=", "Rarity=", "Quality=",
+                    "Category=", "Slot=", "Enhancement=", "Broken=", "Binding=", "Trade=",
+                    "MOD slots=")) {
+                assert message.contains(field) : "bounded inspection omitted " + field;
+            }
         }
     }
 
@@ -156,6 +241,11 @@ public final class Track3RuntimeModuleTest {
                 StandardCharsets.UTF_8);
         assert !source.contains("plugins/ProjectS/data");
         assert !source.contains("PRODUCTION_WRITE");
+        String composition = read("src/main/java/io/github/gyai/projects/beta/activation/"
+                + "BetaActivationWave1CompositionRoot.java");
+        assert composition.contains("flags.isEnabled(FeatureKey.EQUIPMENT_V2)");
+        assert composition.contains("flags.isEnabled(FeatureKey.MOD_SYSTEM)");
+        assert composition.contains("equipment.inspectReadOnly(");
     }
 
     private static FeatureFlagSnapshot enabledFlags() {

@@ -2,6 +2,7 @@ package io.github.gyai.projects.beta.activation.track3;
 
 import io.github.gyai.projects.equipment.operation.EquipmentResourcePort;
 import io.github.gyai.projects.equipment.operation.OperationResourcePlan;
+import io.github.gyai.projects.crafting.OutputProposal;
 import io.github.gyai.projects.transaction.InventoryCapacityProposal;
 import io.github.gyai.projects.transaction.ReservationToken;
 import io.github.gyai.projects.transaction.TransactionRequest;
@@ -28,6 +29,14 @@ public final class StagingInventoryResourceAdapter implements EquipmentResourceP
             OperationResourcePlan resources
     ) {
         return inventory.validate(playerId, request, resources);
+    }
+
+    public StagingInventoryPort.ResourceValidation validateResource(
+            TransactionRequest request,
+            OperationResourcePlan resources,
+            OutputProposal output
+    ) {
+        return inventory.validateResource(playerId, request, resources, output);
     }
 
     @Override

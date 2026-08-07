@@ -21,6 +21,7 @@ public final class StagingInventoryTransactionAdapter implements AutoCloseable {
     private final BoundedStagingOperationJournal journal;
     private final TransactionEngine engine;
     private final Supplier<UUID> itemUuidSource;
+    private final StagingModRollService modRolls;
 
     public StagingInventoryTransactionAdapter(
             StagingInventoryPort inventory,
@@ -28,13 +29,24 @@ public final class StagingInventoryTransactionAdapter implements AutoCloseable {
             Clock clock,
             Supplier<UUID> itemUuidSource
     ) {
-        if (inventory == null || journal == null || clock == null || itemUuidSource == null) {
+        this(inventory, journal, clock, itemUuidSource, new StagingModRollService());
+    }
+
+    public StagingInventoryTransactionAdapter(
+            StagingInventoryPort inventory,
+            BoundedStagingOperationJournal journal,
+            Clock clock,
+            Supplier<UUID> itemUuidSource,
+            StagingModRollService modRolls
+    ) {
+        if (inventory == null || journal == null || clock == null || itemUuidSource == null || modRolls == null) {
             throw new IllegalArgumentException("transaction adapter input missing");
         }
         this.inventory = inventory;
         this.journal = journal;
         this.engine = new TransactionEngine(64, 512, clock);
         this.itemUuidSource = itemUuidSource;
+        this.modRolls = modRolls;
     }
 
     public Execution executeEquipment(
@@ -46,13 +58,17 @@ public final class StagingInventoryTransactionAdapter implements AutoCloseable {
                 new StagingInventoryResourceAdapter(playerId, inventory);
         StagingEquipmentWriter writer = new StagingEquipmentWriter(
                 playerId, plan.transactionRequest().requestId(), inventory,
-                resources, itemUuidSource);
+                resources, itemUuidSource, journal);
         TransactionParticipant participant = new EquipmentOperationParticipant(
                 plan, resources, writer, journal);
         TransactionAuditResult result = engine.execute(plan.transactionRequest(),
                 new FailureInjectingTransactionParticipant(participant, failurePoint));
-        return new Execution(result, writer.committedItem());
+        return new Execution(result, writer.committedItem().or(() ->
+                journal.finalizedEquipment(plan.transactionRequest().requestId())));
     }
+
+    /** Resolves only after reservation; preview construction never invokes this. */
+    EquipmentItemV1 resolveCraftMod(EquipmentItemV1 preview) { return modRolls.resolve(preview); }
 
     public Execution executeResource(
             UUID playerId,

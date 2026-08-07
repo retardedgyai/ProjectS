@@ -1,10 +1,13 @@
 package io.github.gyai.projects.beta.activation;
 
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyService;
+import io.github.gyai.projects.beta.activation.track3.StagingEconomyOperationPort;
 import io.github.gyai.projects.beta.activation.track3.StagingOperationAccess;
 import io.github.gyai.projects.beta.activation.track4.StagingItemDeliveryPort;
 import io.github.gyai.projects.reward.RewardClaimRequest;
 import io.github.gyai.projects.reward.RewardDeliveryReceipt;
+import io.github.gyai.projects.transaction.TransactionAuditResult;
+import io.github.gyai.projects.transaction.TransactionStage;
 
 /** Explicit adapters from the real Track 3 service to Track 4 consumer ports. */
 public final class Track3ToTrack4Ports {
@@ -36,11 +39,15 @@ public final class Track3ToTrack4Ports {
                 return switch (result.status()) {
                     case COMMITTED, REPLAYED -> new RewardDeliveryReceipt(
                             RewardDeliveryReceipt.Status.DELIVERED, result.detail(), true);
-                    case COMMIT_UNCERTAIN -> new RewardDeliveryReceipt(
-                            RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN, result.detail(), false);
+                    case COMMIT_UNCERTAIN -> new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.COMMIT_UNCERTAIN,
+                            result.detail(), false);
                     case ROLLED_BACK -> new RewardDeliveryReceipt(
                             RewardDeliveryReceipt.Status.PERSIST_FAILURE, result.detail(), false);
-                    case REJECTED, FAILED -> rejected(result.detail());
+                    case REJECTED -> knownSafeFullInventory(result)
+                            ? new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.FULL_INVENTORY,
+                            result.detail(), false)
+                            : rejected(result.detail());
+                    case FAILED -> rejected(result.detail());
                 };
             }
 
@@ -62,5 +69,17 @@ public final class Track3ToTrack4Ports {
     private static RewardDeliveryReceipt rejected(String reason) {
         return new RewardDeliveryReceipt(RewardDeliveryReceipt.Status.REJECTED,
                 reason == null ? "" : reason, false);
+    }
+
+    /** Only the pre-reservation resource-capacity result is safe to retry. */
+    private static boolean knownSafeFullInventory(
+            StagingEconomyOperationPort.OperationResult result
+    ) {
+        return result.transaction().map(transaction ->
+                transaction.operationId().equals("projects:staging-resource")
+                        && transaction.outcome() == TransactionAuditResult.Outcome.REJECTED
+                        && transaction.reason().equals("full-inventory")
+                        && transaction.completedStages().equals(java.util.List.of(TransactionStage.VALIDATE))
+                        && transaction.output().isEmpty()).orElse(false);
     }
 }

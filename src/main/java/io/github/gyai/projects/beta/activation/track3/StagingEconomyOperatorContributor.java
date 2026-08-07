@@ -8,16 +8,28 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import io.github.gyai.projects.dev.DevMenuManager;
+import org.bukkit.Bukkit;
 
 /** Descriptor and pure dispatcher only; ProjectCommand remains untouched. */
 public final class StagingEconomyOperatorContributor
         implements BetaOperatorCommandContributor {
     private static final String PREFIX = "/projects beta staging economy ";
     private final StagingEconomyOperationPort operations;
+    private final StagingWorkbenchOpener workbenchOpener;
 
     public StagingEconomyOperatorContributor(StagingEconomyOperationPort operations) {
+        this(operations, StagingEconomyOperatorContributor::openLiveWorkbench);
+    }
+
+    public StagingEconomyOperatorContributor(
+            StagingEconomyOperationPort operations,
+            StagingWorkbenchOpener workbenchOpener
+    ) {
         if (operations == null) throw new IllegalArgumentException("operations port is required");
+        if (workbenchOpener == null) throw new IllegalArgumentException("workbench opener is required");
         this.operations = operations;
+        this.workbenchOpener = workbenchOpener;
     }
 
     @Override
@@ -36,7 +48,9 @@ public final class StagingEconomyOperatorContributor
                 PREFIX + "enhance",
                 PREFIX + "break",
                 PREFIX + "repair",
-                PREFIX + "status");
+                PREFIX + "status",
+                PREFIX + "ui",
+                PREFIX + "inspect");
     }
 
     @Override
@@ -59,6 +73,19 @@ public final class StagingEconomyOperatorContributor
                         "revision=%d resources=%d equipment=%d reservations=%d".formatted(
                                 snapshot.revision(), snapshot.resources().size(),
                                 snapshot.equipment().size(), snapshot.activeReservations()));
+            }
+            if (action.equals("ui")) {
+                // The presenter renders this session read-only when activation denies writes.
+                boolean opened = workbenchOpener.open(access.playerId());
+                return new CommandResponse(opened,
+                        opened ? "staging workbench opened" : "player unavailable");
+            }
+            if (action.equals("inspect")) {
+                var equipment = operations.status(access.playerId()).equipment();
+                if (equipment.isEmpty()) return new CommandResponse(true, "no staging equipment");
+                var item = equipment.getFirst();
+                return new CommandResponse(true,
+                        StagingEquipmentInspectionFormatter.format(item, 256));
             }
             StagingEconomyOperationPort.OperationKind kind = switch (action) {
                 case "give" -> StagingEconomyOperationPort.OperationKind.GIVE;
@@ -105,5 +132,15 @@ public final class StagingEconomyOperatorContributor
 
     private static CommandResponse usage() {
         return new CommandResponse(false, "usage: /projects beta staging economy <action>");
+    }
+
+    private static boolean openLiveWorkbench(UUID playerId) {
+        var player = Bukkit.getPlayer(playerId);
+        return player != null && DevMenuManager.openStagingWorkbench(player);
+    }
+
+    @FunctionalInterface
+    public interface StagingWorkbenchOpener {
+        boolean open(UUID playerId);
     }
 }
