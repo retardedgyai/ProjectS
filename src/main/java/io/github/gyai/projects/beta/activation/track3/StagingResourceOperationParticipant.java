@@ -47,8 +47,10 @@ final class StagingResourceOperationParticipant implements TransactionParticipan
     @Override
     public Validation validate(TransactionRequest value) {
         if (!request.equals(value)) return Validation.deny("operation-plan-request-mismatch");
-        return adapter.validate(value, resources).map(Validation::allow)
-                .orElseGet(() -> Validation.deny("output-capacity-or-resources-unavailable"));
+        StagingInventoryPort.ResourceValidation validation = adapter.validateResource(
+                value, resources, output);
+        return validation.capacity().map(Validation::allow)
+                .orElseGet(() -> Validation.deny(validation.reason()));
     }
 
     @Override
@@ -59,6 +61,10 @@ final class StagingResourceOperationParticipant implements TransactionParticipan
 
     @Override
     public void consume(TransactionRequest value, ReservationToken token) {
+        if (!request.equals(value)) throw new IllegalStateException("operation-plan-request-mismatch");
+        // This is intentionally before adapter.consume(), whose Bukkit-backed
+        // implementation performs the first live inventory mutation.
+        journal.recordResourceIntent(value, output);
         adapter.consume(value, resources, token);
     }
 

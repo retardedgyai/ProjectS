@@ -20,16 +20,20 @@ import io.github.gyai.projects.beta.activation.track3.StagingEconomyOperatorCont
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyPaths;
 import io.github.gyai.projects.beta.activation.track3.StagingEconomyService;
 import io.github.gyai.projects.beta.activation.track3.StagingEnhancementOutcomeRegistry;
+import io.github.gyai.projects.beta.activation.track3.StagingEquipmentInspectionFormatter;
 import io.github.gyai.projects.beta.activation.track3.StagingInventoryTransactionAdapter;
 import io.github.gyai.projects.beta.activation.track3.StagingOperationAccess;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionJournalRepository;
 import io.github.gyai.projects.beta.activation.track3.StagingTransactionRecoveryService;
 import io.github.gyai.projects.beta.activation.track3.Track3RuntimeModuleProvider;
 import io.github.gyai.projects.beta.activation.track3.infrastructure.BukkitStagingInventoryBridge;
+import io.github.gyai.projects.beta.activation.track3.infrastructure.BukkitStagingEquipmentItemAdapter;
 import io.github.gyai.projects.beta.activation.track3.infrastructure.BukkitStagingInventoryPort;
 import io.github.gyai.projects.beta.activation.track4.*;
 import io.github.gyai.projects.dummy.TrainingDummyManager;
+import io.github.gyai.projects.dev.DevMenuManager;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
+import io.github.gyai.projects.feature.FeatureKey;
 import io.github.gyai.projects.manager.PlayerManager;
 import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.monster.definition.v2.MobDefinitionV2Policy;
@@ -79,6 +83,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
     private final ElementSnapshotProtocolPublisher elementPublisher;
     private final PreHitDamageModifier preHitDamageModifier;
     private final ConfirmedDamageHitObserver confirmedHitObserver;
+    private final AutoCloseable workbenchRegistration;
     private boolean closed;
 
     private BetaActivationWave1CompositionRoot(
@@ -100,7 +105,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
             BetaCapabilityAdvertisementPublisher advertisementPublisher,
             ElementSnapshotProtocolPublisher elementPublisher,
             PreHitDamageModifier preHitDamageModifier,
-            ConfirmedDamageHitObserver confirmedHitObserver
+            ConfirmedDamageHitObserver confirmedHitObserver,
+            AutoCloseable workbenchRegistration
     ) {
         this.track1 = track1; this.track2 = track2; this.track3 = track3; this.track4 = track4;
         this.infrastructure = Set.copyOf(infrastructure); this.operators = operators;
@@ -113,6 +119,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         this.elementPublisher = elementPublisher;
         this.preHitDamageModifier = preHitDamageModifier;
         this.confirmedHitObserver = confirmedHitObserver;
+        this.workbenchRegistration = workbenchRegistration;
         modules = new BetaActivationWave1ProviderRegistry(
                 track1, track2, track3, track4).modules();
     }
@@ -163,7 +170,8 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
         FileStagingTransactionAuditSink auditSink =
                 new FileStagingTransactionAuditSink(economyPaths, transactionRepository);
         BukkitStagingInventoryPort inventory = new BukkitStagingInventoryPort(
-                new BukkitStagingInventoryBridge(Bukkit::getPlayer));
+                new BukkitStagingInventoryBridge(Bukkit::getPlayer),
+                new BukkitStagingEquipmentItemAdapter(plugin));
         BoundedStagingOperationJournal operationJournal =
                 new BoundedStagingOperationJournal(512, auditSink);
         StagingTransactionRecoveryService recovery =
@@ -173,11 +181,12 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         inventory, operationJournal, clock, UUID::randomUUID);
         StagingEconomyService economy = new StagingEconomyService(
                 inventory, operationJournal, transactions,
-                new StagingEnhancementOutcomeRegistry());
+                new StagingEnhancementOutcomeRegistry(),
+                () -> flags.isEnabled(FeatureKey.EQUIPMENT_V2)
+                        && flags.isEnabled(FeatureKey.MOD_SYSTEM));
         Track3RuntimeModuleProvider track3 = new Track3RuntimeModuleProvider(economy, recovery);
         StagingEconomyOperatorContributor economyCommands =
                 new StagingEconomyOperatorContributor(economy);
-
         FileStagingQuestProgressPort questProgress = new FileStagingQuestProgressPort(
                 data.resolve("beta-staging").resolve("players").resolve("quests"));
         Track1QuestProgressPort questProgressPort =
@@ -327,6 +336,21 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                 track2.combatElementsModule()::state, dummies, clock,
                 playerId -> protocol.capabilitySnapshot(playerId)
                         .supports(BetaCapabilityId.ELEMENTS, 1));
+        // Install only after all fallible graph construction has succeeded; the root owns removal.
+        AutoCloseable workbenchRegistration = DevMenuManager.installStagingWorkbench(economy, player -> new StagingOperationAccess(
+                player.getUniqueId(), player.getWorld().getName(), player.hasPermission("projects.dev"),
+                policy), () -> flags.isEnabled(FeatureKey.EQUIPMENT_V2)
+                && flags.isEnabled(FeatureKey.MOD_SYSTEM), (player, selected) -> {
+                    var inspected = equipment.inspectReadOnly(
+                            player.getUniqueId(), equipmentReader.scan(player));
+                    return stagingInspectionText(inspected.items().stream()
+                            .flatMap(value -> value.projection().stream()).toList(), selected);
+                }, () -> track3.track3Modules().stream().anyMatch(module ->
+                        module.id() == BetaRuntimeModuleId.GATHERING_CRAFTING
+                                && module.state() == BetaRuntimeModuleState.RUNNING),
+                () -> track3.track3Modules().stream().anyMatch(module ->
+                        module.id() == BetaRuntimeModuleId.ENHANCEMENT_REPAIR
+                                && module.state() == BetaRuntimeModuleState.RUNNING));
         return new BetaActivationWave1CompositionRoot(track1, track2, track3, track4,
                 Set.of("track1.bukkit-listener", "track1.staging-player-store",
                         "track1.inventory-reader", "training-dummy-boundary",
@@ -336,13 +360,27 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
                         "minecraft-plugin-messaging"),
                 operators, progress, equipment, transactionRepository, recovery,
                 auditSink, operationJournal, questProgress, rewardClaims, protocol,
-                advertisementPublisher, publisher, modifier, observer);
+                advertisementPublisher, publisher, modifier, observer, workbenchRegistration);
     }
 
     private static BetaOperatorContributorRegistry.Entry entry(
             String subject, BetaRuntimeModuleId id,
             BetaOperatorContributorRegistry.Contributor contributor
     ) { return new BetaOperatorContributorRegistry.Entry(subject, id, contributor); }
+
+    /** Read-only Workbench projection: legacy equipment is never a staging fallback. */
+    static String stagingInspectionText(
+            List<io.github.gyai.projects.equipment.EquipmentItemV1> projections,
+            java.util.Optional<UUID> selected
+    ) {
+        return (projections == null ? List.<io.github.gyai.projects.equipment.EquipmentItemV1>of()
+                : projections).stream()
+                .filter(item -> io.github.gyai.projects.beta.activation.track3.StagingEconomyCatalog
+                        .isStagingItem(item.itemId()))
+                .filter(item -> (selected == null ? java.util.Optional.<UUID>empty() : selected)
+                        .map(id -> item.instanceId().filter(id::equals).isPresent()).orElse(true))
+                .findFirst().map(StagingEquipmentInspectionFormatter::format).orElse("装備なし");
+    }
 
     static io.github.gyai.projects.beta.activation.track4.BetaStagingPlayerLifecyclePort
             playerLifecycle(
@@ -433,6 +471,7 @@ public final class BetaActivationWave1CompositionRoot implements AutoCloseable {
 
     @Override public synchronized void close() {
         if (closed) return; closed = true;
+        closeSafely(workbenchRegistration);
         closeSafely(elementPublisher);
         closeSafely(advertisementPublisher);
         closeSafely(protocol);

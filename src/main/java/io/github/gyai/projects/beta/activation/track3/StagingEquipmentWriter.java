@@ -14,6 +14,7 @@ public final class StagingEquipmentWriter implements EquipmentWriteBoundary {
     private final StagingInventoryPort inventory;
     private final StagingInventoryResourceAdapter reservation;
     private final Supplier<UUID> uuidSource;
+    private final BoundedStagingOperationJournal journal;
     private final StagingEquipmentCodec codec;
     private UUID generatedId;
     private StagingInventoryPort.CommitResult lastResult;
@@ -23,10 +24,11 @@ public final class StagingEquipmentWriter implements EquipmentWriteBoundary {
             UUID requestId,
             StagingInventoryPort inventory,
             StagingInventoryResourceAdapter reservation,
-            Supplier<UUID> uuidSource
+            Supplier<UUID> uuidSource,
+            BoundedStagingOperationJournal journal
     ) {
         if (playerId == null || requestId == null || inventory == null
-                || reservation == null || uuidSource == null) {
+                || reservation == null || uuidSource == null || journal == null) {
             throw new IllegalArgumentException("staging writer input missing");
         }
         this.playerId = playerId;
@@ -34,6 +36,7 @@ public final class StagingEquipmentWriter implements EquipmentWriteBoundary {
         this.inventory = inventory;
         this.reservation = reservation;
         this.uuidSource = uuidSource;
+        this.journal = journal;
         this.codec = new StagingEquipmentCodec();
     }
 
@@ -52,6 +55,9 @@ public final class StagingEquipmentWriter implements EquipmentWriteBoundary {
             }
             committed = copyWithIdentity(committed, generatedId);
         }
+        // This precedes the live inventory mutation. A retry can therefore
+        // project the same identity even when commit acknowledgement is lost.
+        journal.recordFinalizedEquipment(requestId, committed);
         StagingEquipmentDocument document = codec.encode(committed, request.expectedRevision() + 1);
         lastResult = inventory.commitEquipment(
                 playerId, requestId, reservation.currentReservation(),

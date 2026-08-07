@@ -11,6 +11,8 @@ import io.github.gyai.projects.beta.activation.track1.bukkit.Track1ListenerRegis
 import io.github.gyai.projects.beta.activation.track1.command.Track1OperatorCommandContributor;
 import io.github.gyai.projects.beta.activation.track1.equipment.EquipmentInspectionService;
 import io.github.gyai.projects.beta.activation.track1.equipment.EquipmentScanEntry;
+import io.github.gyai.projects.beta.activation.track3.StagingEconomyCatalog;
+import io.github.gyai.projects.equipment.EquipmentTier;
 import io.github.gyai.projects.beta.activation.track1.module.EquipmentRuntimeModule;
 import io.github.gyai.projects.beta.activation.track1.module.PlayerPersistenceRuntimeModule;
 import io.github.gyai.projects.beta.activation.track1.module.Track1RuntimeModuleProvider;
@@ -64,6 +66,7 @@ public final class Track1ActivationFoundationTest {
         allowlistAndWorldDenials();
         equipmentInspectionIsReadOnly();
         unknownModsAreIsolatedAndNoUuidIsGenerated();
+        unstartedReadOnlyInspectionIsSafeWithDefaultFeatures();
         moduleLifecycleAndProvider();
         disabledFlagRegistersNoListener();
         failedRegistrationCleansUp();
@@ -218,6 +221,28 @@ public final class Track1ActivationFoundationTest {
         assert result.items().getFirst().isolatedUnknownModIds().contains("projects:unknown-mod");
         assert !unknown.effectEnabled();
         assert result.items().getFirst().projection().orElseThrow().instanceId().isEmpty();
+        service.close();
+    }
+
+    private static void unstartedReadOnlyInspectionIsSafeWithDefaultFeatures() {
+        EquipmentInspectionService service = new EquipmentInspectionService(CLOCK);
+        FakePdc pdc = readablePdc();
+        Map<String, Object> before = Map.copyOf(pdc.values);
+        UnknownModEntry unknown = new UnknownModEntry(0, "future-mod", 7,
+                "projects:future-mod", new byte[] {1, 2, 3});
+        assert !FeatureFlagSnapshot.allDisabled().isEnabled(FeatureKey.EQUIPMENT_V2);
+        assert !FeatureFlagSnapshot.allDisabled().isEnabled(FeatureKey.MOD_SYSTEM);
+        var snapshot = service.inspectReadOnly(PLAYER, List.of(new EquipmentScanEntry(
+                "weapon", pdc, Optional.of(StagingEconomyCatalog.previewBlade(EquipmentTier.T1)),
+                List.of(unknown), new byte[] {9, 8, 7})));
+        assert !service.running();
+        assert service.latest(PLAYER).isEmpty() : "read-only inspection retained a snapshot";
+        assert snapshot.items().getFirst().projection().orElseThrow().itemId()
+                .equals(StagingEconomyCatalog.TEST_BLADE_T1);
+        assert snapshot.items().getFirst().isolatedUnknownModIds()
+                .equals(List.of("projects:future-mod"));
+        assert !unknown.effectEnabled();
+        assert pdc.values.equals(before) : "default-off inspection mutated PDC";
         service.close();
     }
 

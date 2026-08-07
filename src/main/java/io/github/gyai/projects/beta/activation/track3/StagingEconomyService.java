@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /** Staging-only operations. It is inert until its Runtime modules mark groups running. */
 public final class StagingEconomyService implements StagingEconomyOperationPort,
@@ -37,6 +38,7 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
     private final BoundedStagingOperationJournal journal;
     private final StagingInventoryTransactionAdapter transactions;
     private final StagingEnhancementOutcomeRegistry outcomes;
+    private final BooleanSupplier moddedCraftEnabled;
     private final EnhancementResolver enhancementResolver = new EnhancementResolver();
     private boolean gatheringCraftingRunning;
     private boolean enhancementRepairRunning;
@@ -48,13 +50,29 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
             StagingInventoryTransactionAdapter transactions,
             StagingEnhancementOutcomeRegistry outcomes
     ) {
-        if (inventory == null || journal == null || transactions == null || outcomes == null) {
+        this(inventory, journal, transactions, outcomes, () -> true);
+    }
+
+    /**
+     * The four-argument overload remains for isolated staging fixtures. Production composition
+     * must supply the live feature policy through this constructor.
+     */
+    public StagingEconomyService(
+            StagingInventoryPort inventory,
+            BoundedStagingOperationJournal journal,
+            StagingInventoryTransactionAdapter transactions,
+            StagingEnhancementOutcomeRegistry outcomes,
+            BooleanSupplier moddedCraftEnabled
+    ) {
+        if (inventory == null || journal == null || transactions == null || outcomes == null
+                || moddedCraftEnabled == null) {
             throw new IllegalArgumentException("staging economy service input missing");
         }
         this.inventory = inventory;
         this.journal = journal;
         this.transactions = transactions;
         this.outcomes = outcomes;
+        this.moddedCraftEnabled = moddedCraftEnabled;
     }
 
     public synchronized void setGroupRunning(OperationGroup group, boolean running) {
@@ -72,6 +90,11 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
     OperationResult execute(OperationRequest request, StagingFailurePoint failurePoint) {
         requireOpen();
         if (!request.access().allowed()) return OperationResult.rejected("staging-gate-denied");
+        // This is the shared boundary for both command and GUI craft requests. Keep it before
+        // session/inventory work so disabled feature combinations cannot reserve, roll, or mint.
+        if (request.kind() == OperationKind.CRAFT && !moddedCraftEnabled.getAsBoolean()) {
+            return OperationResult.rejected("equipment-mod-features-disabled");
+        }
         if (!runningFor(request.kind())) return OperationResult.rejected("module-not-running");
         inventory.openSession(request.access().playerId());
         Optional<TransactionAuditResult> replay = journal.findTerminal(request.requestId());
@@ -81,7 +104,7 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
                 return OperationResult.rejected("request-id-reused-with-different-operation");
             }
             return fromExecution(new StagingInventoryTransactionAdapter.Execution(
-                    terminal.asReplay(), Optional.empty()));
+                    terminal.asReplay(), journal.finalizedEquipment(request.requestId())));
         }
         try {
             return switch (request.kind()) {
@@ -175,11 +198,16 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
                 new OperationResourcePlan.MaterialCost(
                         StagingEconomyCatalog.IRON_INGOT_TRANSACTION_KEY, 3)), 0);
         EquipmentItemV1 preview = StagingEconomyCatalog.previewBlade(EquipmentTier.T1);
-        EquipmentMutationProposal proposal = mutation(
+        List<TransactionRequest.InputRevision> inputs = List.of(
+                resourceInput(StagingEconomyCatalog.IRON_INGOT, snapshot.revision()));
+        TransactionRequest transaction = new TransactionRequest(request.requestId(),
+                request.access().playerId(), "projects:staging-craft",
+                StagingEconomyCatalog.CRAFT_RECIPE_ID, snapshot.revision(), 1, inputs);
+        // Resolver is invoked by EquipmentOperationParticipant after reservation.
+        EquipmentOperationPlan plan = new EquipmentOperationPlan(transaction, costs, () -> mutation(
                 request, "projects:staging-craft", StagingEconomyCatalog.CRAFT_RECIPE_ID,
-                snapshot.revision(), preview, costs,
-                List.of(resourceInput(StagingEconomyCatalog.IRON_INGOT, snapshot.revision())));
-        return equipmentTransaction(request, EquipmentOperationPlan.fixed(proposal), failurePoint);
+                snapshot.revision(), transactions.resolveCraftMod(preview), costs, inputs));
+        return equipmentTransaction(request, plan, failurePoint);
     }
 
     private OperationResult promote(OperationRequest request, StagingFailurePoint failurePoint) {
@@ -188,8 +216,7 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
         EquipmentItemV1 source = snapshot.equipment().stream()
                 .filter(item -> item.itemId().equals(StagingEconomyCatalog.TEST_BLADE_T1))
                 .findFirst().orElseThrow(() -> new IllegalStateException("T1 staging blade missing"));
-        if (source.enhancementLevel() != 0 || source.broken()
-                || source.modSlots().stream().anyMatch(slot -> slot.entry().isPresent())) {
+        if (source.enhancementLevel() != 0 || source.broken()) {
             return OperationResult.rejected("staging-promotion-requires-unmodified-source");
         }
         OperationResourcePlan costs = new OperationResourcePlan(List.of(
@@ -293,10 +320,15 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
             StagingFailurePoint failurePoint
     ) {
         long revision = inventory.snapshot(request.access().playerId()).revision();
+        List<TransactionRequest.InputRevision> inputs = resources.materials().isEmpty()
+                ? List.of(resourceInput(output.outputId(), revision))
+                : resources.materials().stream().map(material -> resourceInput(
+                        StagingEconomyCatalog.itemIdForTransactionResource(material.materialId()),
+                        revision)).toList();
         TransactionRequest transaction = new TransactionRequest(
                 request.requestId(), request.access().playerId(),
                 "projects:staging-resource", recipeId, revision, output.quantity(),
-                List.of(resourceInput(output.outputId(), revision)));
+                inputs);
         return fromExecution(transactions.executeResource(
                 request.access().playerId(), transaction, resources, output, failurePoint));
     }
@@ -314,7 +346,8 @@ public final class StagingEconomyService implements StagingEconomyOperationPort,
             StagingInventoryTransactionAdapter.Execution execution
     ) {
         TransactionAuditResult result = execution.result();
-        Status status = result.replayed() ? Status.REPLAYED : switch (result.outcome()) {
+        Status status = result.replayed() && result.outcome() == TransactionAuditResult.Outcome.COMMITTED
+                ? Status.REPLAYED : switch (result.outcome()) {
             case COMMITTED -> Status.COMMITTED;
             case ROLLED_BACK -> Status.ROLLED_BACK;
             case COMMIT_UNCERTAIN -> Status.COMMIT_UNCERTAIN;

@@ -2,6 +2,8 @@ package io.github.gyai.projects.beta.activation.track3;
 
 import io.github.gyai.projects.equipment.operation.EquipmentMutationProposal;
 import io.github.gyai.projects.transaction.TransactionAuditResult;
+import io.github.gyai.projects.transaction.TransactionRequest;
+import io.github.gyai.projects.crafting.OutputProposal;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 import java.util.UUID;
+import io.github.gyai.projects.equipment.EquipmentItemV1;
 
 /** Atomic, bounded audit export confined to beta-staging/transactions. */
 public final class FileStagingTransactionAuditSink implements StagingTransactionAuditSink {
@@ -78,7 +81,46 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 + "completed-at: " + result.completedAt() + "\n"
                 + "reason: " + safe(result.reason()) + "\n";
         write(result.requestId(), "terminal", body);
-        recoveryJournal.save(terminalEntry(result));
+        boolean retainFinalized = result.outcome() == TransactionAuditResult.Outcome.COMMITTED
+                || result.outcome() == TransactionAuditResult.Outcome.COMMIT_UNCERTAIN;
+        String retained = retainFinalized ? recoveryJournal.load(result.requestId())
+                .map(StagingTransactionJournalRepository.Entry::proposedOutputIdentity)
+                .filter(value -> value.startsWith("equipment:")).orElse("") : "";
+        recoveryJournal.save(terminalEntry(result, retained));
+    }
+
+    @Override
+    public void resourceIntent(TransactionRequest request, OutputProposal output) {
+        if (request == null || output == null || output.equipmentBase()) {
+            throw new IllegalArgumentException("invalid resource transaction intent");
+        }
+        String outputIdentity = output.outputId() + ":" + output.quantity();
+        recoveryJournal.save(new StagingTransactionJournalRepository.Entry(
+                request.requestId(), StagingTransactionJournalRepository.Stage.RESERVED,
+                request.playerId(), request.operationId(), request.inputs().stream()
+                        .map(input -> input.inputId() + "@" + input.revision()).toList(),
+                StagingTransactionJournalRepository.ReservationState.HELD,
+                outputIdentity, StagingTransactionJournalRepository.TerminalOutcome.NONE,
+                request.recipeId(), request.expectedRevision(), request.expectedOutputUnits(),
+                java.util.List.of("VALIDATE", "RESERVE"), false, "",
+                System.currentTimeMillis()));
+    }
+
+    @Override
+    public void finalized(UUID requestId, EquipmentItemV1 item) {
+        StagingEquipmentDocument document = codec.encode(item, 0);
+        String retained = "equipment:" + Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(document.payload());
+        if (retained.length() > 512) throw new IllegalStateException("finalized staging item is oversized");
+        StagingTransactionJournalRepository.Entry previous = recoveryJournal.load(requestId)
+                .orElseThrow(() -> new IllegalStateException("resolved staging journal is missing"));
+        recoveryJournal.save(new StagingTransactionJournalRepository.Entry(requestId,
+                StagingTransactionJournalRepository.Stage.PERSISTED, previous.playerId(),
+                previous.operationType(), previous.inputIdentities(),
+                previous.reservationState(), retained,
+                StagingTransactionJournalRepository.TerminalOutcome.NONE,
+                previous.recipeId(), previous.expectedRevision(), previous.expectedOutputUnits(),
+                previous.completedStages(), true, previous.reason(), System.currentTimeMillis()));
     }
 
     public boolean usesRecoveryJournal(StagingTransactionJournalRepository repository) {
@@ -86,7 +128,7 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
     }
 
     private static StagingTransactionJournalRepository.Entry terminalEntry(
-            TransactionAuditResult result
+            TransactionAuditResult result, String retainedOutput
     ) {
         StagingTransactionJournalRepository.Stage stage;
         StagingTransactionJournalRepository.TerminalOutcome outcome;
@@ -113,8 +155,8 @@ public final class FileStagingTransactionAuditSink implements StagingTransaction
                 stage == StagingTransactionJournalRepository.Stage.COMMITTED
                         ? StagingTransactionJournalRepository.ReservationState.CONSUMED
                         : StagingTransactionJournalRepository.ReservationState.RELEASED,
-                result.output().map(output -> output.outputId()
-                        + ":" + output.quantity()).orElse(""),
+                retainedOutput.isBlank() ? result.output().map(output -> output.outputId()
+                        + ":" + output.quantity()).orElse("") : retainedOutput,
                 outcome, result.recipeId(), result.expectedRevision(),
                 result.expectedOutputUnits(), result.completedStages().stream()
                         .map(Enum::name).toList(),
