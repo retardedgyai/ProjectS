@@ -99,8 +99,9 @@ public final class AbilityRuntimeFoundationTest {
         Fixture() { this(false); }
         Fixture(boolean detonationFails) { this.detonationFails = detonationFails; }
         final AbilityRuntime runtime = new AbilityRuntime(AbilityRuntime.standardActions(), scheduler, ref -> valid.contains(ref.id()),
-                (context, selected, origin, spec) -> { events.add("telegraph"); return new AbilityRuntime.TelegraphHandle() { public void detonate() { events.add("detonate"); if (detonationFails) throw new IllegalStateException("detonation failure"); } public void cancel() { events.add("cancel"); } }; },
-                (context, selected, spec) -> { damageCalls++; events.add("damage"); });
+                (context, selected, origin, spec) -> { events.add("telegraph"); return new AbilityRuntime.TelegraphHandle() { public void detonate() { events.add("detonate"); if (detonationFails) throw new IllegalStateException("detonation failure"); } public void cancel() { events.add("cancel"); } public AnchorFrame anchor() { return frame(context); } }; },
+                (context, selected, spec) -> { damageCalls++; events.add("damage"); return new AbilityRuntime.DamageOutcome(true,0,1,frame(context)); });
+        private static AnchorFrame frame(AbilityCastContext context) { return new AnchorFrame(context.origin().worldId(),context.origin().dimension(),0,0,0,0,0,1,0,1,0); }
         AbilityCastContext context(SourceKind kind) { return new AbilityCastContext(UUID.randomUUID(), DevAbilityDefinitions.SHARED_ARCANE_BURST_ID, source, kind, new AbilityCastContext.Origin(UUID.randomUUID(), "minecraft:overworld", 0, 0, 0), target, Map.of()); }
     }
     private static final class ManualScheduler implements AbilityRuntime.Scheduler {

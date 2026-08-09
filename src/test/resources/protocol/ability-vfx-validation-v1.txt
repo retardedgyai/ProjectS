@@ -1,0 +1,13 @@
+# Ability VFX v1 primitive validation conformance vectors
+# case-id|primitive|field|value / rule|expected
+CONE_ANGLE_NEXT_DOWN_PI|CONE|angle|nextDown(PI); 0 < angle < PI|ACCEPT
+CONE_ANGLE_PI|CONE|angle|PI; 0 < angle < PI|REJECT
+CONE_ANGLE_NEXT_UP_PI|CONE|angle|nextUp(PI); 0 < angle < PI|REJECT
+CONE_ANGLE_POSITIVE_ZERO|CONE|angle|+0.0; strict-positive|REJECT
+CONE_ANGLE_NEGATIVE_ZERO|CONE|angle|-0.0; strict-positive|REJECT
+CONE_ANGLE_NEGATIVE|CONE|angle|-1.0; strict-positive|REJECT
+CIRCLE_SIZE_POSITIVE_ZERO|CIRCLE|size|+0.0; zero-required|ACCEPT
+CIRCLE_SIZE_NEGATIVE_ZERO|CIRCLE|size|-0.0; zero-required|ACCEPT
+CIRCLE_RADIUS_POSITIVE_ZERO|CIRCLE|radius|+0.0; strict-positive|REJECT
+CIRCLE_RADIUS_NEGATIVE_ZERO|CIRCLE|radius|-0.0; strict-positive|REJECT
+CIRCLE_RADIUS_ORDINARY|CIRCLE|radius|4.0; strict-positive|ACCEPT

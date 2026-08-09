@@ -156,12 +156,14 @@ public final class AssignedMobAbilityFoundationTest {
                     return new AbilityRuntime.TelegraphHandle() {
                         public void detonate() { events.add("detonate"); }
                         public void cancel() { events.add("cancel"); }
+                        public AnchorFrame anchor() { return new AnchorFrame(context.origin().worldId(), context.origin().dimension(), 0, 0, 0, 0, 0, 1, 0, 1, 0); }
                     };
                 },
                 (context, selected, spec) -> {
                     assert context.sourceKind() == SourceKind.MOB && selected.equals(target);
                     damageCalls++;
                     events.add("damage");
+                    return new AbilityRuntime.DamageOutcome(true, 0, 1, new AnchorFrame(context.origin().worldId(), context.origin().dimension(), 0, 0, 0, 0, 0, 1, 0, 1, 0));
                 });
 
         AbilityCastContext context() {

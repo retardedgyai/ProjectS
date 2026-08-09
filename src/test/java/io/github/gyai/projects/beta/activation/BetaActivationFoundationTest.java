@@ -333,7 +333,8 @@ public final class BetaActivationFoundationTest {
         String source = Files.readString(Path.of(
                 "src/main/java/io/github/gyai/projects/ProjectSPlugin.java"));
         assert occurrences(source, ".registerIncomingPluginChannel(") == 8;
-        assert occurrences(source, ".registerOutgoingPluginChannel(") == 7;
+        // Ability VFX v1 is an additive non-beta outgoing presentation channel.
+        assert occurrences(source, ".registerOutgoingPluginChannel(") == 8;
         assert occurrences(source, ".registerEvents(") == 17;
         assert occurrences(source, ".runTask(") == 0;
         assert occurrences(source, ".runTaskLater(") == 0;
