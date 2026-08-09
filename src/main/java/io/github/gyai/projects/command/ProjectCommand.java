@@ -211,7 +211,11 @@ public class ProjectCommand implements CommandExecutor {
         if (devAbilityService == null) { sender.sendMessage("§cAbility runtime is unavailable."); return true; }
         DevAbilityService.Result result = args.length >= 2 && args[1].equalsIgnoreCase("player")
                 ? devAbilityService.castPlayer(player) : args.length >= 2 && args[1].equalsIgnoreCase("mob")
-                ? devAbilityService.castMob(player) : new DevAbilityService.Result(false, "使用法: /projects ability [player|mob]");
+                ? devAbilityService.castMob(player)
+                : args.length == 3 && args[1].equalsIgnoreCase("mob-assigned")
+                ? devAbilityService.castMobAssigned(player, args[2])
+                : new DevAbilityService.Result(false,
+                "使用法: /projects ability [player|mob|mob-assigned <ability-id>]");
         sender.sendMessage((result.success() ? "§a" : "§c") + result.message()); return true;
     }
 

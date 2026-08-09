@@ -327,6 +327,13 @@ public final class MonsterManager {
                 ? editor.definition().stats() : null;
     }
 
+    /** Returns the definition applied to this exact live Editor Mob instance. */
+    public MobDefinition editorDefinition(LivingEntity entity) {
+        CustomMonster monster = activeMonsters.get(entity.getUniqueId());
+        return monster instanceof EditorCustomMonster editor
+                ? editor.definition() : null;
+    }
+
     public boolean isEditorMonster(Entity entity) {
         return activeMonsters.get(entity.getUniqueId()) instanceof EditorCustomMonster;
     }
