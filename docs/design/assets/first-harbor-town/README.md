@@ -1,14 +1,17 @@
 # First Harbor Town Reference Assets
 
-GitHub 上で確実に開ける正本ビジュアルは次の SVG とする。
+第一港町の承認済みビジュアルを GitHub 上で実際に開ける画像ファイルとして保存する。
 
-- [reference-sheet.svg](reference-sheet.svg) — 第一港町の採用方針を、Minecraft向けの俯瞰・6機能・導線・素材感として一枚にまとめた参照シート。
+## Primary reference
 
-## 採用元
+![第一港町・採用コンセプト](primary-reference.jpg)
 
-この設計は、2026-08-09 の設計セッションでユーザーが「これでいこう、素晴らしい、完璧」と承認した Minecraft 風港町コンセプトと、その後の説明ボード群を基準としている。
+- [primary-reference.jpg](primary-reference.jpg) — ユーザーが「これでいこう、素晴らしい、完璧」と承認した第一基準。配置、密度、空気感の基準にする。
+- [design-board-reference.jpg](design-board-reference.jpg) — Minecraft風の全体像、配置、施設別カット、内部、導線を一枚にまとめる説明形式の基準。
+- [layout-board-reference.jpg](layout-board-reference.jpg) — 区画色分け、周回ルート、高低差、施設別機能説明の参考。
+- [aerial-board-reference.jpg](aerial-board-reference.jpg) — 鳥瞰配置、三段構造、プレイヤー視点のつながりを検討する参考。
 
-採用する要素:
+## 採用する要素
 
 - コンパクトで高密度
 - 港、倉庫、市場、工房、集会所、遠征口が近い
@@ -18,6 +21,4 @@ GitHub 上で確実に開ける正本ビジュアルは次の SVG とする。
 - 見た目だけの空間を極力作らず、機能が景観を生む
 - 建築提案は Minecraft のゲーム内見た目を優先する
 
-旧 `primary-reference.png` / `design-board-reference.png` / `layout-board-reference.png` / `aerial-board-reference.png` は、実体が GitHub に保存されていない状態で参照だけが作られていたため廃止した。リンク切れを再発させないため、リポジトリ内の設計文書は `reference-sheet.svg` を参照する。
-
-画像を一ブロック単位で複製するのではなく、本文で明示された配置・密度・空気感・機能原則を設計へ反映する。
+GitHub表示用画像はリポジトリを過度に重くしないよう軽量化したJPEGプレビュー。画像を一ブロック単位で複製するのではなく、本文で明示された配置・密度・空気感・機能原則を設計へ反映する。
