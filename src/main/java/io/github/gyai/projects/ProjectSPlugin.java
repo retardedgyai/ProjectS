@@ -409,7 +409,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new HardControlTestToolListener(
                         hardControlTestTool,
                         crowdControlManager,
-                        monsterManager), this);
+                        monsterManager,
+                        damageService), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager,
