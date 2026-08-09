@@ -66,5 +66,7 @@ ProjectSで、実際に建築・配置・実装することを前提とした画
 第一港町の採用例と具体的な配置原則:
 
 - [`world/first-harbor-town-v1.md`](world/first-harbor-town-v1.md)
-- [`assets/first-harbor-town/primary-reference.png`](assets/first-harbor-town/primary-reference.png)
-- [`assets/first-harbor-town/design-board-reference.png`](assets/first-harbor-town/design-board-reference.png)
+- [`assets/first-harbor-town/reference-sheet.svg`](assets/first-harbor-town/reference-sheet.svg)
+- [`assets/first-harbor-town/README.md`](assets/first-harbor-town/README.md)
+
+`reference-sheet.svg` は GitHub 上で開けるリポジトリ内の正本ビジュアル。旧 PNG 参照は実体が保存されていなかったため使用しない。
