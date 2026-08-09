@@ -33,6 +33,38 @@ public final class MobAbilityAssignmentPolicy {
         return assigned;
     }
 
+    /**
+     * V2 editor authoring accepts stale IDs only when they already occur in
+     * the authoritative session baseline.  This intentionally permits keeping,
+     * removing and reordering old assignments without allowing a rejected
+     * request to grandfather a new unknown ID.
+     */
+    public MobDefinition assignFromBaseline(
+            MobDefinition baseline,
+            MobDefinition submitted
+    ) {
+        return decideFromBaseline(baseline, submitted).requireAccepted();
+    }
+
+    /** Pure pre-mutation decision used by the editor manager and executable tests. */
+    public Decision decideFromBaseline(MobDefinition baseline, MobDefinition submitted) {
+        Objects.requireNonNull(baseline, "baseline");
+        Objects.requireNonNull(submitted, "submitted");
+        MobDefinition assigned = submitted.withAbilityIds(submitted.abilityIds());
+        java.util.Set<String> oldIds = java.util.Set.copyOf(baseline.abilityIds());
+        for (String abilityId : assigned.abilityIds()) {
+            if (!oldIds.contains(abilityId) && registry.find(abilityId).isEmpty()) {
+                return new Decision(null, baseline, "Unknown ability id: " + abilityId);
+            }
+        }
+        return new Decision(assigned, baseline, "");
+    }
+
+    public record Decision(MobDefinition accepted, MobDefinition baseline, String rejection) {
+        public boolean acceptedRequest() { return accepted != null; }
+        public MobDefinition requireAccepted() { if (accepted == null) throw new IllegalArgumentException(rejection); return accepted; }
+    }
+
     /** Resolves an explicitly requested assignment without choosing a fallback. */
     public Resolution resolve(MobDefinition definition, String requestedId) {
         try {

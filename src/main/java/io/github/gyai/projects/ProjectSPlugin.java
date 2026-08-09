@@ -245,9 +245,10 @@ public final class ProjectSPlugin extends JavaPlugin {
         StarterSwordRouteCommandService damageRouteCommandService =
                 new StarterSwordRouteCommandService(damageRouteController);
         mobEditorManager = new MobEditorManager(
-                this, monsterManager, itemManager, damageService);
+                this, monsterManager, itemManager, damageService, devAbilityService.registry());
         mobEditorChannel = new MobEditorChannel(
-                this, mobEditorManager, monsterManager);
+                this, mobEditorManager, monsterManager, devAbilityService.registry());
+        mobEditorChannel.registerV2Channels();
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,
