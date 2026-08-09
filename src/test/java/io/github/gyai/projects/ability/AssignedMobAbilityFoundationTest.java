@@ -14,9 +14,39 @@ import java.util.UUID;
 public final class AssignedMobAbilityFoundationTest {
     public static void main(String[] args) {
         assignmentAndResolutionBoundary();
+        baselineAssignmentDecision();
         assignedMobTimelineAndCancellation();
         invalidEntitiesAndUnknownFailClosed();
         System.out.println("Ability Runtime v0.2 assigned-Mob tests passed");
+    }
+
+    private static void baselineAssignmentDecision() {
+        Fixture fixture = new Fixture();
+        AbilityDefinition known = DevAbilityDefinitions.sharedArcaneBurst();
+        AbilityRegistry registry = new AbilityRegistry(fixture.runtime.actionRegistry());
+        registry.register(known);
+        MobAbilityAssignmentPolicy policy = new MobAbilityAssignmentPolicy(registry);
+        MobDefinition baseline = MobDefinition.create("baseline_mob")
+                .withAbilityIds(List.of("projects:stale", known.id()));
+
+        assert policy.decideFromBaseline(baseline, baseline.withAbilityIds(List.of(
+                "projects:stale"))).acceptedRequest();
+        assert policy.decideFromBaseline(baseline, baseline.withAbilityIds(List.of(
+                known.id(), "projects:stale"))).accepted().abilityIds().equals(List.of(
+                known.id(), "projects:stale"));
+        assert policy.decideFromBaseline(baseline,
+                baseline.withAbilityIds(List.of())).accepted().abilityIds().isEmpty();
+        assert policy.assignFromBaseline(baseline, baseline.withAbilityIds(List.of(
+                known.id()))).abilityIds().equals(List.of(known.id()));
+
+        MobAbilityAssignmentPolicy.Decision rejected = policy.decideFromBaseline(
+                baseline, baseline.withAbilityIds(List.of("projects:new_unknown")));
+        assert !rejected.acceptedRequest();
+        assert rejected.accepted() == null;
+        assert rejected.baseline() == baseline;
+        assert rejected.rejection().contains("projects:new_unknown");
+        expect(() -> policy.assignFromBaseline(baseline,
+                baseline.withAbilityIds(List.of("projects:new_unknown"))));
     }
 
     private static void assignmentAndResolutionBoundary() {

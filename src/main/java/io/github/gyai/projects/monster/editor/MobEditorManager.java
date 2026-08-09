@@ -1,6 +1,8 @@
 package io.github.gyai.projects.monster.editor;
 
 import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.ability.AbilityRegistry;
+import io.github.gyai.projects.ability.MobAbilityAssignmentPolicy;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.manager.MonsterManager;
 import org.bukkit.Location;
@@ -34,6 +36,7 @@ public final class MobEditorManager implements Listener {
     private final MobDefinitionValidator mobValidator;
     private final HeadDefinitionValidator headValidator;
     private final MobDefinitionRepository mobRepository;
+    private final MobAbilityAssignmentPolicy abilityAssignments;
     private final HeadDefinitionRepository headRepository;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Object repositoryIoLock = new Object();
@@ -43,10 +46,12 @@ public final class MobEditorManager implements Listener {
             JavaPlugin plugin,
             MonsterManager monsterManager,
             ItemManager itemManager,
-            DamageService damageService
+            DamageService damageService,
+            AbilityRegistry abilityRegistry
     ) {
         this.plugin = plugin;
         this.monsterManager = monsterManager;
+        this.abilityAssignments = new MobAbilityAssignmentPolicy(abilityRegistry);
         Path data = plugin.getDataFolder().toPath();
         Set<String> itemIds = itemManager.getItems().stream()
                 .map(io.github.gyai.projects.item.CustomItem::getId)
@@ -131,14 +136,32 @@ public final class MobEditorManager implements Listener {
     }
 
     public Snapshot update(Player player, MobDefinition draft) {
+        return update(player, draft, false);
+    }
+
+    /** Strict v2 path; ability IDs are part of the submitted draft. */
+    public Snapshot updateV2(Player player, MobDefinition draft) {
+        return update(player, draft, true);
+    }
+
+    private Snapshot update(Player player, MobDefinition draft, boolean includesAbilities) {
         Session session = activeSession(player);
         if (session == null || session.originalId == null || session.draft == null) {
             return snapshot(player, false, false,
                     "編集セッションが終了しています。Mobを再選択してください", "", 0);
         }
-        // Mob Editor packet v1 deliberately has no ability field. Preserve the
-        // authoritative server draft on every packet-driven update path.
-        draft = preserveAbilityIds(session.draft, draft);
+        if (includesAbilities) {
+            MobAbilityAssignmentPolicy.Decision decision =
+                    abilityAssignments.decideFromBaseline(session.draft, draft);
+            if (!decision.acceptedRequest()) {
+                return snapshot(player, false, false,
+                        "不明または不正なAbility IDです", "", 0);
+            }
+            draft = decision.requireAccepted();
+        } else {
+            // v1 deliberately has no ability field, so retain the server's IDs.
+            draft = preserveAbilityIds(session.draft, draft);
+        }
         if (session.originalId != null && !session.originalId.equals(draft.id())) {
             return snapshot(player, false, false,
                     "作成後に内部IDは変更できません", "", 0);
@@ -152,9 +175,14 @@ public final class MobEditorManager implements Listener {
             return snapshot(player, false, false,
                     "既存のハードコードMobと内部IDが競合しています", "", 0);
         }
+        ValidationResult result = mobValidator.validate(draft);
+        // V2 is an all-or-nothing authoring request.  Do not leave an invalid
+        // proposed draft (or newly unknown IDs) in the authoritative session.
+        if (includesAbilities && !result.valid()) {
+            return snapshot(player, false, false, result.message(), "", 0);
+        }
         session.draft = draft;
         session.draftMutation++;
-        ValidationResult result = mobValidator.validate(draft);
         return snapshot(player, result.valid(), false,
                 result.message(), "", 0);
     }

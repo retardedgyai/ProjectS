@@ -274,6 +274,13 @@ val mobEditorFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val mobEditorV2ProtocolTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.network.MobEditorV2ProtocolTest")
+    jvmArgs("-ea")
+}
+
 val shutdownSequenceTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
@@ -613,6 +620,7 @@ tasks.named("check") {
     dependsOn(spinSlashDamageShadowRuntimeTest)
     dependsOn(damageShadowCommandRoutingTest)
     dependsOn(mobEditorFoundationTest)
+    dependsOn(mobEditorV2ProtocolTest)
     dependsOn(shutdownSequenceTest)
     dependsOn(featureFlagServiceTest)
     dependsOn(schemaVersionRegistryTest)
