@@ -66,5 +66,5 @@ ProjectSで、実際に建築・配置・実装することを前提とした画
 第一港町の採用例と具体的な配置原則:
 
 - [`world/first-harbor-town-v1.md`](world/first-harbor-town-v1.md)
-- [`assets/first-harbor-town/primary-reference.jpg`](assets/first-harbor-town/primary-reference.jpg)
-- [`assets/first-harbor-town/design-board-reference.jpg`](assets/first-harbor-town/design-board-reference.jpg)
+- [`assets/first-harbor-town/primary-reference.png`](assets/first-harbor-town/primary-reference.png)
+- [`assets/first-harbor-town/design-board-reference.png`](assets/first-harbor-town/design-board-reference.png)

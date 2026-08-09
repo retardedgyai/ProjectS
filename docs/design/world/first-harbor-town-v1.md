@@ -297,7 +297,7 @@ UIや巨大な文字看板を読まなくても用途が分かるようにする
 
 ### 第一基準: 全体コンセプト
 
-![第一港町・採用コンセプト](../assets/first-harbor-town/primary-reference.jpg)
+![第一港町・採用コンセプト](../assets/first-harbor-town/primary-reference.png)
 
 この画像から採用するもの:
 
@@ -311,14 +311,14 @@ UIや巨大な文字看板を読まなくても用途が分かるようにする
 
 ### 説明ボード形式の基準
 
-![第一港町・説明ボード例](../assets/first-harbor-town/design-board-reference.jpg)
+![第一港町・説明ボード例](../assets/first-harbor-town/design-board-reference.png)
 
 説明ボード形式は、全体像、機能配置、施設別カット、内部・プレイヤー視点、導線を一枚で比較するために使用する。ただし最優先は、建築自体がMinecraftのゲーム画面として理解できることである。
 
 補助資料:
 
-- [機能配置・周回・高低差ボード](../assets/first-harbor-town/layout-board-reference.jpg)
-- [鳥瞰配置・プレイヤー視点ボード](../assets/first-harbor-town/aerial-board-reference.jpg)
+- [機能配置・周回・高低差ボード](../assets/first-harbor-town/layout-board-reference.png)
+- [鳥瞰配置・プレイヤー視点ボード](../assets/first-harbor-town/aerial-board-reference.png)
 - [リファレンス画像の役割一覧](../assets/first-harbor-town/README.md)
 
 ## 11. 未決定事項

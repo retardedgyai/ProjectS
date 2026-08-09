@@ -4,12 +4,12 @@
 
 ## Primary reference
 
-![第一港町・採用コンセプト](primary-reference.jpg)
+![第一港町・採用コンセプト](primary-reference.png)
 
-- [primary-reference.jpg](primary-reference.jpg) — ユーザーが「これでいこう、素晴らしい、完璧」と承認した第一基準。配置、密度、空気感の基準にする。
-- [design-board-reference.jpg](design-board-reference.jpg) — Minecraft風の全体像、配置、施設別カット、内部、導線を一枚にまとめる説明形式の基準。
-- [layout-board-reference.jpg](layout-board-reference.jpg) — 区画色分け、周回ルート、高低差、施設別機能説明の参考。
-- [aerial-board-reference.jpg](aerial-board-reference.jpg) — 鳥瞰配置、三段構造、プレイヤー視点のつながりを検討する参考。
+- [primary-reference.png](primary-reference.png) — ユーザーが「これでいこう、素晴らしい、完璧」と承認した第一基準。配置、密度、空気感の基準にする。
+- [design-board-reference.png](design-board-reference.png) — Minecraft風の全体像、配置、施設別カット、内部、導線を一枚にまとめる説明形式の基準。
+- [layout-board-reference.png](layout-board-reference.png) — 区画色分け、周回ルート、高低差、施設別機能説明の参考。
+- [aerial-board-reference.png](aerial-board-reference.png) — 鳥瞰配置、三段構造、プレイヤー視点のつながりを検討する参考。
 
 ## 採用する要素
 
@@ -21,4 +21,4 @@
 - 見た目だけの空間を極力作らず、機能が景観を生む
 - 建築提案は Minecraft のゲーム内見た目を優先する
 
-GitHub表示用画像はリポジトリを過度に重くしないよう軽量化したJPEGプレビュー。画像を一ブロック単位で複製するのではなく、本文で明示された配置・密度・空気感・機能原則を設計へ反映する。
+GitHub上の画像は設計セッションで承認されたネイティブ解像度の元PNGをそのまま保存する。画像を一ブロック単位で複製するのではなく、本文で明示された配置・密度・空気感・機能原則を設計へ反映する。
