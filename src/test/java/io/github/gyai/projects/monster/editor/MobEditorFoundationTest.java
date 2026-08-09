@@ -28,6 +28,21 @@ public final class MobEditorFoundationTest {
                 head -> head.equals("pirate_head"));
         MobDefinition valid = MobDefinition.create("pirate_swordsman");
         assert validator.validate(valid).valid();
+        assert valid.abilityIds().isEmpty();
+        MobDefinition assigned = valid.withAbilityIds(List.of(
+                "projects:arcane-burst", "projects:slow-wave"));
+        assert assigned.abilityIds().equals(List.of(
+                "projects:arcane-burst", "projects:slow-wave"));
+        assert assigned.withRevision(7).abilityIds().equals(assigned.abilityIds());
+        assertThrowsIllegal(() -> valid.withAbilityIds(null));
+        assertThrowsIllegal(() -> valid.withAbilityIds(java.util.Arrays.asList(
+                "projects:arcane-burst", null)));
+        assertThrowsIllegal(() -> valid.withAbilityIds(List.of("bad")));
+        assertThrowsIllegal(() -> valid.withAbilityIds(List.of(
+                "projects:arcane-burst", "projects:arcane-burst")));
+        assertThrowsIllegal(() -> valid.withAbilityIds(
+                java.util.Collections.nCopies(
+                        MobDefinition.MAX_ABILITY_IDS + 1, "projects:overflow")));
 
         assertInvalid(validator, copy(valid, "Bad ID", valid.stats(),
                 valid.ai(), valid.appearance(), valid.entityType()));
@@ -103,6 +118,17 @@ public final class MobEditorFoundationTest {
         YamlConfiguration decoded = new YamlConfiguration();
         decoded.loadFromString(encoded.saveToString());
         assert MobDefinitionYaml.read(decoded).equals(valid.withRevision(3));
+        YamlConfiguration assignedYaml = MobDefinitionYaml.write(assigned);
+        assert MobDefinitionYaml.read(assignedYaml).equals(assigned);
+        YamlConfiguration legacyYaml = MobDefinitionYaml.write(valid);
+        legacyYaml.set("abilities", null);
+        assert MobDefinitionYaml.read(legacyYaml).abilityIds().isEmpty();
+        YamlConfiguration malformedAbilities = MobDefinitionYaml.write(valid);
+        malformedAbilities.set("abilities", "projects:arcane-burst");
+        assertThrowsIllegal(() -> MobDefinitionYaml.read(malformedAbilities));
+        YamlConfiguration nonStringAbilities = MobDefinitionYaml.write(valid);
+        nonStringAbilities.set("abilities", List.of(3));
+        assertThrowsIllegal(() -> MobDefinitionYaml.read(nonStringAbilities));
 
         Path directory = Files.createTempDirectory("projects-mobs-");
         MobDefinitionRepository repository = new MobDefinitionRepository(
@@ -142,6 +168,14 @@ public final class MobEditorFoundationTest {
         assert !repository.save(blocked, 0).success();
         assert Files.readString(rejectedFile).equals(rejectedContents);
         assert repository.get(valid.id()).equals(firstSave.definition());
+
+        Path staleDirectory = Files.createTempDirectory("projects-stale-abilities-");
+        MobDefinitionRepository staleRepository = new MobDefinitionRepository(
+                staleDirectory, validator, message -> { });
+        assert staleRepository.save(assigned, 0).success();
+        assert staleRepository.reload().success();
+        assert staleRepository.get(assigned.id()).abilityIds()
+                .equals(assigned.abilityIds());
 
         String textureJson = "{\"textures\":{\"SKIN\":{\"url\":"
                 + "\"https://textures.minecraft.net/texture/abc\"}}}";
@@ -214,6 +248,17 @@ public final class MobEditorFoundationTest {
             assert MobEditorPacketIO.readMob(input).equals(valid);
             assert input.available() == 0;
         }
+        ByteArrayOutputStream assignedPacket = new ByteArrayOutputStream();
+        try (DataOutputStream output = new DataOutputStream(assignedPacket)) {
+            MobEditorPacketIO.writeMob(output, assigned);
+        }
+        try (DataInputStream input = new DataInputStream(
+                new ByteArrayInputStream(assignedPacket.toByteArray()))) {
+            MobDefinition decodedV1 = MobEditorPacketIO.readMob(input);
+            assert decodedV1.abilityIds().isEmpty() && input.available() == 0;
+            assert MobEditorManager.preserveAbilityIds(assigned, decodedV1)
+                    .equals(assigned);
+        }
         assertThrowsIo(() -> {
             try (DataOutputStream output = new DataOutputStream(
                     new ByteArrayOutputStream())) {
@@ -225,6 +270,7 @@ public final class MobEditorFoundationTest {
         assert boundedMessage.endsWith("…");
 
         deleteTree(directory);
+        deleteTree(staleDirectory);
         deleteTree(headDirectory);
     }
 
@@ -233,6 +279,15 @@ public final class MobEditorFoundationTest {
             action.run();
             throw new AssertionError("IOException expected");
         } catch (IOException expected) {
+            // Expected.
+        }
+    }
+
+    private static void assertThrowsIllegal(Runnable action) {
+        try {
+            action.run();
+            throw new AssertionError("IllegalArgumentException expected");
+        } catch (IllegalArgumentException expected) {
             // Expected.
         }
     }
