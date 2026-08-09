@@ -1,5 +1,9 @@
 package io.github.gyai.projects.monster.editor;
 
+import io.github.gyai.projects.ability.AbilityRegistry;
+import io.github.gyai.projects.ability.AbilityRuntime;
+import io.github.gyai.projects.ability.DevAbilityDefinitions;
+import io.github.gyai.projects.ability.MobAbilityAssignmentPolicy;
 import io.github.gyai.projects.network.MobEditorPacketIO;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -176,6 +180,17 @@ public final class MobEditorFoundationTest {
         assert staleRepository.reload().success();
         assert staleRepository.get(assigned.id()).abilityIds()
                 .equals(assigned.abilityIds());
+        var sharedAbility = DevAbilityDefinitions.sharedArcaneBurst();
+        AbilityRegistry exactRegistry = new AbilityRegistry(
+                AbilityRuntime.standardActions());
+        exactRegistry.register(sharedAbility);
+        assert staleRepository.save(assigned.withAbilityIds(List.of(sharedAbility.id())), 1)
+                .success();
+        assert staleRepository.reload().success();
+        MobDefinition resolvedAfterReload = staleRepository.get(assigned.id());
+        assert new MobAbilityAssignmentPolicy(exactRegistry)
+                .resolve(resolvedAfterReload, sharedAbility.id()).definition()
+                == sharedAbility;
 
         String textureJson = "{\"textures\":{\"SKIN\":{\"url\":"
                 + "\"https://textures.minecraft.net/texture/abc\"}}}";
