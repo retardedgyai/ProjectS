@@ -86,7 +86,8 @@ final class MobDefinitionYaml {
                 yaml.getBoolean("enabled"), yaml.getInt("level"),
                 enumValue(MobDefinition.NameplateMode.class,
                         yaml.getString("nameplate.mode")),
-                yaml.getStringList("tags"), stats, attack, ai, appearance);
+                yaml.getStringList("tags"), stats, attack, ai, appearance,
+                abilityIds(yaml));
     }
 
     static YamlConfiguration write(MobDefinition definition) {
@@ -101,6 +102,7 @@ final class MobDefinitionYaml {
         yaml.set("level", definition.level());
         yaml.set("nameplate.mode", definition.nameplateMode().name());
         yaml.set("tags", definition.tags());
+        yaml.set("abilities", definition.abilityIds());
         MobStatsDefinition stats = definition.stats();
         yaml.set("stats.max-health", stats.maxHealth());
         yaml.set("stats.physical-attack", stats.physicalAttack());
@@ -150,6 +152,28 @@ final class MobDefinitionYaml {
             yaml.set(path + "visual-only", true);
         });
         return yaml;
+    }
+
+    private static List<String> abilityIds(YamlConfiguration yaml) {
+        if (!yaml.contains("abilities")) {
+            return List.of();
+        }
+        Object raw = yaml.get("abilities");
+        if (!(raw instanceof List<?> values)) {
+            throw new IllegalArgumentException("abilities must be an ordered list of strings");
+        }
+        if (values.size() > MobDefinition.MAX_ABILITY_IDS) {
+            throw new IllegalArgumentException("abilities exceeds "
+                    + MobDefinition.MAX_ABILITY_IDS);
+        }
+        java.util.ArrayList<String> result = new java.util.ArrayList<>(values.size());
+        for (Object value : values) {
+            if (!(value instanceof String id)) {
+                throw new IllegalArgumentException("abilities must contain strings only");
+            }
+            result.add(id);
+        }
+        return result;
     }
 
     private static String key(MobAppearanceDefinition.Slot slot) {

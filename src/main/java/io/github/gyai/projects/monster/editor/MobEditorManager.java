@@ -136,6 +136,9 @@ public final class MobEditorManager implements Listener {
             return snapshot(player, false, false,
                     "編集セッションが終了しています。Mobを再選択してください", "", 0);
         }
+        // Mob Editor packet v1 deliberately has no ability field. Preserve the
+        // authoritative server draft on every packet-driven update path.
+        draft = preserveAbilityIds(session.draft, draft);
         if (session.originalId != null && !session.originalId.equals(draft.id())) {
             return snapshot(player, false, false,
                     "作成後に内部IDは変更できません", "", 0);
@@ -154,6 +157,13 @@ public final class MobEditorManager implements Listener {
         ValidationResult result = mobValidator.validate(draft);
         return snapshot(player, result.valid(), false,
                 result.message(), "", 0);
+    }
+
+    static MobDefinition preserveAbilityIds(
+            MobDefinition serverDraft,
+            MobDefinition decodedV1Draft
+    ) {
+        return decodedV1Draft.withAbilityIds(serverDraft.abilityIds());
     }
 
     public void saveAsync(Player player, Consumer<Snapshot> callback) {

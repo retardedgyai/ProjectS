@@ -178,7 +178,7 @@ public final class MobDefinitionRepository {
                 "visible", "visual-only");
         private static final java.util.Set<String> EXACT = java.util.Set.of(
                 "schema-version", "revision", "id", "display-name", "entity-type",
-                "category", "enabled", "level", "tags", "stats",
+                "category", "enabled", "level", "tags", "abilities", "stats",
                 "nameplate", "nameplate.mode",
                 "stats.max-health", "stats.physical-attack", "stats.magical-attack",
                 "stats.physical-defense", "stats.magical-defense", "stats.move-speed",

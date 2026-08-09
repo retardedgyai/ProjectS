@@ -30,7 +30,9 @@ Paper interaction is isolated in `BukkitAbilityRuntime`. It reuses `TelegraphMan
 
 ## Forward boundary and migration
 
-The public registry lookup/list boundary is intentionally suitable for a v0.2 Mob Editor `abilityIds` integration. Mob definition schema and editor UI are deliberately deferred. Existing skills, bosses, and Mob basic attacks remain on their current paths; later migrations should be incremental and characterization-tested rather than broad replacement work.
+v0.2 adds immutable, ordered Editor Mob `abilityIds` with a compatibility YAML key. Cold load is structural only: a stale, namespaced ID remains loadable so server startup does not depend on registry contents. Explicit authoring rejects unknown IDs, while explicit assigned-Mob casting resolves malformed, unassigned, stale, and resolved outcomes without any fallback choice. Mob Editor packet v1 remains unchanged, so its decoded drafts preserve the authoritative server-side assignment list. The live entity definition, rather than a saved-definition map lookup, is the source for assigned casts.
+
+The public registry lookup/list boundary remains the integration point. Existing skills, bosses, and Mob basic attacks remain on their current paths; later migrations should be incremental and characterization-tested rather than broad replacement work.
 
 Kotlin scripting was not adopted: v0.1 requires static Java validation, predictable server-side execution, and no runtime script loading or new dependency surface. ProjectS-Client is unchanged and no protocol messages were added.
 
