@@ -250,12 +250,44 @@ public final class DamageService implements Listener {
     ) {
         MobStatsDefinition sourceStats = definition.stats();
         MobBasicAttackValues values = new MobBasicAttackValues(definition);
+        return applyMobAbility(attacker, target, sourceStats, castId,
+                values.damageType(), DamageKind.NORMAL_ATTACK,
+                values.fixedDamage(), values.coefficient(),
+                values.criticalAllowed());
+    }
+
+    /** Generic Editor Mob ability boundary. Existing basic attacks retain their values above. */
+    public DamageApplicationResult applyMobAbility(
+            LivingEntity attacker,
+            LivingEntity target,
+            MobStatsDefinition sourceStats,
+            UUID castId,
+            DamageType damageType,
+            DamageKind damageKind,
+            double fixedDamage,
+            double coefficient,
+            boolean criticalAllowed
+    ) {
+        java.util.Objects.requireNonNull(attacker, "attacker");
+        java.util.Objects.requireNonNull(target, "target");
+        java.util.Objects.requireNonNull(sourceStats, "sourceStats");
+        java.util.Objects.requireNonNull(castId, "castId");
+        java.util.Objects.requireNonNull(damageType, "damageType");
+        java.util.Objects.requireNonNull(damageKind, "damageKind");
+        if (!Double.isFinite(fixedDamage) || !Double.isFinite(coefficient)) {
+            throw new IllegalArgumentException("Mob ability damage must be finite");
+        }
+        double attackPower = switch (damageType) {
+            case PHYSICAL -> sourceStats.physicalAttack();
+            case MAGICAL -> sourceStats.magicalAttack();
+            case TRUE -> 0;
+        };
         Stats targetStats = target instanceof Player player
                 ? playerManager.getPlayerData(player).getStats() : new Stats();
         MobStatsDefinition targetMobStats = mobStatsResolver.apply(target);
         double equipmentDefense = targetMobStats == null
-                ? equipmentDefense(target, values.damageType()) : 0.0;
-        double defense = switch (values.damageType()) {
+                ? equipmentDefense(target, damageType) : 0.0;
+        double defense = switch (damageType) {
             case PHYSICAL -> StatCalculator.defense(
                     equipmentDefense + (targetMobStats == null
                             ? 0 : targetMobStats.physicalDefense()),
@@ -268,25 +300,40 @@ public final class DamageService implements Listener {
                     targetStats.get(StatType.MAGICAL_DEFENSE_PERCENT));
             case TRUE -> 0;
         };
-        boolean critical = values.criticalAllowed()
+        boolean critical = criticalAllowed && damageKind.criticalAllowed()
                 && criticalResolver.resolve(
                 attacker.getUniqueId(), castId, sourceStats.criticalChance(),
                 () -> ThreadLocalRandom.current().nextDouble());
-        DamageResult calculated = DamageCalculator.calculate(
-                new DamageCalculator.Input(
-                        values.damageType(), DamageMode.PVE,
-                        DamageKind.NORMAL_ATTACK, values.attackPower(),
-                        values.fixedDamage(), values.coefficient(),
-                        0, 0, critical, sourceStats.criticalDamage(),
-                        defense, 0, 0, 0,
-                        StatCalculator.DEFAULT_DEFENSE_CONSTANT,
-                        new double[]{StatCalculator.saturatedAdd(
-                                targetStats.get(StatType.DAMAGE_REDUCTION_PERCENT),
-                                targetMobStats == null
-                                        ? 0 : targetMobStats.damageReduction())},
-                        1, target.getAbsorptionAmount(), target.getHealth(),
-                        0, 0, 0));
+        DamageResult calculated = DamageCalculator.calculate(mobDamageInput(
+                damageType, damageKind, attackPower, fixedDamage,
+                coefficient, critical, sourceStats.criticalDamage(), defense,
+                new double[]{StatCalculator.saturatedAdd(
+                        targetStats.get(StatType.DAMAGE_REDUCTION_PERCENT),
+                        targetMobStats == null ? 0 : targetMobStats.damageReduction())},
+                target.getAbsorptionAmount(), target.getHealth()));
         return applyCalculated(attacker, target, calculated);
+    }
+
+    /** Package-visible pure seam for the established Editor Mob calculation contract. */
+    static DamageCalculator.Input mobDamageInput(
+            DamageType damageType,
+            DamageKind damageKind,
+            double attackPower,
+            double fixedDamage,
+            double coefficient,
+            boolean critical,
+            double criticalMultiplier,
+            double defense,
+            double[] damageReductions,
+            double shield,
+            double health
+    ) {
+        return new DamageCalculator.Input(
+                damageType, DamageMode.PVE, damageKind, attackPower,
+                fixedDamage, coefficient, 0, 0, critical,
+                criticalMultiplier, defense, 0, 0, 0,
+                StatCalculator.DEFAULT_DEFENSE_CONSTANT, damageReductions,
+                1, shield, health, 0, 0, 0);
     }
 
     public void setMobStatsResolver(

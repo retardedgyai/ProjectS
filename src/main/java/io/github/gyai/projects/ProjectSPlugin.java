@@ -86,6 +86,8 @@ import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
 import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
 import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
+import io.github.gyai.projects.ability.BukkitAbilityRuntime;
+import io.github.gyai.projects.ability.DevAbilityService;
 
 import java.time.Clock;
 import java.util.logging.Level;
@@ -113,6 +115,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MonsterManager monsterManager;
     private TelegraphManager telegraphManager;
     private DamageService damageService;
+    private DevAbilityService devAbilityService;
     private StarterSwordDamageShadow starterSwordDamageShadow;
     private SpinSlashDamageShadow spinSlashDamageShadow;
     private MobEditorManager mobEditorManager;
@@ -164,6 +167,9 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
+        devAbilityService = new DevAbilityService(
+                new BukkitAbilityRuntime(this, damageService, telegraphManager, monsterManager),
+                monsterManager);
         initializeBetaComposition();
         Clock damageShadowClock = Clock.systemUTC();
         BukkitDamageShadowRuntimeContextResolver damageShadowContextResolver =
@@ -403,7 +409,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new HardControlTestToolListener(
                         hardControlTestTool,
                         crowdControlManager,
-                        monsterManager), this);
+                        monsterManager,
+                        damageService), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager,
@@ -447,7 +454,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                     damageRouteCommandService,
                     betaRuntime == null || betaComposition == null ? null
                             : new BetaRuntimeCommandService(
-                            betaRuntime, betaComposition.operators())));
+                            betaRuntime, betaComposition.operators()),
+                    devAbilityService));
         }
 
         getLogger().info("ProjectS has started!");
@@ -523,6 +531,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 betaRuntime, BetaRuntime::close);
         sequence.addIfPresent("betaComposition.close",
                 betaComposition, BetaActivationWave1CompositionRoot::close);
+        sequence.addIfPresent("abilityRuntime.close",
+                devAbilityService, DevAbilityService::close);
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",

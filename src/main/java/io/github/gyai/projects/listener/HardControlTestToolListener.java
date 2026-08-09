@@ -1,5 +1,6 @@
 package io.github.gyai.projects.listener;
 
+import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
@@ -25,15 +26,18 @@ public final class HardControlTestToolListener implements Listener {
     private final HardControlTestTool tool;
     private final CrowdControlManager crowdControlManager;
     private final MonsterManager monsterManager;
+    private final DamageService damageService;
 
     public HardControlTestToolListener(
             HardControlTestTool tool,
             CrowdControlManager crowdControlManager,
-            MonsterManager monsterManager
+            MonsterManager monsterManager,
+            DamageService damageService
     ) {
         this.tool = tool;
         this.crowdControlManager = crowdControlManager;
         this.monsterManager = monsterManager;
+        this.damageService = damageService;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -74,6 +78,10 @@ public final class HardControlTestToolListener implements Listener {
     public void onAttack(EntityDamageByEntityEvent event) {
         if (!(event.getDamager() instanceof Player player)
                 || !tool.isTestTool(player.getInventory().getItemInMainHand())) {
+            return;
+        }
+        if (event.getEntity() instanceof LivingEntity target
+                && damageService.isApplying(player, target)) {
             return;
         }
 
