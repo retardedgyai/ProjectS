@@ -1,26 +1,17 @@
-# Ability Visuals v1 (future boundary)
+# Ability Visual / VFX Primitive Runtime v0.1
 
-## Authority and identity
+`AbilityDefinition` remains gameplay-only.  A stable `AbilityVisualBinding` associates an ability ID with an immutable, Bukkit-free `AbilityVisualDefinition`; missing or stale bindings are presentation drops.  The initial binding is `projects:dev-shared-arcane-burst` to `projects:vfx/dev-arcane-burst`.
 
-Gameplay and visuals are separate concerns. An `AbilityDefinition` and its server-side cast lifecycle remain Paper-authoritative; a visual may observe lifecycle state but cannot alter targeting, timing, damage, cancellation, or other gameplay decisions. Visual assets use stable namespaced visual IDs (for example, `projects:arcane-burst-circle`) rather than renderer class names or transient packet values.
+The runtime emits isolated lifecycle snapshots: CAST once after source validation and activation; TELEGRAPH once after authoritative creation; HIT only after an attempted application changes shield or health; EXPIRE only for normal completion; CANCEL once for cancellation, including FAILED as `FAILURE`.  TRAVEL is reserved.  Observer errors, anchor failures, registry errors, encoder errors and broadcast errors are caught and cannot affect scheduling, telegraphs, damage, tags, completion or cleanup.
 
-## Lifecycle contract
+Anchors are snapshots, never tracked: source for CAST/EXPIRE/CANCEL, authoritative telegraph center for TELEGRAPH, and target after damage application for HIT.  They include world/dimension, position, normalized forward and nonparallel up.  Scalar fields are literal or action fields.  `RADIUS` for Arcane Burst's telegraph CIRCLE is resolved from the actual `CircleTelegraph.radius`; unavailable fields fail closed.  This preserves CombatShape/telegraph authority instead of copying a second radius.
 
-Future visual hooks may be emitted for `cast`, `telegraph`, `travel`, `hit`, `expire`, and `cancel` (or a directly equivalent ProjectS lifecycle transition). They carry a stable visual ID, cast ID, and server-authoritative spatial/timing snapshot. A renderer treats hooks as idempotent hints: missing, late, or failed rendering must never block gameplay.
+The v1 vocabulary is POINT, LINE, ARC, CIRCLE, CONE, SPIRAL, SPHERE, WAVE, BEZIER and BURST. Definitions have stable hook/emission/primitive IDs; duplicate hooks, emissions or primitive IDs are rejected. Common local semantics are anchor-basis offset and yaw, delay/duration, RGBA color, width, density and deterministic seed. Exact slots are: POINT=size; LINE=length and optional zero-or-two controls; ARC=radius/start/sweep (nonzero sweep); CIRCLE=radius plus optional startAngle (zero sweep is the full ring); CONE=length/angle; SPIRAL=radius/height/turns; SPHERE=radius; WAVE=positive radius/length and optional height; BEZIER=exactly three or four controls; BURST=radius/count. All other geometry slots, counts, and controls are zero/empty. Values are finite and bounded (delay <=200, duration and cue lifetime <=1200, density <=256, count <=64, primitive count <=16, control points <=8).
 
-## Candidate primitives
+Sample intent is <=512 per primitive and <=2048 per cue (BURST uses count; other primitives use density). Geometry size/radius/length/height are each 0..128; required fields are positive. General angle is abs<=PI (CONE is strictly 0..PI), ARC sweep is nonzero with abs<=4PI, and turns have abs<=32 (SPIRAL is strictly 0..32). startAngle is finite but intentionally unbounded. A server should cap active cues at 64 and client frame work at 8192 samples. Broadcast is world-local, 128-block distance-culled, and only to channel listeners. Session changes on plugin runtime; clients dedupe by session/cue UUID, discard prior-session cues on reconnect/world change, and never track server entities. Seed is deterministic from the cue/emission construction.
 
-The first renderer vocabulary should stay small: point, line, arc, circle,
-cone, spiral, sphere, wave, and Bezier primitives; sectors, rings,
-decals/ground projections, beams, trails, impact bursts, and optional
-sound/camera-safe local cues. A visual definition may compose these
-primitives with duration, color/theme, radius/width, and tracking policy, but
-it must not add combat semantics.
+The additive outgoing channel is `projects:ability_vfx_v1`; `projects:telegraph_v1` is unchanged.  Only players already listening on the new channel in the matching world and 128-block bound receive cues.  Older clients receive nothing and gameplay remains normal.  A plugin-runtime session UUID, positive sequence, and deterministic cue UUID make cues safely idempotent.
 
-## Future editor flow
+Wire v1 starts with version u8, session UUID, sequence i64, cue UUID, cast UUID, u16 UTF-8 visual ID (<=96), hook u8, action/emission i32, world UUID, u16 dimension (<=128), anchor/forward/up f64 triples, serverTickAtSend i64, startTick i64, cueDurationTicks i32, and primitive count u8. Each primitive is length framed as type u8, primitive version u8, payload length u16, payload; v1 payload contains delay/duration, RGBA bytes (not ARGB byte order), width, density, seed, offset/yaw/geometric doubles, count and controls. The full packet is <=16384 bytes. Unknown primitive versions/types are safely skipped; malformed known payloads, impossible bounds, and trailing cue bytes are rejected. These presentation failures are isolated exactly like observer failures: telegraph and old-client gameplay remain normal.
 
-A future in-game editor can browse stable visual IDs, preview a selected visual against a non-authoritative test marker, assign it to an ability action/lifecycle hook, validate known IDs, and save only the visual reference plus presentation parameters. It should not expose ability execution, damage, priority, cooldown, or Mob AI controls through a visual panel.
-
-## Paper/Fabric split
-
-Paper owns ability casts and decides which lifecycle snapshots are sent. The Fabric client is render-only: it consumes versioned visual messages, resolves known visual IDs, and may gracefully ignore unknown or unsupported visuals. No client UI or protocol is introduced by this document; a future protocol must preserve this authoritative/render-only separation.
+Arcane Burst adds CAST spiral/sphere, action-bound TELEGRAPH circle, HIT burst, EXPIRE fade, and CANCEL cue only.  It changes no action duration, targeting, damage, metadata/tags, cancellation or mob/player execution.  Future Kotlin and Editor work may author the same validated definitions, but neither owns gameplay or renderer loops.

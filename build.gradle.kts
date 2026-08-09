@@ -85,6 +85,12 @@ val abilityRuntimeFoundationTest by tasks.registering(JavaExec::class) {
     mainClass.set("io.github.gyai.projects.ability.AbilityRuntimeFoundationTest")
     jvmArgs("-ea")
 }
+val abilityVisualFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.AbilityVisualFoundationTest")
+    jvmArgs("-ea")
+}
 
 val assignedMobAbilityFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
@@ -598,6 +604,7 @@ tasks.test {
 tasks.named("check") {
     dependsOn(combatShapeFoundationTest)
     dependsOn(abilityRuntimeFoundationTest)
+    dependsOn(abilityVisualFoundationTest)
     dependsOn(assignedMobAbilityFoundationTest)
     dependsOn(hardControlTestToolListenerTest)
     dependsOn(mobAbilityDamageParityTest)

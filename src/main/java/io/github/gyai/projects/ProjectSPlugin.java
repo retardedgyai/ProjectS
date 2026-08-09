@@ -55,6 +55,7 @@ import io.github.gyai.projects.network.MobEditorChannel;
 import io.github.gyai.projects.network.MobEditorStatePacket;
 import io.github.gyai.projects.monster.editor.MobEditorManager;
 import io.github.gyai.projects.network.TelegraphPacket;
+import io.github.gyai.projects.network.AbilityVfxPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
@@ -388,6 +389,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, MobEditorStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, TelegraphPacket.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, AbilityVfxPacket.CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(
                 this,
                 TelegraphPacket.HELLO_CHANNEL,
