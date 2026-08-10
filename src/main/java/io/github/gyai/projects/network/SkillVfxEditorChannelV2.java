@@ -1,0 +1,18 @@
+package io.github.gyai.projects.network;
+
+import io.github.gyai.projects.ability.editor.*;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.messaging.PluginMessageListener;
+import org.jetbrains.annotations.NotNull;
+import java.util.List;
+
+/** Appearance-aware editor transport; v1 remains registered beside it for legacy clients. */
+public final class SkillVfxEditorChannelV2 implements PluginMessageListener {
+    public static final String REQUEST_CHANNEL="projects:skill_editor_req_v2", STATE_CHANNEL="projects:skill_editor_state_v2";
+    private final JavaPlugin plugin; private final SkillVfxEditorServiceAccess service;
+    public SkillVfxEditorChannelV2(JavaPlugin plugin,SkillVfxEditorServiceAccess service){this.plugin=plugin;this.service=service;}
+    @Override public void onPluginMessageReceived(@NotNull String channel,@NotNull Player player,byte @NotNull [] payload){if(!REQUEST_CHANNEL.equals(channel))return;dispatch(payload,new SkillVfxEditorChannel.Sender(){public boolean hasPermission(String p){return player.hasPermission(p);}public void send(byte[] p){player.sendPluginMessage(plugin,STATE_CHANNEL,p);}},service);}
+    public static void dispatch(byte[] payload,SkillVfxEditorChannel.Sender sender,SkillVfxEditorServiceAccess service){if(!sender.hasPermission(SkillVfxEditorChannel.OPEN_PERMISSION))return;SkillVfxEditorProtocol.Request request=null;try{request=SkillVfxEditorProtocolV2.decodeRequest(payload);var access=SkillVfxEditorAuthorization.decide(request.operation(),true,sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),sender.hasPermission(SkillVfxEditorChannel.APPLY_PERMISSION));if(!access.allowed()){send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorProtocol.Status.PERMISSION_DENIED,request.correlation(),request.session(),List.of(),null,access.previewAllowed(),"permission denied"));return;}switch(request.operation()){case CATALOG->send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorProtocol.Status.OK,request.correlation(),service.serverSession(),service.catalog(),null,sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),"ok"));case FETCH->send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorProtocol.Status.OK,request.correlation(),service.serverSession(),List.of(),service.snapshot(request.abilityId()),sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),"ok"));case APPLY_VISUAL_SESSION->send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorProtocol.Status.OK,request.correlation(),service.serverSession(),List.of(),service.apply(request.session(),request.abilityId(),request.revision(),request.baseFingerprint(),request.effectiveFingerprint(),request.visual()),sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),"ok"));case REVERT_VISUAL_SESSION->send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorProtocol.Status.OK,request.correlation(),service.serverSession(),List.of(),service.revert(request.session(),request.abilityId(),request.revision(),request.baseFingerprint(),request.effectiveFingerprint()),sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),"ok"));}}catch(RuntimeException ignored){if(request!=null)try{send(sender,new SkillVfxEditorProtocol.State(SkillVfxEditorStatusMapper.map(ignored),request.correlation(),service.serverSession(),List.of(),null,sender.hasPermission(SkillVfxEditorChannel.PREVIEW_PERMISSION),"rejected"));}catch(RuntimeException ignoredAgain){}}}
+    private static void send(SkillVfxEditorChannel.Sender sender,SkillVfxEditorProtocol.State state){try{sender.send(SkillVfxEditorProtocolV2.encodeState(state));}catch(RuntimeException ignored){}}
+}

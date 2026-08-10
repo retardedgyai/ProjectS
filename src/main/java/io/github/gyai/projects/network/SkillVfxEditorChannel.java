@@ -29,6 +29,8 @@ public final class SkillVfxEditorChannel implements PluginMessageListener {
     public void register() {
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, REQUEST_CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, STATE_CHANNEL);
+        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, SkillVfxEditorChannelV2.REQUEST_CHANNEL, new SkillVfxEditorChannelV2(plugin,service));
+        plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, SkillVfxEditorChannelV2.STATE_CHANNEL);
     }
 
     @Override public void onPluginMessageReceived(@NotNull String channel, @NotNull Player player, byte @NotNull [] payload) {
@@ -55,7 +57,7 @@ public final class SkillVfxEditorChannel implements PluginMessageListener {
                 case CATALOG -> send(sender, ok(sender, request, service, service.catalog(), null));
                 case FETCH -> send(sender, ok(sender, request, service, List.of(), service.snapshot(request.abilityId())));
                 case APPLY_VISUAL_SESSION -> send(sender, ok(sender, request, service, List.of(),
-                        service.apply(request.session(), request.abilityId(), request.revision(), request.baseFingerprint(), request.effectiveFingerprint(), request.visual())));
+                        service.applyV1(request.session(), request.abilityId(), request.revision(), request.baseFingerprint(), request.effectiveFingerprint(), request.visual())));
                 case REVERT_VISUAL_SESSION -> send(sender, ok(sender, request, service, List.of(),
                         service.revert(request.session(), request.abilityId(), request.revision(), request.baseFingerprint(), request.effectiveFingerprint())));
             }
