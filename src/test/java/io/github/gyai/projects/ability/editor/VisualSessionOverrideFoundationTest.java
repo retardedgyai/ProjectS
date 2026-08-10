@@ -87,8 +87,8 @@ public final class VisualSessionOverrideFoundationTest {
         SkillVfxEditorService.Snapshot before=service.snapshot(DevAbilityDefinitions.SHARED_ARCANE_BURST_ID);
         expect(IllegalArgumentException.class,()->new AbilityVisualDefinition(1,before.visualId(),List.of(new AbilityVisualDefinition.HookBinding(AbilityLifecycleEvent.Hook.TELEGRAPH,List.of(new AbilityVisualDefinition.Emission("duplicate",0,List.of(circle("same",3,null),circle("same",3,null))))))));
         check(service.snapshot(before.ability().id()).revision()==0,"same-emission duplicate leaves service state unchanged");
-        AbilityVisualDefinition crossEmissionDuplicate=twoEmissionVisual(before.visualId(),"shared","shared");
-        invalidLeavesState(service,before,crossEmissionDuplicate);
+        expect(IllegalArgumentException.class,()->twoEmissionVisual(before.visualId(),"shared","shared"));
+        check(service.snapshot(before.ability().id()).revision()==0,"cross-hook duplicate leaves service state unchanged");
         AbilityVisualDefinition unique=twoEmissionVisual(before.visualId(),"telegraph-circle","hit-circle");
         SkillVfxEditorService.Snapshot accepted=service.apply(service.serverSession(),before.ability().id(),0,before.baseFingerprint(),before.effectiveFingerprint(),unique);
         check(accepted.revision()==1&&accepted.effective().equals(unique),"unique primitive ids across document accept");

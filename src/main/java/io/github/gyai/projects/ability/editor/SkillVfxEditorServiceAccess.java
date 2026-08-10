@@ -14,5 +14,9 @@ public interface SkillVfxEditorServiceAccess {
     default SkillVfxEditorService.Snapshot applyV1(UUID session, String abilityId, long revision, String baseFingerprint, String effectiveFingerprint, AbilityVisualDefinition visual) {
         return apply(session,abilityId,revision,baseFingerprint,effectiveFingerprint,SkillVfxEditorService.mergeV1Appearance(snapshot(abilityId).effective(),visual));
     }
+    /** v2 carries Appearance but not Motion; the server preserves hidden Motion by stable ID. */
+    default SkillVfxEditorService.Snapshot applyV2(UUID session, String abilityId, long revision, String baseFingerprint, String effectiveFingerprint, AbilityVisualDefinition visual) {
+        return apply(session,abilityId,revision,baseFingerprint,effectiveFingerprint,SkillVfxEditorService.mergeV2Motion(snapshot(abilityId).effective(),visual));
+    }
     SkillVfxEditorService.Snapshot revert(UUID session, String abilityId, long revision, String baseFingerprint, String effectiveFingerprint);
 }

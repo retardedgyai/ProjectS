@@ -4,6 +4,10 @@ import io.github.gyai.projects.ability.AbilityLifecycleEvent
 import io.github.gyai.projects.ability.AbilityVisualBinding
 import io.github.gyai.projects.ability.AbilityVisualDefinition
 import io.github.gyai.projects.ability.AbilityVisualRegistry
+import io.github.gyai.projects.ability.MotionDirection
+import io.github.gyai.projects.ability.MotionEasing
+import io.github.gyai.projects.ability.MotionMode
+import io.github.gyai.projects.ability.MotionSpec
 
 fun literal(value: Double): AbilityVisualDefinition.Scalar = AbilityVisualDefinition.Literal(value)
 fun actionRadius(): AbilityVisualDefinition.Scalar = AbilityVisualDefinition.ActionField.RADIUS
@@ -98,7 +102,21 @@ abstract class PrimitiveBuilder internal constructor(private val id: String) {
     var localOffset: AbilityVisualDefinition.Vec = AbilityVisualDefinition.Vec(0.0, 0.0, 0.0)
     var yawRadians: Double = 0.0
     var appearance: AbilityVisualDefinition.Appearance = AbilityVisualDefinition.Appearance.DEBUG_QUAD
+    var motionSpec: MotionSpec = MotionSpec.LEGACY_DEFAULT
     fun particle(id: String) { appearance = AbilityVisualDefinition.Appearance.particle(id) }
+    fun motion(mode: MotionMode, direction: MotionDirection = MotionDirection.FORWARD,
+               easing: MotionEasing = MotionEasing.LINEAR, phase: Double = 0.0,
+               trailFraction: Double = 0.0) {
+        motionSpec = MotionSpec(mode, direction, easing, phase, trailFraction)
+    }
+    fun reveal(direction: MotionDirection = MotionDirection.FORWARD,
+               easing: MotionEasing = MotionEasing.LINEAR, phase: Double = 0.0) =
+        motion(MotionMode.REVEAL, direction, easing, phase, 0.0)
+    fun travel(direction: MotionDirection = MotionDirection.FORWARD,
+               easing: MotionEasing = MotionEasing.LINEAR, phase: Double = 0.0,
+               trailFraction: Double = 0.0) =
+        motion(MotionMode.TRAVEL, direction, easing, phase, trailFraction)
+    fun staticMotion() = motion(MotionMode.STATIC)
 
     protected fun spec(type: AbilityVisualDefinition.PrimitiveType, size: AbilityVisualDefinition.Scalar? = null,
                        radius: AbilityVisualDefinition.Scalar? = null, length: AbilityVisualDefinition.Scalar? = null,
@@ -107,7 +125,7 @@ abstract class PrimitiveBuilder internal constructor(private val id: String) {
                        turns: AbilityVisualDefinition.Scalar? = null, count: Int = 0,
                        controlPoints: List<AbilityVisualDefinition.Vec> = emptyList()) =
         AbilityVisualDefinition.PrimitiveSpec(id, type, delayTicks, durationTicks, argb, width, density, seed,
-            localOffset, yawRadians, size, radius, length, height, angle, startAngle, sweepAngle, turns, count, controlPoints, appearance)
+            localOffset, yawRadians, size, radius, length, height, angle, startAngle, sweepAngle, turns, count, controlPoints, appearance, motionSpec)
 
     internal abstract fun build(): AbilityVisualDefinition.PrimitiveSpec
 }

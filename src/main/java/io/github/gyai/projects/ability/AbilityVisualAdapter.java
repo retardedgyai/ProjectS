@@ -30,7 +30,7 @@ public final class AbilityVisualAdapter implements AbilityLifecycleObserver {
         } catch (RuntimeException ignored) { /* strictly presentation only */ }
     }
     private static AbilityVfxPacket.Primitive resolve(AbilityVisualDefinition.PrimitiveSpec p, AbilityDefinition.ActionSpec action) {
-        return new AbilityVfxPacket.Primitive(p.type(),p.delayTicks(),p.durationTicks(),p.argb(),p.width(),p.density(),p.seed(),p.localOffset(),p.yawRadians(), scalar(p.size(),action),scalar(p.radius(),action),scalar(p.length(),action),scalar(p.height(),action),scalar(p.angle(),action),scalar(p.startAngle(),action),scalar(p.sweepAngle(),action),scalar(p.turns(),action),p.count(),p.controlPoints(),p.appearance());
+        return new AbilityVfxPacket.Primitive(p.type(),p.delayTicks(),p.durationTicks(),p.argb(),p.width(),p.density(),p.seed(),p.localOffset(),p.yawRadians(), scalar(p.size(),action),scalar(p.radius(),action),scalar(p.length(),action),scalar(p.height(),action),scalar(p.angle(),action),scalar(p.startAngle(),action),scalar(p.sweepAngle(),action),scalar(p.turns(),action),p.count(),p.controlPoints(),p.appearance(),p.motion());
     }
     private static double scalar(AbilityVisualDefinition.Scalar scalar, AbilityDefinition.ActionSpec action) {
         if(scalar==null) return 0;

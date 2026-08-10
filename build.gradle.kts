@@ -206,8 +206,14 @@ val skillVfxEditorAuthoringV02ServerTest by tasks.registering(JavaExec::class) {
     mainClass.set("io.github.gyai.projects.ability.editor.SkillVfxEditorAuthoringV02ServerTest")
     jvmArgs("-ea")
 }
+val skillVfxMotionFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.editor.SkillVfxMotionFoundationTest")
+    jvmArgs("-ea")
+}
 tasks.named("check") {
-    dependsOn(skillVfxEditorAuthoringV02ServerTest)
+    dependsOn(skillVfxEditorAuthoringV02ServerTest, skillVfxMotionFoundationTest)
 }
 val javaKotlinAuthoringInteropTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)

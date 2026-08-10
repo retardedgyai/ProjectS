@@ -31,6 +31,8 @@ public final class SkillVfxEditorChannel implements PluginMessageListener {
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, STATE_CHANNEL);
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, SkillVfxEditorChannelV2.REQUEST_CHANNEL, new SkillVfxEditorChannelV2(plugin,service));
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, SkillVfxEditorChannelV2.STATE_CHANNEL);
+        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, SkillVfxEditorChannelV3.REQUEST_CHANNEL, new SkillVfxEditorChannelV3(plugin,service));
+        plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, SkillVfxEditorChannelV3.STATE_CHANNEL);
     }
 
     @Override public void onPluginMessageReceived(@NotNull String channel, @NotNull Player player, byte @NotNull [] payload) {

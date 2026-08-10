@@ -61,13 +61,7 @@ public final class SkillVfxEditorAuthoringV02ServerTest {
         check(applied.effective().equals(valid) && applied.effective().bindings().getFirst().emissions().size()==2,"each applied emission has a nonempty valid primitive structure");
 
         SkillVfxEditorService duplicateService=service();
-        AbilityVisualDefinition duplicateIds=visual(boundVisualId(duplicateService),List.of(
-                emission("telegraph",0,circle("shared",3,"minecraft:flame")),
-                emission("telegraph-second",0,circle("shared",3,"minecraft:soul"))));
-        SkillVfxEditorService.Snapshot before=duplicateService.snapshot(ABILITY);
-        expect(IllegalArgumentException.class,()->duplicateService.apply(duplicateService.serverSession(),ABILITY,before.revision(),before.baseFingerprint(),before.effectiveFingerprint(),duplicateIds));
-        byte[] duplicateWire=SkillVfxEditorProtocolV2.encodeRequest(request(31,duplicateService,before,duplicateIds));
-        expect(IllegalArgumentException.class,()->SkillVfxEditorProtocolV2.decodeRequest(duplicateWire));
+        expect(IllegalArgumentException.class,()->duplicateVisual(boundVisualId(duplicateService)));
         check(duplicateService.snapshot(ABILITY).revision()==0,"global duplicate rejection does not mutate session state");
     }
 
@@ -121,6 +115,9 @@ public final class SkillVfxEditorAuthoringV02ServerTest {
     private static SkillVfxEditorService service() { AbilityRegistry abilities=new AbilityRegistry(AbilityRuntime.standardActions()); abilities.register(DevAbilityDefinitions.sharedArcaneBurst()); abilities.register(new AbilityDefinition(1,"projects:unbound","Unbound",List.of(new AbilityDefinition.Wait(1)))); AbilityVisualRegistry visuals=new AbilityVisualRegistry(); DevAbilityVisuals.registerInto(visuals); return new SkillVfxEditorService(abilities,visuals); }
     private static String boundVisualId(SkillVfxEditorService service) { return service.snapshot(ABILITY).visualId(); }
     private static AbilityVisualDefinition visual(String id,List<AbilityVisualDefinition.Emission> emissions) { return new AbilityVisualDefinition(1,id,List.of(new AbilityVisualDefinition.HookBinding(AbilityLifecycleEvent.Hook.TELEGRAPH,emissions))); }
+    private static AbilityVisualDefinition duplicateVisual(String id) { return visual(id,List.of(
+            emission("telegraph",0,circle("shared",3,"minecraft:flame")),
+            emission("telegraph-second",0,circle("shared",3,"minecraft:soul")))); }
     private static AbilityVisualDefinition.Emission emission(String id,int action,AbilityVisualDefinition.PrimitiveSpec... primitives) { return new AbilityVisualDefinition.Emission(id,action,List.of(primitives)); }
     private static AbilityVisualDefinition.PrimitiveSpec circle(String id,double radius,String particle) { return new AbilityVisualDefinition.PrimitiveSpec(id,AbilityVisualDefinition.PrimitiveType.CIRCLE,0,1,1,1,1,1,new AbilityVisualDefinition.Vec(0,0,0),0,null,new AbilityVisualDefinition.Literal(radius),null,null,null,null,null,null,0,List.of(),particle==null?AbilityVisualDefinition.Appearance.DEBUG_QUAD:AbilityVisualDefinition.Appearance.particle(particle)); }
     private static AbilityVisualDefinition.PrimitiveSpec primitive(AbilityVisualDefinition visual,String id) { return visual.bindings().stream().flatMap(h->h.emissions().stream()).flatMap(e->e.primitives().stream()).filter(p->p.id().equals(id)).findFirst().orElseThrow(); }

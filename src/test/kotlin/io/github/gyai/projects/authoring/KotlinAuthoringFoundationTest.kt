@@ -118,11 +118,11 @@ object KotlinAuthoringFoundationTest {
         expect { visual("projects:vfx/duplicate-hook") { cast { emission("first") { sphere("a") { radius = literal(1.0) } } }; cast { emission("second") { sphere("b") { radius = literal(1.0) } } } } }
         expect { visual("projects:vfx/many") { cast { emission("many") { repeat(17) { sphere("p$it") { radius = literal(1.0) } } } } } }
         val namedHooks = visual("projects:vfx/named-hooks") {
-            onCast { emission("cast") { sphere("sphere") { radius = literal(1.0) } } }
-            onTelegraph { emission("telegraph") { sphere("sphere") { radius = literal(1.0) } } }
-            onHit { emission("hit") { sphere("sphere") { radius = literal(1.0) } } }
-            onExpire { emission("expire") { sphere("sphere") { radius = literal(1.0) } } }
-            onCancel { emission("cancel") { sphere("sphere") { radius = literal(1.0) } } }
+            onCast { emission("cast") { sphere("cast-sphere") { radius = literal(1.0) } } }
+            onTelegraph { emission("telegraph") { sphere("telegraph-sphere") { radius = literal(1.0) } } }
+            onHit { emission("hit") { sphere("hit-sphere") { radius = literal(1.0) } } }
+            onExpire { emission("expire") { sphere("expire-sphere") { radius = literal(1.0) } } }
+            onCancel { emission("cancel") { sphere("cancel-sphere") { radius = literal(1.0) } } }
         }
         check(namedHooks.bindings().size == 5)
     }
