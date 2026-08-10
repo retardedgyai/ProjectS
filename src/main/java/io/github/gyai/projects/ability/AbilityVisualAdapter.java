@@ -10,13 +10,14 @@ import java.util.function.LongSupplier;
 /** Presentation-only observer: all lookup, resolution, encoding and delivery failures are dropped. */
 public final class AbilityVisualAdapter implements AbilityLifecycleObserver {
     public interface CueSink { void send(AbilityVfxPacket.Cue cue); }
-    private final AbilityVisualRegistry registry; private final CueSink sink; private final LongSupplier ticks; private final UUID session=UUID.randomUUID(); private final AtomicLong sequence=new AtomicLong();
+    private final AbilityVisualResolver resolver; private final CueSink sink; private final LongSupplier ticks; private final UUID session=UUID.randomUUID(); private final AtomicLong sequence=new AtomicLong();
     public AbilityVisualAdapter(AbilityVisualRegistry registry, CueSink sink) { this(registry,sink,()->0L); }
-    public AbilityVisualAdapter(AbilityVisualRegistry registry, CueSink sink, LongSupplier ticks) { this.registry=Objects.requireNonNull(registry); this.sink=Objects.requireNonNull(sink); this.ticks=Objects.requireNonNull(ticks); }
+    public AbilityVisualAdapter(AbilityVisualRegistry registry, CueSink sink, LongSupplier ticks) { this(registry::resolve,sink,ticks); }
+    public AbilityVisualAdapter(AbilityVisualResolver resolver, CueSink sink, LongSupplier ticks) { this.resolver=Objects.requireNonNull(resolver); this.sink=Objects.requireNonNull(sink); this.ticks=Objects.requireNonNull(ticks); }
     @Override public void onLifecycle(AbilityLifecycleEvent event) {
         try {
             if(event.anchor()==null) return;
-            AbilityVisualDefinition visual=registry.resolve(event.context().abilityId()).orElse(null); if(visual==null) return;
+            AbilityVisualDefinition visual=resolver.resolve(event.context().abilityId()).orElse(null); if(visual==null) return;
             List<AbilityVisualDefinition.Emission> emissions=visual.emissions().getOrDefault(event.hook(), List.of()); for (int emissionIndex=0; emissionIndex<emissions.size(); emissionIndex++) try { AbilityVisualDefinition.Emission emission=emissions.get(emissionIndex);
                 if(emission.actionIndex()!=-1 && emission.actionIndex()!=event.actionIndex()) continue;
                 List<AbilityVfxPacket.Primitive> values=new ArrayList<>();

@@ -3,6 +3,7 @@ package io.github.gyai.projects.ability;
 import io.github.gyai.projects.manager.MonsterManager;
 import io.github.gyai.projects.monster.editor.MobDefinition;
 import io.github.gyai.projects.monster.editor.MobStatsDefinition;
+import io.github.gyai.projects.ability.editor.SkillVfxEditorService;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -13,13 +14,17 @@ public final class DevAbilityService implements AutoCloseable {
     private final MobAbilityAssignmentPolicy assignments;
     private final BukkitAbilityRuntime runtime;
     private final MonsterManager monsters;
+    private final SkillVfxEditorService skillVfxEditor;
     public DevAbilityService(BukkitAbilityRuntime runtime, MonsterManager monsters) {
         this.runtime = runtime; this.monsters = monsters;
         registry = new AbilityRegistry(runtime.runtime().actionRegistry());
         registry.register(DevAbilityDefinitions.sharedArcaneBurst());
         assignments = new MobAbilityAssignmentPolicy(registry);
+        skillVfxEditor = new SkillVfxEditorService(registry, runtime.visualRegistry());
+        runtime.setVisualResolver(skillVfxEditor);
     }
     public AbilityRegistry registry() { return registry; }
+    public SkillVfxEditorService skillVfxEditor() { return skillVfxEditor; }
     public Result castPlayer(Player player) {
         Entity sight = player.getTargetEntity(48);
         if (!(sight instanceof LivingEntity target) || target == player) return Result.failure("生体ターゲットを見てください。");

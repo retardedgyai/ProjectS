@@ -35,3 +35,12 @@ permissions:
   projects.mobeditor.reload:
     description: Mob Editor定義を再読み込みする
     default: op
+  projects.skilleditor.open:
+    description: Skill Editorを開く
+    default: op
+  projects.vfxeditor.preview:
+    description: VFX Editorのプレビューを利用する
+    default: op
+  projects.vfxeditor.session.apply:
+    description: VFX Editorのセッション変更を適用する
+    default: op

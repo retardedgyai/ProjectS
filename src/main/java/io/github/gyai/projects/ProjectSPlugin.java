@@ -89,6 +89,7 @@ import io.github.gyai.projects.feature.FeatureFlagService;
 import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 import io.github.gyai.projects.ability.BukkitAbilityRuntime;
 import io.github.gyai.projects.ability.DevAbilityService;
+import io.github.gyai.projects.network.SkillVfxEditorChannel;
 
 import java.time.Clock;
 import java.util.logging.Level;
@@ -121,6 +122,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     private SpinSlashDamageShadow spinSlashDamageShadow;
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
+    private SkillVfxEditorChannel skillVfxEditorChannel;
     private ShutdownSequence shutdownSequence;
     private BetaRuntime betaRuntime;
     private BetaActivationWave1CompositionRoot betaComposition;
@@ -250,6 +252,8 @@ public final class ProjectSPlugin extends JavaPlugin {
         mobEditorChannel = new MobEditorChannel(
                 this, mobEditorManager, monsterManager, devAbilityService.registry());
         mobEditorChannel.registerV2Channels();
+        skillVfxEditorChannel = new SkillVfxEditorChannel(this, devAbilityService.skillVfxEditor());
+        skillVfxEditorChannel.register();
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,

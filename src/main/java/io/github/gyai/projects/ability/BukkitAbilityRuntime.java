@@ -20,17 +20,22 @@ import java.util.function.BooleanSupplier;
 public final class BukkitAbilityRuntime {
     private final JavaPlugin plugin;
     private final AbilityRuntime runtime;
+    private final AbilityVisualRegistry visualRegistry;
+    private volatile AbilityVisualResolver visualResolver;
     public BukkitAbilityRuntime(JavaPlugin plugin, DamageService damageService, TelegraphManager telegraphs, MonsterManager monsters) {
         this.plugin = plugin;
+        visualRegistry = new AbilityVisualRegistry(); try { DevAbilityVisuals.registerInto(visualRegistry); } catch (RuntimeException ignored) { } visualResolver=visualRegistry::resolve;
         runtime = new AbilityRuntime(AbilityRuntime.standardActions(),
                 (ticks, task) -> {
                     var scheduled = plugin.getServer().getScheduler().runTaskLater(plugin, task, ticks);
                     return scheduled::cancel;
                 }, new Entities(plugin.getServer()), new Telegraphs(plugin, telegraphs),
-                new Damage(damageService, plugin.getServer(), monsters), visualObserver(plugin),
+                new Damage(damageService, plugin.getServer(), monsters), new AbilityVisualAdapter(id->visualResolver.resolve(id),new BukkitAbilityVfxCueSink(plugin),()->plugin.getServer().getCurrentTick()),
                 (context, ref) -> snapshot(plugin.getServer(), ref));
     }
     public AbilityRuntime runtime() { return runtime; }
+    public AbilityVisualRegistry visualRegistry() { return visualRegistry; }
+    public void setVisualResolver(AbilityVisualResolver resolver) { visualResolver=java.util.Objects.requireNonNull(resolver); }
     public AbilityCastContext playerContext(Player source, LivingEntity primaryTarget, String abilityId) {
         return context(source, primaryTarget, abilityId, SourceKind.PLAYER);
     }
@@ -46,7 +51,6 @@ public final class BukkitAbilityRuntime {
                 target == null ? null : new AbilityCastContext.EntityRef(target.getUniqueId()), java.util.Map.of());
     }
     public void close() { runtime.close(); }
-    private static AbilityLifecycleObserver visualObserver(JavaPlugin plugin) { try { AbilityVisualRegistry registry=new AbilityVisualRegistry(); DevAbilityVisuals.registerInto(registry); return new AbilityVisualAdapter(registry,new BukkitAbilityVfxCueSink(plugin),()->plugin.getServer().getCurrentTick()); } catch (RuntimeException ignored) { return AbilityLifecycleObserver.NOOP; } }
     private static AnchorFrame snapshot(Server server, AbilityCastContext.EntityRef ref) { Entity e=server.getEntity(ref.id()); if(!(e instanceof LivingEntity living)||!living.isValid()||living.isDead()) throw new IllegalArgumentException("Invalid visual anchor"); AnchorFrame frame=frame(living.getLocation()); if(frame==null) throw new IllegalArgumentException("Invalid visual anchor"); return frame; }
     private static AnchorFrame frame(Location l) { try { org.bukkit.util.Vector d=l.getDirection(); double n=Math.sqrt(d.lengthSquared()); if(!Double.isFinite(n)||n<1e-9) return null; double x=d.getX()/n,y=d.getY()/n,z=d.getZ()/n; double ux=Math.abs(y)>.98?1:0,uy=Math.abs(y)>.98?0:1,uz=0; return new AnchorFrame(l.getWorld().getUID(),l.getWorld().getKey().toString(),l.getX(),l.getY(),l.getZ(),x,y,z,ux,uy,uz); } catch(RuntimeException ignored) { return null; } }
 
