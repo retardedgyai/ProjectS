@@ -200,6 +200,15 @@ val visualSessionOverrideFoundationTest by tasks.registering(JavaExec::class) {
     mainClass.set("io.github.gyai.projects.ability.editor.VisualSessionOverrideFoundationTest")
     jvmArgs("-ea")
 }
+val skillVfxEditorAuthoringV02ServerTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.editor.SkillVfxEditorAuthoringV02ServerTest")
+    jvmArgs("-ea")
+}
+tasks.named("check") {
+    dependsOn(skillVfxEditorAuthoringV02ServerTest)
+}
 val javaKotlinAuthoringInteropTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
