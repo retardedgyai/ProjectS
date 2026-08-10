@@ -188,6 +188,18 @@ val abilityVisualFoundationTest by tasks.registering(JavaExec::class) {
     mainClass.set("io.github.gyai.projects.ability.AbilityVisualFoundationTest")
     jvmArgs("-ea")
 }
+val skillEditorProtocolFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.editor.SkillVfxEditorFoundationTest")
+    jvmArgs("-ea")
+}
+val visualSessionOverrideFoundationTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.ability.editor.VisualSessionOverrideFoundationTest")
+    jvmArgs("-ea")
+}
 val javaKotlinAuthoringInteropTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
@@ -719,6 +731,8 @@ tasks.test {
 }
 
 tasks.named("check") {
+    dependsOn(skillEditorProtocolFoundationTest)
+    dependsOn(visualSessionOverrideFoundationTest)
     dependsOn(kotlinAuthoringFoundationTest)
     dependsOn(inspectKotlinAuthoringJar)
     dependsOn(combatShapeFoundationTest)

@@ -1,0 +1,9 @@
+# Skill Editor / VFX Editor v0.1
+
+Gameplay definitions are immutable and read-only. The server owns the base ability, visual and binding catalog; DevTools may create only a memory-resident visual session override. Restarting creates a fresh server-session UUID and clears every override.
+
+`projects:skill_editor_req_v1` and `projects:skill_editor_state_v1` use `SkillVfxEditorProtocol` v1. Requests carry a positive correlation, server session, selected ability, expected revision/base/effective fingerprints and optional complete visual. States return deterministic ID-sorted catalog entries and the authoritative snapshot. Each catalog row encodes ability ID, display name, `hasVisual`, visual ID (empty when false), revision, fingerprints and override flag, so unbound gameplay definitions remain visible but cannot be fetched/applied. Packets are fixed-endian, UTF-8 length prefixed, reject invalid UTF-8/trailing bytes, and are capped at 64 KiB (64 abilities, 64 actions, 5 hooks, 16 emissions/primitives, 8 points, 256-byte strings).
+
+Apply/revert check permission, session, binding, revision and both fingerprints before a synchronized store mutation. Revert stores a revisioned tombstone, preventing ABA. Unknown/unbound values are `NOT_FOUND`, mismatched fingerprints/binding are `CONFLICT`, session/revision are `STALE`, and invalid candidates are `MALFORMED`. Visual constructors remain canonical validation; the cross-validator additionally allows only `RADIUS` on the matching `CircleTelegraph` action. No action or damage is inferred.
+
+`SkillVfxEditorService` is the resolver used by the single Bukkit runtime observer, so player and Editor Mob casts resolve the same override. Base registry objects are never changed; resolver failures remain presentation-only. Future persistence must introduce an explicit, separately versioned authoring workflow rather than extending this session protocol.
