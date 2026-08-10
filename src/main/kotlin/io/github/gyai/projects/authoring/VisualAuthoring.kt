@@ -97,6 +97,8 @@ abstract class PrimitiveBuilder internal constructor(private val id: String) {
     var seed: Long = 0
     var localOffset: AbilityVisualDefinition.Vec = AbilityVisualDefinition.Vec(0.0, 0.0, 0.0)
     var yawRadians: Double = 0.0
+    var appearance: AbilityVisualDefinition.Appearance = AbilityVisualDefinition.Appearance.DEBUG_QUAD
+    fun particle(id: String) { appearance = AbilityVisualDefinition.Appearance.particle(id) }
 
     protected fun spec(type: AbilityVisualDefinition.PrimitiveType, size: AbilityVisualDefinition.Scalar? = null,
                        radius: AbilityVisualDefinition.Scalar? = null, length: AbilityVisualDefinition.Scalar? = null,
@@ -105,7 +107,7 @@ abstract class PrimitiveBuilder internal constructor(private val id: String) {
                        turns: AbilityVisualDefinition.Scalar? = null, count: Int = 0,
                        controlPoints: List<AbilityVisualDefinition.Vec> = emptyList()) =
         AbilityVisualDefinition.PrimitiveSpec(id, type, delayTicks, durationTicks, argb, width, density, seed,
-            localOffset, yawRadians, size, radius, length, height, angle, startAngle, sweepAngle, turns, count, controlPoints)
+            localOffset, yawRadians, size, radius, length, height, angle, startAngle, sweepAngle, turns, count, controlPoints, appearance)
 
     internal abstract fun build(): AbilityVisualDefinition.PrimitiveSpec
 }

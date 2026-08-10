@@ -2,7 +2,8 @@ package io.github.gyai.projects.ability.editor;
 
 import io.github.gyai.projects.ability.*;
 import io.github.gyai.projects.network.AbilityVfxPacket;
-import java.util.*;
+import io.github.gyai.projects.network.SkillVfxEditorChannel;
+import java.util.*; import java.nio.file.*;
 
 /** Session override, resolver, and presentation-failure contract checks. */
 public final class VisualSessionOverrideFoundationTest {
@@ -10,6 +11,7 @@ public final class VisualSessionOverrideFoundationTest {
         applyResolveAndAdapter();
         failureMatrixAndValidation();
         globalPrimitiveIdValidation();
+        appearanceCodecAndFingerprint();
         tombstonesAndRestart();
         presentationFailures();
         System.out.println("visual session override assertions=55");
@@ -91,6 +93,28 @@ public final class VisualSessionOverrideFoundationTest {
         SkillVfxEditorService.Snapshot accepted=service.apply(service.serverSession(),before.ability().id(),0,before.baseFingerprint(),before.effectiveFingerprint(),unique);
         check(accepted.revision()==1&&accepted.effective().equals(unique),"unique primitive ids across document accept");
     }
+
+    private static void appearanceCodecAndFingerprint() {
+        AbilityVisualDefinition debug=visual("projects:vfx/appearance",3,0,null);
+        AbilityVisualDefinition.PrimitiveSpec original=debug.bindings().getFirst().emissions().getFirst().primitives().getFirst();
+        AbilityVisualDefinition particle=new AbilityVisualDefinition(1,debug.id(),List.of(new AbilityVisualDefinition.HookBinding(AbilityLifecycleEvent.Hook.TELEGRAPH,List.of(new AbilityVisualDefinition.Emission("telegraph",0,List.of(new AbilityVisualDefinition.PrimitiveSpec(original.id(),original.type(),original.delayTicks(),original.durationTicks(),original.argb(),original.width(),original.density(),original.seed(),original.localOffset(),original.yawRadians(),original.size(),original.radius(),original.length(),original.height(),original.angle(),original.startAngle(),original.sweepAngle(),original.turns(),original.count(),original.controlPoints(),AbilityVisualDefinition.Appearance.particle("minecraft:flame"))))))));
+        check(SkillVfxEditorProtocolV2.decodeVisual(SkillVfxEditorProtocolV2.encodeVisual(particle)).equals(particle),"v2 appearance visual roundtrip");
+        try { check(HexFormat.of().formatHex(SkillVfxEditorProtocolV2.encodeVisual(particle)).equals(Files.readString(Path.of("src/test/resources/protocol/skill-vfx-editor-v2-appearance-golden.hex")).trim()),"v2 editor golden"); }
+        catch(Exception e) { throw new AssertionError(e); }
+        check(SkillVfxEditorService.fingerprint(debug).equals("f315080c4ed96b5c1d0a3278b9dcaa8a94c21a920c88d1720e275166e7c61379"),"all-debug legacy fingerprint remains exact");
+        check(SkillVfxEditorService.fingerprint(particle).equals("dc41e54671699b79043b5bc9526d6f705813894693f7cbe506772b6e2c8bfece"),"particle fingerprint uses NUL-separated v2 domain");
+        AbilityVisualDefinition merged=SkillVfxEditorService.mergeV1Appearance(particle,debug);
+        check(merged.bindings().getFirst().emissions().getFirst().primitives().getFirst().appearance().equals(AbilityVisualDefinition.Appearance.particle("minecraft:flame")),"v1 merge retains matching appearance");
+        check(SkillVfxEditorService.mergeV1Appearance(particle,visual("projects:vfx/appearance",4,0,null)).bindings().getFirst().emissions().getFirst().primitives().getFirst().appearance().equals(AbilityVisualDefinition.Appearance.particle("minecraft:flame")),"v1 scalar edits retain appearance");
+        Fixture fixture=fixture(); SkillVfxEditorService service=fixture.service; SkillVfxEditorService.Snapshot before=service.snapshot(DevAbilityDefinitions.SHARED_ARCANE_BURST_ID);
+        AbilityVisualDefinition existing=particleVisual(before.visualId(),"circle",3); SkillVfxEditorService.Snapshot seeded=service.apply(service.serverSession(),before.ability().id(),0,before.baseFingerprint(),before.effectiveFingerprint(),existing);
+        AbilityVisualDefinition v1Edit=visual(before.visualId(),4,0,null); List<byte[]> states=new ArrayList<>(); SkillVfxEditorChannel.Sender sender=new SkillVfxEditorChannel.Sender(){public boolean hasPermission(String p){return true;}public void send(byte[] bytes){states.add(bytes);}};
+        SkillVfxEditorChannel.dispatch(SkillVfxEditorProtocol.encodeRequest(new SkillVfxEditorProtocol.Request(SkillVfxEditorProtocol.Operation.APPLY_VISUAL_SESSION,77,service.serverSession(),before.ability().id(),seeded.revision(),seeded.baseFingerprint(),seeded.effectiveFingerprint(),v1Edit)),sender,service);
+        check(states.size()==1&&SkillVfxEditorProtocol.decodeState(states.getFirst()).status()==SkillVfxEditorProtocol.Status.OK,"v1 apply succeeds");
+        check(service.snapshot(before.ability().id()).effective().bindings().getFirst().emissions().getFirst().primitives().getFirst().appearance().equals(AbilityVisualDefinition.Appearance.particle("minecraft:flame")),"v1 APPLY retains hidden appearance by primitive id");
+    }
+
+    private static AbilityVisualDefinition particleVisual(String id,String primitiveId,double radius) { AbilityVisualDefinition base=visual(id,radius,0,null); AbilityVisualDefinition.PrimitiveSpec p=base.bindings().getFirst().emissions().getFirst().primitives().getFirst(); return new AbilityVisualDefinition(1,id,List.of(new AbilityVisualDefinition.HookBinding(AbilityLifecycleEvent.Hook.TELEGRAPH,List.of(new AbilityVisualDefinition.Emission("telegraph",0,List.of(new AbilityVisualDefinition.PrimitiveSpec(primitiveId,p.type(),p.delayTicks(),p.durationTicks(),p.argb(),p.width(),p.density(),p.seed(),p.localOffset(),p.yawRadians(),p.size(),p.radius(),p.length(),p.height(),p.angle(),p.startAngle(),p.sweepAngle(),p.turns(),p.count(),p.controlPoints(),AbilityVisualDefinition.Appearance.particle("minecraft:flame")))))))); }
 
     private static void presentationFailures() {
         AbilityLifecycleEvent event=events(SourceKind.PLAYER).getFirst();

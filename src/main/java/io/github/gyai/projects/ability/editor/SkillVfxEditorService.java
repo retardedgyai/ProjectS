@@ -29,6 +29,18 @@ public final class SkillVfxEditorService implements AbilityVisualResolver, Skill
         AbilityVisualCrossValidator.validate(before.ability(),candidate); String fp=fingerprint(candidate);
         store.apply(abilityId,expectedRevision,candidate,fp); return snapshot(abilityId);
     }
+    /** v1 clients cannot see appearance.  Keep the authoritative material for matching stable primitive ids. */
+    public synchronized Snapshot applyV1(UUID requestedSession,String abilityId,long expectedRevision,String expectedBase,String expectedEffective,AbilityVisualDefinition candidate) {
+        Snapshot before=snapshot(abilityId);
+        return apply(requestedSession,abilityId,expectedRevision,expectedBase,expectedEffective,mergeV1Appearance(before.effective(),candidate));
+    }
+    public static AbilityVisualDefinition mergeV1Appearance(AbilityVisualDefinition authoritative,AbilityVisualDefinition v1Candidate) {
+        Map<String,AbilityVisualDefinition.Appearance> existing=new HashMap<>();
+        for(var h:authoritative.bindings()) for(var e:h.emissions()) for(var p:e.primitives()) existing.put(p.id(),p.appearance());
+        List<AbilityVisualDefinition.HookBinding> bindings=new ArrayList<>();
+        for(var h:v1Candidate.bindings()) { List<AbilityVisualDefinition.Emission> emissions=new ArrayList<>(); for(var e:h.emissions()) { List<AbilityVisualDefinition.PrimitiveSpec> primitives=new ArrayList<>(); for(var p:e.primitives()) primitives.add(new AbilityVisualDefinition.PrimitiveSpec(p.id(),p.type(),p.delayTicks(),p.durationTicks(),p.argb(),p.width(),p.density(),p.seed(),p.localOffset(),p.yawRadians(),p.size(),p.radius(),p.length(),p.height(),p.angle(),p.startAngle(),p.sweepAngle(),p.turns(),p.count(),p.controlPoints(),existing.getOrDefault(p.id(),AbilityVisualDefinition.Appearance.DEBUG_QUAD))); emissions.add(new AbilityVisualDefinition.Emission(e.id(),e.actionIndex(),primitives)); } bindings.add(new AbilityVisualDefinition.HookBinding(h.hook(),emissions)); }
+        return new AbilityVisualDefinition(v1Candidate.schemaVersion(),v1Candidate.id(),bindings);
+    }
     public synchronized Snapshot revert(UUID requestedSession,String abilityId,long expectedRevision,String expectedBase,String expectedEffective) {
         requireSession(requestedSession); Snapshot before=snapshot(abilityId); compare(before,expectedRevision,expectedBase,expectedEffective);
         store.revert(abilityId,expectedRevision,before.baseFingerprint()); return snapshot(abilityId);
@@ -36,6 +48,6 @@ public final class SkillVfxEditorService implements AbilityVisualResolver, Skill
     @Override public Optional<AbilityVisualDefinition> resolve(String abilityId) { try { return Optional.of(snapshot(abilityId).effective()); } catch(RuntimeException ignored) { return Optional.empty(); } }
     private void requireSession(UUID requested) { if(!session.equals(requested)) throw new StaleSession(); }
     private static void compare(Snapshot s,long revision,String base,String effective) { if(s.revision()!=revision) throw new VisualSessionOverrideStore.StaleRevisionException(); if(!s.baseFingerprint().equals(base) || !s.effectiveFingerprint().equals(effective)) throw new Conflict(); }
-    /** SHA-256 of the canonical wire representation, not object identity. */
-    public static String fingerprint(AbilityVisualDefinition visual) { try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(SkillVfxEditorProtocol.encodeVisual(visual))); } catch(Exception e) { throw new IllegalStateException(e); } }
+    /** Existing all-debug hashes stay v1; appearance-bearing visuals use a domain-separated v2 canonical form. */
+    public static String fingerprint(AbilityVisualDefinition visual) { try { boolean particles=visual.bindings().stream().flatMap(h->h.emissions().stream()).flatMap(e->e.primitives().stream()).anyMatch(p->p.appearance().kind()==AbilityVisualDefinition.AppearanceKind.PARTICLE); byte[] body=particles?SkillVfxEditorProtocolV2.encodeVisual(visual):SkillVfxEditorProtocol.encodeVisual(visual); if(particles){byte[] prefix="projects:skill_vfx_appearance_v2\0".getBytes(StandardCharsets.UTF_8);byte[] joined=Arrays.copyOf(prefix,prefix.length+body.length);System.arraycopy(body,0,joined,prefix.length,body.length);body=joined;} return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(body)); } catch(Exception e) { throw new IllegalStateException(e); } }
 }

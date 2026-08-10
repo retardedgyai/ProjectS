@@ -1,0 +1,10 @@
+# v0.1 authoritative particle appearance IDs; DEBUG_QUAD is projects:debug_quad
+minecraft:ash
+minecraft:cloud
+minecraft:crit
+minecraft:enchanted_hit
+minecraft:end_rod
+minecraft:firework
+minecraft:flame
+minecraft:soul
+minecraft:soul_fire_flame

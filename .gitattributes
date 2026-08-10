@@ -2,3 +2,7 @@ docs/protocol/beta-protocol-v1.json text eol=lf
 src/test/resources/protocol/beta-protocol-v1-vectors.json text eol=lf
 src/test/resources/protocol/ability-vfx-v1-golden.hex text eol=lf
 src/test/resources/protocol/skill-vfx-editor-v1-golden.hex text eol=lf
+src/test/resources/protocol/ability-vfx-v2-particle-golden.hex text eol=lf
+src/test/resources/protocol/skill-vfx-editor-v2-appearance-golden.hex text eol=lf
+src/test/resources/protocol/ability-vfx-appearance-v01-catalog.txt text eol=lf
+docs/design/ability-vfx-appearance-runtime-v01.md text eol=lf
