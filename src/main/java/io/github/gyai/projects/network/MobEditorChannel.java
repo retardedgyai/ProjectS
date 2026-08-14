@@ -181,7 +181,7 @@ public final class MobEditorChannel implements PluginMessageListener, Listener {
             case REQUEST_HEAD_DETAIL -> { String id = MobEditorPacketIO.readString(input, 64); String query = MobEditorPacketIO.readString(input, 64); int page = input.readUnsignedShort(); requireEnd(input); sendV2(player, manager.selectHead(player, id, query, page)); }
             case CREATE_HEAD -> { HeadDefinition head = MobEditorV2PacketIO.readHead(input); requireEnd(input); long token = beginStateIo(player, true, true); if (token == 0) return; sendV2(player, manager.snapshot(player, true, false, "Head保存中...", "", 0)); manager.createHeadAsync(player, head, snapshot -> finishStateIoV2(player, token, snapshot)); }
             case RELOAD -> { requireEnd(input); long token = beginStateIo(player, false, true); if (token == 0) return; sendV2(player, manager.snapshot(player, true, false, "再読み込み中...", "", 0)); manager.reloadAsync(player, snapshot -> finishStateIoV2(player, token, snapshot)); }
-            case CLOSE -> { requireEnd(input); manager.close(player); }
+            case CLOSE -> { requireEnd(input); invalidateStateIo(player); manager.close(player); }
             case DESPAWN_ALL_TEST_MOBS -> { requireEnd(input); int count = monsterManager.removeAllTestMobs(); sendV2(player, manager.snapshot(player, true, false, count + "体の全テスト個体を削除しました", "", 0)); }
             case UPDATE_HEAD_FAVORITE -> { String id = MobEditorPacketIO.readString(input, 64); long revision = Long.parseLong(MobEditorPacketIO.readString(input, 32)); boolean favorite = input.readBoolean(); requireEnd(input); long token = beginStateIo(player, true, true); if (token == 0) return; sendV2(player, manager.snapshot(player, true, false, "お気に入り更新中...", "", 0)); manager.updateHeadFavoriteAsync(player, id, revision, favorite, snapshot -> finishStateIoV2(player, token, snapshot)); }
             default -> throw new IOException("Unknown operation");
@@ -285,6 +285,7 @@ public final class MobEditorChannel implements PluginMessageListener, Listener {
             }
             case CLOSE -> {
                 requireEnd(input);
+                invalidateStateIo(player);
                 manager.close(player);
             }
             case DESPAWN_ALL_TEST_MOBS -> {
@@ -419,13 +420,17 @@ public final class MobEditorChannel implements PluginMessageListener, Listener {
             long token,
             MobEditorManager.Snapshot snapshot
     ) {
-        stateIoInFlight.remove(player.getUniqueId(), token);
+        if (!stateIoInFlight.remove(player.getUniqueId(), token)) return;
         sendIfOnline(player, snapshot);
     }
 
     private void finishStateIoV2(Player player, long token, MobEditorManager.Snapshot snapshot) {
-        stateIoInFlight.remove(player.getUniqueId(), token);
+        if (!stateIoInFlight.remove(player.getUniqueId(), token)) return;
         if (player.isOnline()) sendV2(player, snapshot);
+    }
+
+    private void invalidateStateIo(Player player) {
+        stateIoInFlight.remove(player.getUniqueId());
     }
 
     private static void requireEnd(DataInputStream input) throws IOException {

@@ -1,21 +1,31 @@
 package io.github.gyai.projects.network;
 
+import io.github.gyai.projects.ability.AbilityRegistry;
+import io.github.gyai.projects.ability.AbilityRuntime;
+import io.github.gyai.projects.monster.editor.HeadDefinition;
 import io.github.gyai.projects.monster.editor.MobAppearanceDefinition;
 import io.github.gyai.projects.monster.editor.MobDefinition;
-import io.github.gyai.projects.monster.editor.HeadDefinition;
+import io.github.gyai.projects.monster.editor.MobEditorManager;
+import org.bukkit.entity.Player;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.UUID;
+import sun.misc.Unsafe;
 
 /** Executable production codec regression suite; assertions run under {@code -ea}. */
 public final class MobEditorV2ProtocolTest {
@@ -43,6 +53,7 @@ public final class MobEditorV2ProtocolTest {
         catalogRejects();
         summaryTagsAreCappedAtEight();
         stateAggregateBoundRejects();
+        closeThenReopenDoesNotLeakV2State();
         System.out.println("MobEditorV2ProtocolTest passed");
     }
 
@@ -171,6 +182,126 @@ public final class MobEditorV2ProtocolTest {
         }
         expectRejected(() -> new MobEditorV2StatePacket(
                 true, true, false, "", summaries, null, List.of(), null, List.of()).encode());
+    }
+
+    private static void closeThenReopenDoesNotLeakV2State() throws Exception {
+        assertV2StateRace("save", true);
+        assertV2StateRace("reload", false);
+    }
+
+    private static void assertV2StateRace(String oldOperation,
+                                          boolean oldRateLimited) throws Exception {
+        MobEditorChannel channel = new MobEditorChannel(
+                null, emptyManager(), null,
+                new AbilityRegistry(AbilityRuntime.standardActions()));
+        List<byte[]> sent = new ArrayList<>();
+        UUID playerId = UUID.randomUUID();
+        Player player = racePlayer(playerId, sent);
+        long oldToken = beginV2(channel, player, oldRateLimited);
+        assert oldToken != 0 : oldOperation + " v2 request did not start";
+
+        channel.onPluginMessageReceived(MobEditorChannel.REQUEST_CHANNEL_V2, player,
+                new byte[]{(byte) MobEditorV2PacketIO.VERSION,
+                        (byte) MobEditorChannel.CLOSE});
+
+        long newToken = beginV2(channel, player, !oldRateLimited);
+        assert newToken != 0 && newToken != oldToken
+                : oldOperation + " v2 reopen did not get an independent token";
+        finishV2(channel, player, oldToken, snapshot("old " + oldOperation));
+        assert sent.isEmpty() : "stale v2 " + oldOperation + " response leaked";
+        assert inFlight(channel, playerId) == newToken
+                : "stale v2 " + oldOperation + " completion removed the new token";
+
+        finishV2(channel, player, newToken, snapshot("new " + oldOperation));
+        assert sent.size() == 1 : "valid v2 response was lost";
+        assert stateMessage(sent.getFirst()).equals("new " + oldOperation);
+        assert inFlight(channel, playerId) == null : "v2 token was not retired";
+    }
+
+    private static long beginV2(MobEditorChannel channel, Player player,
+                                boolean rateLimited) throws Exception {
+        Method method = MobEditorChannel.class.getDeclaredMethod(
+                "beginStateIo", Player.class, boolean.class, boolean.class);
+        method.setAccessible(true);
+        return (long) method.invoke(channel, player, rateLimited, true);
+    }
+
+    private static void finishV2(MobEditorChannel channel, Player player,
+                                 long token, MobEditorManager.Snapshot snapshot)
+            throws Exception {
+        Method method = MobEditorChannel.class.getDeclaredMethod(
+                "finishStateIoV2", Player.class, long.class, MobEditorManager.Snapshot.class);
+        method.setAccessible(true);
+        method.invoke(channel, player, token, snapshot);
+    }
+
+    private static MobEditorManager.Snapshot snapshot(String message) {
+        return new MobEditorManager.Snapshot(true, false, message,
+                List.of(), null, List.of(), null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Long inFlight(MobEditorChannel channel, UUID playerId)
+            throws Exception {
+        Field field = MobEditorChannel.class.getDeclaredField("stateIoInFlight");
+        field.setAccessible(true);
+        return ((java.util.Map<UUID, Long>) field.get(channel)).get(playerId);
+    }
+
+    private static MobEditorManager emptyManager() throws Exception {
+        MobEditorManager manager = (MobEditorManager) unsafe().allocateInstance(
+                MobEditorManager.class);
+        Field sessions = MobEditorManager.class.getDeclaredField("sessions");
+        sessions.setAccessible(true);
+        sessions.set(manager, new HashMap<>());
+        return manager;
+    }
+
+    private static Player racePlayer(UUID playerId, List<byte[]> sent) {
+        return (Player) Proxy.newProxyInstance(
+                Player.class.getClassLoader(), new Class<?>[]{Player.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getUniqueId" -> playerId;
+                    case "hasPermission" -> true;
+                    case "isOnline" -> true;
+                    case "sendPluginMessage" -> {
+                        sent.add((byte[]) arguments[2]);
+                        yield null;
+                    }
+                    case "hashCode" -> playerId.hashCode();
+                    case "equals" -> proxy == arguments[0];
+                    case "toString" -> "MobEditorV2RacePlayer";
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive()) return null;
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0F;
+        return 0D;
+    }
+
+    private static String stateMessage(byte[] packet) throws IOException {
+        try (DataInputStream input = new DataInputStream(
+                new ByteArrayInputStream(packet))) {
+            assert input.readUnsignedByte() == MobEditorV2PacketIO.VERSION;
+            input.readBoolean();
+            input.readBoolean();
+            input.readBoolean();
+            return MobEditorPacketIO.readString(input, 256);
+        }
+    }
+
+    private static Unsafe unsafe() throws Exception {
+        Field field = Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (Unsafe) field.get(null);
     }
 
     private static void summaryTagsAreCappedAtEight() throws IOException {

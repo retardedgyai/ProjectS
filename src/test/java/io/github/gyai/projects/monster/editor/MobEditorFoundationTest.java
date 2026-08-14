@@ -4,7 +4,9 @@ import io.github.gyai.projects.ability.AbilityRegistry;
 import io.github.gyai.projects.ability.AbilityRuntime;
 import io.github.gyai.projects.ability.DevAbilityDefinitions;
 import io.github.gyai.projects.ability.MobAbilityAssignmentPolicy;
+import io.github.gyai.projects.network.MobEditorChannel;
 import io.github.gyai.projects.network.MobEditorPacketIO;
+import org.bukkit.entity.Player;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.ByteArrayInputStream;
@@ -12,11 +14,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import sun.misc.Unsafe;
 
 public final class MobEditorFoundationTest {
     private MobEditorFoundationTest() {
@@ -143,6 +152,47 @@ public final class MobEditorFoundationTest {
         assert repository.save(valid, 0).revisionConflict();
         assert repository.reload().success();
         assert repository.get(valid.id()).equals(firstSave.definition());
+        MobDefinition refreshedDefinition = firstSave.definition().withRevision(2)
+                .withAbilityIds(List.of("projects:server"));
+        String refreshedYaml = MobDefinitionYaml.write(refreshedDefinition).saveToString();
+        Files.writeString(directory.resolve(valid.id() + ".yml"), refreshedYaml);
+        assert repository.reload().success();
+        assert repository.get(valid.id()).equals(refreshedDefinition);
+        MobEditorManager.Session reloadSession = new MobEditorManager.Session();
+        reloadSession.draft = firstSave.definition();
+        reloadSession.originalId = valid.id();
+        reloadSession.baseRevision = firstSave.definition().revision();
+        MobEditorManager.refreshSessionDraft(reloadSession,
+                reloadSession.reloadGeneration, valid.id(), repository.get(valid.id()));
+        assert reloadSession.draft == repository.get(valid.id());
+        assert reloadSession.baseRevision == 2;
+        assert reloadSession.draft.abilityIds().equals(List.of("projects:server"));
+        assert reloadSession.reloadGeneration == 1;
+        MobEditorManager.Session locallyChangedSession = new MobEditorManager.Session();
+        MobDefinition localDraft = firstSave.definition().withAbilityIds(
+                List.of("projects:local-edit"));
+        locallyChangedSession.draft = localDraft;
+        locallyChangedSession.originalId = valid.id();
+        locallyChangedSession.baseRevision = firstSave.definition().revision();
+        long requestedReloadGeneration = locallyChangedSession.reloadGeneration;
+        locallyChangedSession.reloadGeneration++;
+        locallyChangedSession.draftMutation++;
+        MobEditorManager.refreshSessionDraft(locallyChangedSession,
+                requestedReloadGeneration, valid.id(), refreshedDefinition);
+        assert locallyChangedSession.draft == localDraft;
+        assert locallyChangedSession.baseRevision == firstSave.definition().revision();
+        MobEditorManager.refreshSessionDraft(locallyChangedSession,
+                locallyChangedSession.reloadGeneration, valid.id(),
+                copy(refreshedDefinition, "other-mob", refreshedDefinition.stats(),
+                        refreshedDefinition.ai(), refreshedDefinition.appearance(),
+                        refreshedDefinition.entityType()));
+        assert locallyChangedSession.draft == localDraft;
+        MobEditorManager.Session removedSession = new MobEditorManager.Session();
+        removedSession.draft = firstSave.definition();
+        removedSession.originalId = "removed-mob";
+        MobEditorManager.refreshSessionDraft(removedSession,
+                removedSession.reloadGeneration, "removed-mob", null);
+        assert removedSession.draft == null && removedSession.originalId == null;
         DefinitionReloadGuard.validateCount(
                 MobDefinitionRepository.MAX_DEFINITIONS,
                 MobDefinitionRepository.MAX_DEFINITIONS);
@@ -171,7 +221,7 @@ public final class MobEditorFoundationTest {
                 valid.appearance(), valid.entityType());
         assert !repository.save(blocked, 0).success();
         assert Files.readString(rejectedFile).equals(rejectedContents);
-        assert repository.get(valid.id()).equals(firstSave.definition());
+        assert repository.get(valid.id()).equals(refreshedDefinition);
 
         Path staleDirectory = Files.createTempDirectory("projects-stale-abilities-");
         MobDefinitionRepository staleRepository = new MobDefinitionRepository(
@@ -284,6 +334,8 @@ public final class MobEditorFoundationTest {
         assert boundedMessage.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 256;
         assert boundedMessage.endsWith("…");
 
+        closeThenReopenDoesNotLeakV1State();
+
         deleteTree(directory);
         deleteTree(staleDirectory);
         deleteTree(headDirectory);
@@ -296,6 +348,126 @@ public final class MobEditorFoundationTest {
         } catch (IOException expected) {
             // Expected.
         }
+    }
+
+    private static void closeThenReopenDoesNotLeakV1State() throws Exception {
+        assertV1StateRace("save", true);
+        assertV1StateRace("reload", false);
+    }
+
+    private static void assertV1StateRace(String oldOperation,
+                                          boolean oldRateLimited) throws Exception {
+        MobEditorChannel channel = new MobEditorChannel(
+                null, emptyManager(), null, null);
+        List<byte[]> sent = new ArrayList<>();
+        UUID playerId = UUID.randomUUID();
+        Player player = racePlayer(playerId, sent);
+        long oldToken = beginV1(channel, player, oldRateLimited);
+        assert oldToken != 0 : oldOperation + " request did not start";
+
+        channel.onPluginMessageReceived(MobEditorChannel.REQUEST_CHANNEL, player,
+                new byte[]{(byte) MobEditorPacketIO.VERSION,
+                        (byte) MobEditorChannel.CLOSE});
+
+        long newToken = beginV1(channel, player, !oldRateLimited);
+        assert newToken != 0 && newToken != oldToken
+                : oldOperation + " reopen did not get an independent token";
+        finishV1(channel, player, oldToken, snapshot("old " + oldOperation));
+        assert sent.isEmpty() : "stale v1 " + oldOperation + " response leaked";
+        assert inFlight(channel, playerId) == newToken
+                : "stale v1 " + oldOperation + " completion removed the new token";
+
+        finishV1(channel, player, newToken, snapshot("new " + oldOperation));
+        assert sent.size() == 1 : "valid v1 response was lost";
+        assert stateMessage(sent.getFirst(), MobEditorPacketIO.VERSION)
+                .equals("new " + oldOperation);
+        assert inFlight(channel, playerId) == null : "v1 token was not retired";
+    }
+
+    private static long beginV1(MobEditorChannel channel, Player player,
+                                boolean rateLimited) throws Exception {
+        Method method = MobEditorChannel.class.getDeclaredMethod(
+                "beginStateIo", Player.class, boolean.class);
+        method.setAccessible(true);
+        return (long) method.invoke(channel, player, rateLimited);
+    }
+
+    private static void finishV1(MobEditorChannel channel, Player player,
+                                 long token, MobEditorManager.Snapshot snapshot)
+            throws Exception {
+        Method method = MobEditorChannel.class.getDeclaredMethod(
+                "finishStateIo", Player.class, long.class, MobEditorManager.Snapshot.class);
+        method.setAccessible(true);
+        method.invoke(channel, player, token, snapshot);
+    }
+
+    private static MobEditorManager.Snapshot snapshot(String message) {
+        return new MobEditorManager.Snapshot(true, false, message,
+                List.of(), null, List.of(), null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Long inFlight(MobEditorChannel channel, UUID playerId)
+            throws Exception {
+        Field field = MobEditorChannel.class.getDeclaredField("stateIoInFlight");
+        field.setAccessible(true);
+        return ((java.util.Map<UUID, Long>) field.get(channel)).get(playerId);
+    }
+
+    private static MobEditorManager emptyManager() throws Exception {
+        MobEditorManager manager = (MobEditorManager) unsafe().allocateInstance(
+                MobEditorManager.class);
+        Field sessions = MobEditorManager.class.getDeclaredField("sessions");
+        sessions.setAccessible(true);
+        sessions.set(manager, new HashMap<>());
+        return manager;
+    }
+
+    private static Player racePlayer(UUID playerId, List<byte[]> sent) {
+        return (Player) Proxy.newProxyInstance(
+                Player.class.getClassLoader(), new Class<?>[]{Player.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "getUniqueId" -> playerId;
+                    case "hasPermission" -> true;
+                    case "isOnline" -> true;
+                    case "sendPluginMessage" -> {
+                        sent.add((byte[]) arguments[2]);
+                        yield null;
+                    }
+                    case "hashCode" -> playerId.hashCode();
+                    case "equals" -> proxy == arguments[0];
+                    case "toString" -> "MobEditorRacePlayer";
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive()) return null;
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0F;
+        return 0D;
+    }
+
+    private static String stateMessage(byte[] packet, int version) throws IOException {
+        try (DataInputStream input = new DataInputStream(
+                new ByteArrayInputStream(packet))) {
+            assert input.readUnsignedByte() == version;
+            input.readBoolean();
+            input.readBoolean();
+            input.readBoolean();
+            return MobEditorPacketIO.readString(input, 256);
+        }
+    }
+
+    private static Unsafe unsafe() throws Exception {
+        Field field = Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (Unsafe) field.get(null);
     }
 
     private static void assertThrowsIllegal(Runnable action) {

@@ -110,6 +110,7 @@ public final class MobEditorManager implements Listener {
         session.draft = definition;
         session.originalId = definition.id();
         session.baseRevision = definition.revision();
+        session.reloadGeneration++;
         session.draftMutation++;
         session.targetGeneration++;
         return snapshot(player, true, false, "", "", 0);
@@ -130,6 +131,7 @@ public final class MobEditorManager implements Listener {
         session.draft = draft;
         session.originalId = id;
         session.baseRevision = 0;
+        session.reloadGeneration++;
         session.draftMutation++;
         session.targetGeneration++;
         return snapshot(player, true, false, "新規Draftを作成しました", "", 0);
@@ -182,6 +184,7 @@ public final class MobEditorManager implements Listener {
             return snapshot(player, false, false, result.message(), "", 0);
         }
         session.draft = draft;
+        session.reloadGeneration++;
         session.draftMutation++;
         return snapshot(player, result.valid(), false,
                 result.message(), "", 0);
@@ -227,6 +230,7 @@ public final class MobEditorManager implements Listener {
                                 ? completedResult.definition()
                                 : session.draft.withRevision(session.baseRevision);
                         session.originalId = completedResult.definition().id();
+                        session.reloadGeneration++;
                         session.draftMutation++;
                     }
                     monsterManager.replaceEditorDefinitions(mobRepository.all());
@@ -417,6 +421,10 @@ public final class MobEditorManager implements Listener {
             return;
         }
         reloading = true;
+        Session requestedSession = activeSession(player);
+        long requestedGeneration = requestedSession == null
+                ? -1 : requestedSession.reloadGeneration;
+        String requestedId = requestedSession == null ? null : requestedSession.originalId;
         try {
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                 ReloadOutcome outcome;
@@ -462,6 +470,11 @@ public final class MobEditorManager implements Listener {
                                 : completed.heads().message() + " / "
                                 + completed.mobs().message();
                         try {
+                            if (success
+                                    && sessions.get(player.getUniqueId()) == requestedSession) {
+                                refreshSessionDraft(requestedSession,
+                                        requestedGeneration, requestedId);
+                            }
                             monsterManager.replaceEditorDefinitions(mobRepository.all());
                         } catch (RuntimeException exception) {
                             success = false;
@@ -568,17 +581,44 @@ public final class MobEditorManager implements Listener {
         return player.getLocation().clone().add(direction.normalize().multiply(3));
     }
 
-    private static final class Session {
-        private MobDefinition draft;
-        private String originalId;
-        private HeadDefinition selectedHead;
-        private String mobQuery = "";
-        private int mobPage;
-        private long lastTouched;
-        private long draftMutation;
-        private long headMutation;
-        private long baseRevision;
-        private long targetGeneration;
+    private void refreshSessionDraft(
+            Session session, long requestedGeneration, String requestedId
+    ) {
+        if (session == null || session.reloadGeneration != requestedGeneration
+                || !java.util.Objects.equals(session.originalId, requestedId)) return;
+        MobDefinition refreshed = requestedId == null ? null : mobRepository.get(requestedId);
+        refreshSessionDraft(session, requestedGeneration, requestedId, refreshed);
+    }
+
+    static void refreshSessionDraft(
+            Session session, long requestedGeneration, String requestedId,
+            MobDefinition refreshed
+    ) {
+        if (session == null || session.reloadGeneration != requestedGeneration
+                || !java.util.Objects.equals(session.originalId, requestedId)) return;
+        if (refreshed != null && !java.util.Objects.equals(refreshed.id(), requestedId)) {
+            return;
+        }
+        session.draft = refreshed;
+        session.originalId = refreshed == null ? null : refreshed.id();
+        session.baseRevision = refreshed == null ? 0 : refreshed.revision();
+        session.draftMutation++;
+        session.targetGeneration++;
+        session.reloadGeneration++;
+    }
+
+    static final class Session {
+        MobDefinition draft;
+        String originalId;
+        HeadDefinition selectedHead;
+        String mobQuery = "";
+        int mobPage;
+        long lastTouched;
+        long draftMutation;
+        long headMutation;
+        long baseRevision;
+        long targetGeneration;
+        long reloadGeneration;
 
         void touch() {
             lastTouched = System.currentTimeMillis();
