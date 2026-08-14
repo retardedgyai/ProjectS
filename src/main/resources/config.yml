@@ -336,3 +336,16 @@ telegraphs:
   tracking-lock-threshold: 0.40
   cancellation-animation-seconds: 0.15
   detonation-animation-seconds: 0.20
+# Mob Editor external head catalog. API keys remain server-side only.
+head-catalog:
+  enabled: false
+  provider: MINECRAFT_HEADS
+  api-key: ""
+  app-id: ""
+  locale: ja
+  cache:
+    ttl-minutes: 60
+    max-entries: 5000
+  request:
+    timeout-seconds: 10
+    max-retries: 2

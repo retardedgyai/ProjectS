@@ -90,8 +90,13 @@ import io.github.gyai.projects.feature.FeatureFlagSnapshot;
 import io.github.gyai.projects.ability.BukkitAbilityRuntime;
 import io.github.gyai.projects.ability.DevAbilityService;
 import io.github.gyai.projects.network.SkillVfxEditorChannel;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogProvider;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogService;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogSettings;
+import io.github.gyai.projects.monster.editor.catalog.MinecraftHeadsProvider;
 
 import java.time.Clock;
+import java.util.Locale;
 import java.util.logging.Level;
 
 public final class ProjectSPlugin extends JavaPlugin {
@@ -123,6 +128,12 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
     private SkillVfxEditorChannel skillVfxEditorChannel;
+    /**
+     * The catalog is deliberately constructed as a dormant, fail-closed service.
+     * It is not exposed through a plugin channel or an HTTP route until the
+     * provider contract is verified.
+     */
+    private HeadCatalogService headCatalogService;
     private ShutdownSequence shutdownSequence;
     private BetaRuntime betaRuntime;
     private BetaActivationWave1CompositionRoot betaComposition;
@@ -136,6 +147,7 @@ public final class ProjectSPlugin extends JavaPlugin {
     public void onEnable() {
         shutdownSequence = null;
         saveDefaultConfig();
+        initializeHeadCatalog();
         snapshotBetaConfiguration();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
@@ -497,6 +509,49 @@ public final class ProjectSPlugin extends JavaPlugin {
         }
     }
 
+    private void initializeHeadCatalog() {
+        try {
+            HeadCatalogSettings settings = readHeadCatalogSettings();
+            HeadCatalogProvider provider = new MinecraftHeadsProvider(settings);
+            headCatalogService = new HeadCatalogService(provider, settings);
+            if (!provider.enabled()) {
+                getLogger().info("Head Catalog remains disabled: "
+                        + provider.statusMessage());
+            }
+        } catch (RuntimeException exception) {
+            HeadCatalogSettings disabled = HeadCatalogSettings.disabled();
+            headCatalogService = new HeadCatalogService(
+                    new MinecraftHeadsProvider(disabled), disabled);
+            getLogger().log(Level.WARNING,
+                    "Head Catalog initialization failed; it remains disabled",
+                    exception);
+        }
+    }
+
+    private HeadCatalogSettings readHeadCatalogSettings() {
+        org.bukkit.configuration.ConfigurationSection section =
+                getConfig().getConfigurationSection("head-catalog");
+        if (section == null) return HeadCatalogSettings.disabled();
+        long ttlMinutes = Math.max(1L,
+                section.getLong("cache.ttl-minutes", 60L));
+        long ttlMillis;
+        try {
+            ttlMillis = Math.multiplyExact(ttlMinutes, 60_000L);
+        } catch (ArithmeticException exception) {
+            ttlMillis = Long.MAX_VALUE;
+        }
+        return new HeadCatalogSettings(
+                section.getBoolean("enabled", false),
+                section.getString("provider", "MINECRAFT_HEADS"),
+                section.getString("api-key", ""),
+                section.getString("app-id", ""),
+                section.getString("locale", Locale.JAPAN.toLanguageTag()),
+                ttlMillis,
+                section.getInt("cache.max-entries", 5_000),
+                section.getInt("request.timeout-seconds", 10),
+                section.getInt("request.max-retries", 2));
+    }
+
     private void initializeBetaComposition() {
         BetaActivationWave1CompositionRoot partial = null;
         try {
@@ -541,6 +596,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 betaComposition, BetaActivationWave1CompositionRoot::close);
         sequence.addIfPresent("abilityRuntime.close",
                 devAbilityService, DevAbilityService::close);
+        sequence.add("headCatalog.release",
+                () -> headCatalogService = null);
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",

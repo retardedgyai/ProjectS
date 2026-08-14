@@ -26,6 +26,12 @@ permissions:
   projects.mobeditor.head.import:
     description: カスタムヘッドを登録する
     default: op
+  projects.mobeditor.head.catalog:
+    description: 外部Head Catalogを閲覧する
+    default: op
+  projects.mobeditor.head.import.external:
+    description: 外部Head Catalogからローカルへ登録する
+    default: op
   projects.mobeditor.test:
     description: Draftからテスト個体を操作する
     default: op
