@@ -438,6 +438,35 @@ val mobEditorV2ProtocolTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val contentDefinitionContractTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set(
+        "io.github.gyai.projects.content.definition.ContentDefinitionContractTest")
+    jvmArgs("-ea")
+}
+
+val mobContentPersistenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.content.persistence.MobContentPersistenceTest")
+    jvmArgs("-ea")
+}
+
+val abilityContentPersistenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.content.persistence.AbilityContentPersistenceTest")
+    jvmArgs("-ea")
+}
+
+val encounterContentPersistenceTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath + sourceSets.main.get().compileClasspath
+    mainClass.set("io.github.gyai.projects.content.persistence.EncounterContentPersistenceTest")
+    jvmArgs("-ea")
+}
+
 val shutdownSequenceTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
@@ -784,6 +813,10 @@ tasks.named("check") {
     dependsOn(damageShadowCommandRoutingTest)
     dependsOn(mobEditorFoundationTest)
     dependsOn(mobEditorV2ProtocolTest)
+    dependsOn(contentDefinitionContractTest)
+    dependsOn(mobContentPersistenceTest)
+    dependsOn(abilityContentPersistenceTest)
+    dependsOn(encounterContentPersistenceTest)
     dependsOn(shutdownSequenceTest)
     dependsOn(featureFlagServiceTest)
     dependsOn(schemaVersionRegistryTest)
