@@ -40,6 +40,29 @@ public final class MonsterListener implements Listener {
                 statusEffectManager, "statusEffectManager");
     }
 
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onGrohmBasicAttack(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof org.bukkit.entity.LivingEntity attacker)
+                || event.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK
+                || !(event.getEntity() instanceof Player target)
+                || !(monsterManager.get(attacker.getUniqueId())
+                instanceof HarborDevourerBoss boss)
+                || !boss.isValid()) {
+            return;
+        }
+        if (boss.isApplyingDamage(attacker, target)) {
+            return;
+        }
+        HardControlType type = crowdControlManager.getType(attacker);
+        event.setCancelled(true);
+        if (type == HardControlType.STUN
+                || type == HardControlType.FEAR
+                || type == HardControlType.CHARM) {
+            return;
+        }
+        boss.applyBasicAttack(target);
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onControlledAttack(EntityDamageByEntityEvent event) {
         if (!(event.getDamager() instanceof org.bukkit.entity.LivingEntity attacker)) {

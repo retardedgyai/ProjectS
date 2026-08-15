@@ -1,5 +1,9 @@
 package io.github.gyai.projects.monster.boss;
 
+import io.github.gyai.projects.combat.damage.DamageApplicationResult;
+import io.github.gyai.projects.combat.damage.DamageKind;
+import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.combat.damage.DamageType;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlState;
@@ -10,6 +14,7 @@ import io.github.gyai.projects.combat.telegraph.TelegraphRequest;
 import io.github.gyai.projects.manager.TelegraphManager;
 import io.github.gyai.projects.monster.CustomMonster;
 import io.github.gyai.projects.monster.MonsterData;
+import io.github.gyai.projects.monster.editor.MobStatsDefinition;
 import io.github.gyai.projects.status.StatusEffectManager;
 import org.bukkit.Color;
 import org.bukkit.GameMode;
@@ -30,6 +35,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -48,6 +54,8 @@ public final class HarborDevourerBoss extends CustomMonster {
     private final Ravager ravager;
     private final Settings settings;
     private final TelegraphManager telegraphManager;
+    private final DamageService damageService;
+    private final MobStatsDefinition damageStats;
     private final Set<BukkitTask> actionTasks = new HashSet<>();
     private final Set<UUID> activeTelegraphs = new HashSet<>();
     private boolean phaseTwo;
@@ -67,7 +75,8 @@ public final class HarborDevourerBoss extends CustomMonster {
             Settings settings,
             CrowdControlManager crowdControlManager,
             StatusEffectManager statusEffectManager,
-            TelegraphManager telegraphManager
+            TelegraphManager telegraphManager,
+            DamageService damageService
     ) {
         super(
                 plugin,
@@ -80,6 +89,19 @@ public final class HarborDevourerBoss extends CustomMonster {
         this.ravager = entity;
         this.settings = settings;
         this.telegraphManager = telegraphManager;
+        this.damageService = Objects.requireNonNull(
+                damageService, "damageService");
+        this.damageStats = new MobStatsDefinition(
+                data.stats().maxHealth(),
+                data.stats().attackDamage(),
+                0.0,
+                0.0,
+                0.0,
+                data.stats().movementSpeed(),
+                1.0,
+                0.0,
+                1.0,
+                0.0);
         initializeCooldowns();
     }
 
@@ -140,6 +162,42 @@ public final class HarborDevourerBoss extends CustomMonster {
         }
         double predictedHealth = Math.max(0.0, ravager.getHealth() - event.getFinalDamage());
         checkPhaseTransition(predictedHealth);
+    }
+
+    /** Returns whether the DamageService is applying damage for this exact hit. */
+    public boolean isApplyingDamage(
+            org.bukkit.entity.LivingEntity attacker,
+            org.bukkit.entity.LivingEntity target
+    ) {
+        return damageService.isApplying(attacker, target);
+    }
+
+    /** Routes one unmanaged Ravager basic hit through the ProjectS damage service. */
+    public DamageApplicationResult applyBasicAttack(Player target) {
+        if (!isValid()
+                || !isEligiblePlayer(target)) {
+            return null;
+        }
+        UUID castId = UUID.randomUUID();
+        return damageService.applyMobAbility(
+                ravager,
+                target,
+                damageStats,
+                castId,
+                DamageType.PHYSICAL,
+                DamageKind.NORMAL_ATTACK,
+                data.stats().attackDamage(),
+                0.0,
+                false);
+    }
+
+    /** Bounded dev reset entry; the live boss remains spawned. */
+    public boolean reset() {
+        if (!isValid()) {
+            return false;
+        }
+        resetBoss();
+        return true;
     }
 
     @Override
@@ -232,7 +290,8 @@ public final class HarborDevourerBoss extends CustomMonster {
     }
 
     private boolean isEligiblePlayer(Player player) {
-        return player.isValid()
+        return player != null
+                && player.isValid()
                 && !player.isDead()
                 && player.getGameMode() != GameMode.SPECTATOR;
     }
@@ -259,6 +318,7 @@ public final class HarborDevourerBoss extends CustomMonster {
         clearManagedEffects(HardControlRemovalReason.BOSS_RESET);
 
         ravager.setAI(true);
+        ravager.setAware(true);
         ravager.setTarget(null);
         ravager.setVelocity(new Vector());
         ravager.setFireTicks(0);
@@ -613,7 +673,16 @@ public final class HarborDevourerBoss extends CustomMonster {
                         continue;
                     }
                     hitPlayers.add(player.getUniqueId());
-                    player.damage(settings.chargeDamage(), ravager);
+                    DamageApplicationResult result = applyDamage(
+                            player,
+                            charge.telegraphId(),
+                            DamageKind.DIRECT_SKILL,
+                            settings.chargeDamage());
+                    if (result == null
+                            || !(result.shieldDamage() > 0.0
+                            || result.healthDamage() > 0.0)) {
+                        continue;
+                    }
                     player.setVelocity(direction.clone().multiply(1.5).setY(0.25));
                 }
             }
@@ -666,10 +735,61 @@ public final class HarborDevourerBoss extends CustomMonster {
                     player.getLocation())) {
                 continue;
             }
-            player.damage(damage, ravager);
+            DamageApplicationResult result = applyDamage(
+                    player,
+                    telegraphId,
+                    DamageKind.DIRECT_SKILL,
+                    damage);
+            if (result == null
+                    || !(result.shieldDamage() > 0.0
+                    || result.healthDamage() > 0.0)) {
+                continue;
+            }
             Vector direction = horizontalDirection(center, player.getLocation());
             player.setVelocity(direction.multiply(horizontalKnockback).setY(verticalKnockback));
         }
+    }
+
+    private DamageApplicationResult applyDamage(
+            Player target,
+            UUID castId,
+            DamageKind damageKind,
+            double fixedDamage
+    ) {
+        if (!isValid()
+                || !isEligiblePlayer(target)
+                || !Double.isFinite(fixedDamage)
+                || fixedDamage < 0.0) {
+            return null;
+        }
+        DamageProfile profile = damageProfile(damageKind, fixedDamage);
+        return damageService.applyMobAbility(
+                ravager,
+                target,
+                damageStats,
+                castId,
+                profile.damageType(),
+                profile.damageKind(),
+                profile.fixedDamage(),
+                profile.coefficient(),
+                profile.criticalAllowed());
+    }
+
+    static DamageProfile damageProfile(
+            DamageKind damageKind,
+            double fixedDamage
+    ) {
+        Objects.requireNonNull(damageKind, "damageKind");
+        if (!Double.isFinite(fixedDamage) || fixedDamage < 0.0) {
+            throw new IllegalArgumentException("Boss damage must be finite and non-negative");
+        }
+        return new DamageProfile(
+                DamageType.PHYSICAL,
+                damageKind,
+                fixedDamage,
+                0.0,
+                false,
+                0.0);
     }
 
     private void finishAction() {
@@ -943,6 +1063,16 @@ public final class HarborDevourerBoss extends CustomMonster {
         PHASE_TRANSITION,
         SLAM,
         CHARGE
+    }
+
+    record DamageProfile(
+            DamageType damageType,
+            DamageKind damageKind,
+            double fixedDamage,
+            double coefficient,
+            boolean criticalAllowed,
+            double lifeStealEfficiency
+    ) {
     }
 
     private record ChargeContext(

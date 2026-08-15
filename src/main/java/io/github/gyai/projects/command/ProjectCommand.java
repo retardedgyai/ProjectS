@@ -431,7 +431,7 @@ public class ProjectCommand implements CommandExecutor {
             return true;
         }
         if (args.length < 2) {
-            player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+            player.sendMessage("§e使用法: /projects boss <spawn|reset|remove>");
             return true;
         }
 
@@ -452,6 +452,13 @@ public class ProjectCommand implements CommandExecutor {
                 }
                 player.sendMessage("§a港喰らいの巨獣 グロームを生成しました。");
             }
+            case "reset" -> {
+                if (monsterManager.resetHarborDevourer()) {
+                    player.sendMessage("§aグロームをリセットしました。");
+                } else {
+                    player.sendMessage("§c稼働中のグロームはいません。");
+                }
+            }
             case "remove" -> {
                 if (monsterManager.removeHarborDevourer()) {
                     player.sendMessage("§aグロームを削除しました。");
@@ -459,7 +466,7 @@ public class ProjectCommand implements CommandExecutor {
                     player.sendMessage("§c稼働中のグロームはいません。");
                 }
             }
-            default -> player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+            default -> player.sendMessage("§e使用法: /projects boss <spawn|reset|remove>");
         }
         return true;
     }

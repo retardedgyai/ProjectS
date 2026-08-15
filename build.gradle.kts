@@ -257,6 +257,13 @@ val mobAbilityDamageParityTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val harborDevourerBossDamageTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.monster.boss.HarborDevourerBossDamageTest")
+    jvmArgs("-ea")
+}
+
 val statFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath +
@@ -764,6 +771,7 @@ tasks.named("check") {
     dependsOn(assignedMobAbilityFoundationTest)
     dependsOn(hardControlTestToolListenerTest)
     dependsOn(mobAbilityDamageParityTest)
+    dependsOn(harborDevourerBossDamageTest)
     dependsOn(elementSnapshotProtocolDiagnosticsTest)
     dependsOn(track3StagingItemWriterTest)
     dependsOn(track3EconomyOperationTest)

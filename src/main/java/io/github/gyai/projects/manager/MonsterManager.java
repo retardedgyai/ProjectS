@@ -416,7 +416,9 @@ public final class MonsterManager {
 
     public CustomMonster spawnHarborDevourer(Location location) {
         Objects.requireNonNull(location, "location");
-        if (hasActiveHarborDevourer() || grohmSettings == null) {
+        if (hasActiveHarborDevourer()
+                || grohmSettings == null
+                || damageService == null) {
             return null;
         }
         MonsterData data =
@@ -445,7 +447,8 @@ public final class MonsterManager {
                 grohmSettings,
                 crowdControlManager,
                 statusEffectManager,
-                telegraphManager);
+                telegraphManager,
+                damageService);
         activeMonsters.put(ravager.getUniqueId(), boss);
         return boss;
     }
@@ -465,6 +468,16 @@ public final class MonsterManager {
                         .findFirst();
         return active.isPresent()
                 && remove(active.get().getEntityId());
+    }
+
+    public boolean resetHarborDevourer() {
+        return activeMonsters.values().stream()
+                .filter(HarborDevourerBoss.class::isInstance)
+                .map(HarborDevourerBoss.class::cast)
+                .filter(HarborDevourerBoss::isValid)
+                .findFirst()
+                .map(HarborDevourerBoss::reset)
+                .orElse(false);
     }
 
     public CustomMonster get(UUID entityId) {
