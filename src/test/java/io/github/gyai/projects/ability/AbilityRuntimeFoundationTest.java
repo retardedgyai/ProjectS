@@ -8,7 +8,7 @@ import java.util.*;
 /** Executable, server-free v0.1 contract coverage. Run with -ea. */
 public final class AbilityRuntimeFoundationTest {
     public static void main(String[] args) throws Exception {
-        validDefinitionAndSchema(); rejectionCoverage(); telegraphAdapterFailureBoundary(); timelineAndNoEarlyDamage(); cancellationAndInvalidTarget();
+        validDefinitionAndSchema(); bossDefinitionAndRuntime(); rejectionCoverage(); telegraphAdapterFailureBoundary(); timelineAndNoEarlyDamage(); cancellationAndInvalidTarget();
         sharedDefinitionAndSourceNeutrality(); lifecycleAndDamageBoundary(); scheduledFailureAndDuplicateSafety(); productionBoundaryAndDirectDamageScan();
         System.out.println("Ability Runtime v0.1 foundation tests passed");
     }
@@ -16,6 +16,27 @@ public final class AbilityRuntimeFoundationTest {
         AbilityDefinition definition = DevAbilityDefinitions.sharedArcaneBurst();
         assert definition.id().equals("projects:dev-shared-arcane-burst"); assert definition.steps().size() == 3;
         new AbilityRegistry(AbilityRuntime.standardActions()).register(definition);
+    }
+    private static void bossDefinitionAndRuntime() {
+        AbilityDefinition definition = BossAbilityDefinitions.grohmBasicAttack();
+        assert definition.id().equals(BossAbilityDefinitions.GROHM_BASIC_ATTACK_ID);
+        assert definition.steps().size() == 1;
+        AbilityDefinition.Damage damage = (AbilityDefinition.Damage) definition.steps().getFirst();
+        assert damage.target() == TargetSelector.PRIMARY_TARGET;
+        assert damage.damageType() == DamageType.PHYSICAL;
+        assert damage.damageKind() == DamageKind.NORMAL_ATTACK;
+        assert damage.fixedDamage() == 0.0 && damage.coefficient() == 1.0;
+        assert !damage.criticalAllowed();
+        new AbilityRegistry(AbilityRuntime.standardActions()).register(definition);
+
+        Fixture fixture = new Fixture();
+        AbilityRuntime.Cast cast = fixture.runtime.cast(
+                definition,
+                fixture.context(SourceKind.BOSS, definition.id()));
+        assert cast.state() == AbilityRuntime.State.COMPLETED;
+        assert fixture.damageCalls == 1 && fixture.damageSourceKind == SourceKind.BOSS;
+        assert fixture.runtime.activeCount() == 0
+                && fixture.scheduler.activePendingCount() == 0;
     }
     private static void rejectionCoverage() {
         expect(() -> new AbilityDefinition(2, "projects:x", "x", List.of(new AbilityDefinition.Wait(0))));
@@ -83,6 +104,11 @@ public final class AbilityRuntimeFoundationTest {
     private static void productionBoundaryAndDirectDamageScan() throws Exception {
         String source = Files.readString(Path.of("src/main/java/io/github/gyai/projects/ability/BukkitAbilityRuntime.java"));
         assert source.contains("DamageRequest.builder") && source.contains("applyMobAbility");
+        assert source.contains("bossContext") && source.contains("SourceKind.BOSS")
+                && source.contains("monsters.abilityStats(source)");
+        String boss = Files.readString(Path.of("src/main/java/io/github/gyai/projects/monster/boss/HarborDevourerBoss.java"));
+        assert boss.contains("abilityCaster.cast(")
+                && boss.contains("BASIC_ATTACK_ABILITY");
         String damageService = Files.readString(Path.of("src/main/java/io/github/gyai/projects/combat/damage/DamageService.java"));
         assert damageService.contains("values.damageType(), DamageKind.NORMAL_ATTACK")
                 && damageService.contains("values.fixedDamage(), values.coefficient()")
@@ -95,14 +121,15 @@ public final class AbilityRuntimeFoundationTest {
     }
     private static void expect(Runnable action) { try { action.run(); throw new AssertionError("Expected rejection"); } catch (IllegalArgumentException expected) { } }
     private static final class Fixture {
-        final ManualScheduler scheduler = new ManualScheduler(); final List<String> events = new ArrayList<>(); final AbilityCastContext.EntityRef source = new AbilityCastContext.EntityRef(UUID.randomUUID()); final AbilityCastContext.EntityRef target = new AbilityCastContext.EntityRef(UUID.randomUUID()); final Set<UUID> valid = new HashSet<>(Set.of(source.id(), target.id())); boolean detonationFails; int damageCalls;
+        final ManualScheduler scheduler = new ManualScheduler(); final List<String> events = new ArrayList<>(); final AbilityCastContext.EntityRef source = new AbilityCastContext.EntityRef(UUID.randomUUID()); final AbilityCastContext.EntityRef target = new AbilityCastContext.EntityRef(UUID.randomUUID()); final Set<UUID> valid = new HashSet<>(Set.of(source.id(), target.id())); boolean detonationFails; int damageCalls; SourceKind damageSourceKind;
         Fixture() { this(false); }
         Fixture(boolean detonationFails) { this.detonationFails = detonationFails; }
         final AbilityRuntime runtime = new AbilityRuntime(AbilityRuntime.standardActions(), scheduler, ref -> valid.contains(ref.id()),
                 (context, selected, origin, spec) -> { events.add("telegraph"); return new AbilityRuntime.TelegraphHandle() { public void detonate() { events.add("detonate"); if (detonationFails) throw new IllegalStateException("detonation failure"); } public void cancel() { events.add("cancel"); } public AnchorFrame anchor() { return frame(context); } }; },
-                (context, selected, spec) -> { damageCalls++; events.add("damage"); return new AbilityRuntime.DamageOutcome(true,0,1,frame(context)); });
+                (context, selected, spec) -> { damageCalls++; damageSourceKind = context.sourceKind(); events.add("damage"); return new AbilityRuntime.DamageOutcome(true,0,1,frame(context)); });
         private static AnchorFrame frame(AbilityCastContext context) { return new AnchorFrame(context.origin().worldId(),context.origin().dimension(),0,0,0,0,0,1,0,1,0); }
-        AbilityCastContext context(SourceKind kind) { return new AbilityCastContext(UUID.randomUUID(), DevAbilityDefinitions.SHARED_ARCANE_BURST_ID, source, kind, new AbilityCastContext.Origin(UUID.randomUUID(), "minecraft:overworld", 0, 0, 0), target, Map.of()); }
+        AbilityCastContext context(SourceKind kind) { return context(kind, DevAbilityDefinitions.SHARED_ARCANE_BURST_ID); }
+        AbilityCastContext context(SourceKind kind, String abilityId) { return new AbilityCastContext(UUID.randomUUID(), abilityId, source, kind, new AbilityCastContext.Origin(UUID.randomUUID(), "minecraft:overworld", 0, 0, 0), target, Map.of()); }
     }
     private static final class ManualScheduler implements AbilityRuntime.Scheduler {
         long now; long sequence; final List<Entry> entries = new ArrayList<>();

@@ -43,6 +43,9 @@ public final class BukkitAbilityRuntime {
         if (stats == null) throw new IllegalArgumentException("Editor mob stats are required");
         return context(source, primaryTarget, abilityId, SourceKind.MOB);
     }
+    public AbilityCastContext bossContext(LivingEntity source, Player primaryTarget, String abilityId) {
+        return context(source, primaryTarget, abilityId, SourceKind.BOSS);
+    }
     private AbilityCastContext context(LivingEntity source, LivingEntity target, String abilityId, SourceKind kind) {
         Location location = source.getLocation();
         return new AbilityCastContext(UUID.randomUUID(), abilityId,
@@ -106,9 +109,10 @@ public final class BukkitAbilityRuntime {
                         .damageType(spec.damageType()).damageKind(spec.damageKind()).fixedDamage(spec.fixedDamage()).coefficient(spec.coefficient())
                         .criticalAllowed(spec.criticalAllowed()).attackMetadata(spec.metadata()).build());
                 return outcome(result,target);
-            } else if (context.sourceKind() == SourceKind.MOB) {
-                MobStatsDefinition stats = monsters.editorStats(source);
-                if (stats == null) throw new IllegalArgumentException("Mob ability source is not an Editor Mob");
+            } else if (context.sourceKind() == SourceKind.MOB
+                    || context.sourceKind() == SourceKind.BOSS) {
+                MobStatsDefinition stats = monsters.abilityStats(source);
+                if (stats == null) throw new IllegalArgumentException("Mob ability source is not managed");
                 return outcome(service.applyMobAbility(source, target, stats, context.castId(), spec.damageType(), spec.damageKind(),
                         spec.fixedDamage(), spec.coefficient(), spec.criticalAllowed()),target);
             } else throw new IllegalArgumentException("Unsupported ability source");

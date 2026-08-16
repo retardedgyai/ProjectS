@@ -21,10 +21,12 @@ public final class DevAbilityService implements AutoCloseable {
         this.runtime = runtime; this.monsters = monsters;
         registry = new AbilityRegistry(runtime.runtime().actionRegistry());
         registry.register(DevAbilityDefinitions.sharedArcaneBurst());
+        registry.register(BossAbilityDefinitions.grohmBasicAttack());
         assignments = new MobAbilityAssignmentPolicy(registry);
         skillVfxEditor = new SkillVfxEditorService(registry, runtime.visualRegistry());
         runtime.setVisualResolver(skillVfxEditor);
         monsters.configureEditorAbilityCaster(this::autoCastAssignedMob);
+        monsters.configureBossAbilityCaster(this::castBossAbility);
     }
     public AbilityRegistry registry() { return registry; }
     public SkillVfxEditorService skillVfxEditor() { return skillVfxEditor; }
@@ -84,6 +86,21 @@ public final class DevAbilityService implements AutoCloseable {
         AbilityDefinition ability = resolved.definition();
         return runtime.runtime().cast(ability,
                 runtime.mobContext(source, definition.stats(), target, ability.id()));
+    }
+
+    private AbilityRuntime.Cast castBossAbility(
+            LivingEntity source,
+            Player target,
+            AbilityDefinition definition
+    ) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(definition, "definition");
+        AbilityDefinition registered = registry.find(definition.id())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown boss ability id: " + definition.id()));
+        return runtime.runtime().cast(registered,
+                runtime.bossContext(source, target, registered.id()));
     }
 
     @Override public void close() { runtime.close(); }

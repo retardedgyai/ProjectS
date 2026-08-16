@@ -21,6 +21,8 @@ public final class HarborDevourerBossDamageTest {
             "src/main/java/io/github/gyai/projects/command/ProjectCommand.java");
     private static final Path DAMAGE_SERVICE = Path.of(
             "src/main/java/io/github/gyai/projects/combat/damage/DamageService.java");
+    private static final Path BOSS_ABILITIES = Path.of(
+            "src/main/java/io/github/gyai/projects/ability/BossAbilityDefinitions.java");
 
     private static int checks;
 
@@ -33,10 +35,11 @@ public final class HarborDevourerBossDamageTest {
         String listener = Files.readString(LISTENER);
         String command = Files.readString(COMMAND);
         String damageService = Files.readString(DAMAGE_SERVICE);
+        String bossAbilities = Files.readString(BOSS_ABILITIES);
 
-        damageProfileMapping(boss);
+        damageProfileMapping(boss, bossAbilities);
         noRawDamageSourcePath(boss);
-        basicAttackRecursionContract(boss, listener, damageService);
+        basicAttackRecursionContract(boss, bossAbilities, listener, damageService);
         behavioralRegressionModel();
         specialRoutesAndCastStability(boss);
         resetContract(boss);
@@ -47,7 +50,7 @@ public final class HarborDevourerBossDamageTest {
                 "HarborDevourerBossDamageTest passed (" + checks + " checks)");
     }
 
-    private static void damageProfileMapping(String source) {
+    private static void damageProfileMapping(String source, String bossAbilities) {
         String profile = section(
                 source,
                 "static DamageProfile damageProfile(",
@@ -62,9 +65,9 @@ public final class HarborDevourerBossDamageTest {
                 "profile fixes coefficient and lifesteal to zero");
         check(profile.contains("false"),
                 "profile disables critical damage");
-        check(source.contains("DamageKind.NORMAL_ATTACK"),
+        check(bossAbilities.contains("DamageKind.NORMAL_ATTACK"),
                 "basic attack maps to normal attack damage kind");
-        check(source.contains("DamageType.PHYSICAL"),
+        check(bossAbilities.contains("DamageType.PHYSICAL"),
                 "basic attack maps to physical damage");
         check(count(source, "DamageKind.DIRECT_SKILL") == 2,
                 "three specials share the direct skill route seam");
@@ -83,27 +86,26 @@ public final class HarborDevourerBossDamageTest {
 
     private static void basicAttackRecursionContract(
             String boss,
+            String bossAbilities,
             String listener,
             String damageService
     ) {
         String basic = section(
                 boss,
-                "public DamageApplicationResult applyBasicAttack(Player target)",
+                "public boolean applyBasicAttack(Player target)",
                 "public boolean reset()");
-        check(basic.contains("UUID.randomUUID()"),
-                "basic action creates one cast id");
-        check(basic.contains("DamageKind.NORMAL_ATTACK"),
+        check(bossAbilities.contains("DamageKind.NORMAL_ATTACK"),
                 "basic action uses normal attack kind");
-        check(basic.contains("DamageType.PHYSICAL"),
+        check(bossAbilities.contains("DamageType.PHYSICAL"),
                 "basic action uses physical damage");
-        check(basic.contains("data.stats().attackDamage()"),
-                "basic action uses the configured Grohm attack amount");
-        check(basic.contains("damageService.applyMobAbility("),
-                "basic action delegates directly to the mob ability boundary");
+        check(bossAbilities.contains("0.0") && bossAbilities.contains("1.0"),
+                "basic action scales once from the configured Grohm attack stat");
+        check(basic.contains("abilityCaster.cast("),
+                "basic action delegates to the shared ability runtime");
+        check(basic.contains("AbilityRuntime.State.COMPLETED"),
+                "basic action reports a completed runtime cast");
         check(!basic.contains("event.getDamage()"),
                 "basic action does not consume Bukkit event damage");
-        check(count(boss, "UUID.randomUUID()") == 1,
-                "basic cast id is not regenerated per target");
 
         String lowest = section(
                 listener,
@@ -154,13 +156,13 @@ public final class HarborDevourerBossDamageTest {
                 "hard-controlled Grohm damage is canceled without rerouting");
 
         DamageProfileModel basic = new DamageProfileModel(
-                DamageType.PHYSICAL, DamageKind.NORMAL_ATTACK, 37.5, 0.0, false);
+                DamageType.PHYSICAL, DamageKind.NORMAL_ATTACK, 0.0, 1.0, false);
         check(basic.damageType() == DamageType.PHYSICAL
                         && basic.damageKind() == DamageKind.NORMAL_ATTACK
-                        && basic.fixedDamage() == 37.5
-                        && basic.coefficient() == 0.0
+                        && basic.fixedDamage() == 0.0
+                        && basic.coefficient() == 1.0
                         && !basic.criticalAllowed(),
-                "basic profile preserves the configured fixed physical amount");
+                "basic profile scales once from configured physical attack");
         DamageProfileModel special = new DamageProfileModel(
                 DamageType.PHYSICAL, DamageKind.DIRECT_SKILL, 24.0, 0.0, false);
         check(special.damageKind() == DamageKind.DIRECT_SKILL
@@ -254,8 +256,8 @@ public final class HarborDevourerBossDamageTest {
     private static void managerWiring(String source) {
         check(source.contains("|| damageService == null"),
                 "manager fails closed when DamageService is unavailable");
-        check(source.contains("telegraphManager,\n                damageService)"),
-                "manager injects DamageService into Grohm");
+        check(source.contains("telegraphManager,\n                damageService,\n                bossAbilityCaster)"),
+                "manager injects DamageService and the ability caster into Grohm");
         check(source.contains("public boolean resetHarborDevourer()"),
                 "manager exposes the bounded reset entry");
         String reset = section(

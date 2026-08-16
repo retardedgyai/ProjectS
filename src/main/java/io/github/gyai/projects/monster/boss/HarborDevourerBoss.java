@@ -4,6 +4,10 @@ import io.github.gyai.projects.combat.damage.DamageApplicationResult;
 import io.github.gyai.projects.combat.damage.DamageKind;
 import io.github.gyai.projects.combat.damage.DamageService;
 import io.github.gyai.projects.combat.damage.DamageType;
+import io.github.gyai.projects.ability.AbilityDefinition;
+import io.github.gyai.projects.ability.AbilityRuntime;
+import io.github.gyai.projects.ability.BossAbilityCaster;
+import io.github.gyai.projects.ability.BossAbilityDefinitions;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
 import io.github.gyai.projects.combat.skill.HardControlState;
@@ -50,12 +54,15 @@ public final class HarborDevourerBoss extends CustomMonster {
             new Particle.DustOptions(Color.fromRGB(190, 35, 45), 1.35f);
     private static final Particle.DustOptions PURPLE_DUST =
             new Particle.DustOptions(Color.fromRGB(130, 35, 180), 1.5f);
+    private static final AbilityDefinition BASIC_ATTACK_ABILITY =
+            BossAbilityDefinitions.grohmBasicAttack();
 
     private final Ravager ravager;
     private final Settings settings;
     private final TelegraphManager telegraphManager;
     private final DamageService damageService;
     private final MobStatsDefinition damageStats;
+    private final BossAbilityCaster abilityCaster;
     private final Set<BukkitTask> actionTasks = new HashSet<>();
     private final Set<UUID> activeTelegraphs = new HashSet<>();
     private boolean phaseTwo;
@@ -76,7 +83,8 @@ public final class HarborDevourerBoss extends CustomMonster {
             CrowdControlManager crowdControlManager,
             StatusEffectManager statusEffectManager,
             TelegraphManager telegraphManager,
-            DamageService damageService
+            DamageService damageService,
+            BossAbilityCaster abilityCaster
     ) {
         super(
                 plugin,
@@ -91,6 +99,8 @@ public final class HarborDevourerBoss extends CustomMonster {
         this.telegraphManager = telegraphManager;
         this.damageService = Objects.requireNonNull(
                 damageService, "damageService");
+        this.abilityCaster = Objects.requireNonNull(
+                abilityCaster, "abilityCaster");
         this.damageStats = new MobStatsDefinition(
                 data.stats().maxHealth(),
                 data.stats().attackDamage(),
@@ -172,23 +182,15 @@ public final class HarborDevourerBoss extends CustomMonster {
         return damageService.isApplying(attacker, target);
     }
 
-    /** Routes one unmanaged Ravager basic hit through the ProjectS damage service. */
-    public DamageApplicationResult applyBasicAttack(Player target) {
+    /** Routes one unmanaged Ravager basic hit through the shared ability runtime. */
+    public boolean applyBasicAttack(Player target) {
         if (!isValid()
                 || !isEligiblePlayer(target)) {
-            return null;
+            return false;
         }
-        UUID castId = UUID.randomUUID();
-        return damageService.applyMobAbility(
-                ravager,
-                target,
-                damageStats,
-                castId,
-                DamageType.PHYSICAL,
-                DamageKind.NORMAL_ATTACK,
-                data.stats().attackDamage(),
-                0.0,
-                false);
+        AbilityRuntime.Cast cast = abilityCaster.cast(
+                ravager, target, BASIC_ATTACK_ABILITY);
+        return cast != null && cast.state() == AbilityRuntime.State.COMPLETED;
     }
 
     /** Bounded dev reset entry; the live boss remains spawned. */

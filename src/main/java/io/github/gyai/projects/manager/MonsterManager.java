@@ -15,6 +15,7 @@ import io.github.gyai.projects.monster.editor.MobAppearanceApplier;
 import io.github.gyai.projects.monster.editor.MobDefinition;
 import io.github.gyai.projects.monster.editor.MobStatsDefinition;
 import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.ability.BossAbilityCaster;
 import io.github.gyai.projects.network.MonsterUiMath;
 import io.github.gyai.projects.network.MonsterUiPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
@@ -85,6 +86,7 @@ public final class MonsterManager {
     private MobAppearanceApplier appearanceApplier;
     private EditorCustomMonster.AssignedAbilityCaster editorAbilityCaster =
             (source, definition, target) -> null;
+    private BossAbilityCaster bossAbilityCaster;
     private HarborDevourerBoss.Settings grohmSettings;
     private BukkitTask tickTask;
     private double uiDisplayRange = 48.0;
@@ -191,6 +193,10 @@ public final class MonsterManager {
     ) {
         editorAbilityCaster = Objects.requireNonNull(
                 abilityCaster, "abilityCaster");
+    }
+
+    public void configureBossAbilityCaster(BossAbilityCaster abilityCaster) {
+        bossAbilityCaster = Objects.requireNonNull(abilityCaster, "abilityCaster");
     }
 
     public void replaceEditorDefinitions(List<MobDefinition> updated) {
@@ -336,6 +342,26 @@ public final class MonsterManager {
                 ? editor.definition().stats() : null;
     }
 
+    public MobStatsDefinition abilityStats(LivingEntity entity) {
+        CustomMonster monster = activeMonsters.get(entity.getUniqueId());
+        if (monster instanceof EditorCustomMonster editor) {
+            return editor.definition().stats();
+        }
+        if (monster == null) return null;
+        MonsterStats stats = monster.getData().stats();
+        return new MobStatsDefinition(
+                stats.maxHealth(),
+                stats.attackDamage(),
+                0.0,
+                0.0,
+                0.0,
+                stats.movementSpeed(),
+                1.0,
+                0.0,
+                1.0,
+                0.0);
+    }
+
     /** Returns the definition applied to this exact live Editor Mob instance. */
     public MobDefinition editorDefinition(LivingEntity entity) {
         CustomMonster monster = activeMonsters.get(entity.getUniqueId());
@@ -427,7 +453,8 @@ public final class MonsterManager {
         Objects.requireNonNull(location, "location");
         if (hasActiveHarborDevourer()
                 || grohmSettings == null
-                || damageService == null) {
+                || damageService == null
+                || bossAbilityCaster == null) {
             return null;
         }
         MonsterData data =
@@ -457,7 +484,8 @@ public final class MonsterManager {
                 crowdControlManager,
                 statusEffectManager,
                 telegraphManager,
-                damageService);
+                damageService,
+                bossAbilityCaster);
         activeMonsters.put(ravager.getUniqueId(), boss);
         return boss;
     }
