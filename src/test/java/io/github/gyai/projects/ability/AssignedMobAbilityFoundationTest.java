@@ -15,6 +15,7 @@ public final class AssignedMobAbilityFoundationTest {
     public static void main(String[] args) {
         assignmentAndResolutionBoundary();
         baselineAssignmentDecision();
+        firstAssignedAutoCastSelection();
         assignedMobTimelineAndCancellation();
         invalidEntitiesAndUnknownFailClosed();
         System.out.println("Ability Runtime v0.2 assigned-Mob tests passed");
@@ -77,6 +78,23 @@ public final class AssignedMobAbilityFoundationTest {
 
         AbilityRegistry empty = new AbilityRegistry(fixture.runtime.actionRegistry());
         assert new MobAbilityAssignmentPolicy(empty).resolve(assigned, shared.id()).status()
+                == MobAbilityAssignmentPolicy.Status.ASSIGNED_BUT_UNKNOWN;
+    }
+
+    private static void firstAssignedAutoCastSelection() {
+        Fixture fixture = new Fixture();
+        AbilityDefinition shared = DevAbilityDefinitions.sharedArcaneBurst();
+        AbilityRegistry registry = new AbilityRegistry(fixture.runtime.actionRegistry());
+        registry.register(shared);
+        MobAbilityAssignmentPolicy policy = new MobAbilityAssignmentPolicy(registry);
+
+        assert policy.resolveFirst(MobDefinition.create("empty_mob")).status()
+                == MobAbilityAssignmentPolicy.Status.UNASSIGNED;
+        assert policy.resolveFirst(MobDefinition.create("known_first")
+                .withAbilityIds(List.of(shared.id(), "projects:stale")))
+                .definition() == shared;
+        assert policy.resolveFirst(MobDefinition.create("stale_first")
+                .withAbilityIds(List.of("projects:stale", shared.id()))).status()
                 == MobAbilityAssignmentPolicy.Status.ASSIGNED_BUT_UNKNOWN;
     }
 

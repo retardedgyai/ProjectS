@@ -8,6 +8,8 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
+import java.util.Objects;
+
 /** Dev-only entry point; both commands deliberately resolve one registry object. */
 public final class DevAbilityService implements AutoCloseable {
     private final AbilityRegistry registry;
@@ -22,6 +24,7 @@ public final class DevAbilityService implements AutoCloseable {
         assignments = new MobAbilityAssignmentPolicy(registry);
         skillVfxEditor = new SkillVfxEditorService(registry, runtime.visualRegistry());
         runtime.setVisualResolver(skillVfxEditor);
+        monsters.configureEditorAbilityCaster(this::autoCastAssignedMob);
     }
     public AbilityRegistry registry() { return registry; }
     public SkillVfxEditorService skillVfxEditor() { return skillVfxEditor; }
@@ -66,6 +69,23 @@ public final class DevAbilityService implements AutoCloseable {
                 runtime.mobContext(source, stats, player, ability.id()));
         return Result.success("割り当て済みAbilityをEditor Mobから発動しました。");
     }
+
+    private AbilityRuntime.Cast autoCastAssignedMob(
+            LivingEntity source,
+            MobDefinition definition,
+            Player target
+    ) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(definition, "definition");
+        Objects.requireNonNull(target, "target");
+        MobAbilityAssignmentPolicy.Resolution resolved =
+                assignments.resolveFirst(definition);
+        if (!resolved.resolved()) return null;
+        AbilityDefinition ability = resolved.definition();
+        return runtime.runtime().cast(ability,
+                runtime.mobContext(source, definition.stats(), target, ability.id()));
+    }
+
     @Override public void close() { runtime.close(); }
     public record Result(boolean success, String message) { static Result success(String value) { return new Result(true, value); } static Result failure(String value) { return new Result(false, value); } }
 }

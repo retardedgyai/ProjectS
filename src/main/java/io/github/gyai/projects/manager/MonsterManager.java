@@ -83,6 +83,8 @@ public final class MonsterManager {
     private final Map<UUID, Set<UUID>> testMonstersByOwner = new HashMap<>();
     private DamageService damageService;
     private MobAppearanceApplier appearanceApplier;
+    private EditorCustomMonster.AssignedAbilityCaster editorAbilityCaster =
+            (source, definition, target) -> null;
     private HarborDevourerBoss.Settings grohmSettings;
     private BukkitTask tickTask;
     private double uiDisplayRange = 48.0;
@@ -184,6 +186,13 @@ public final class MonsterManager {
                 appearanceApplier, "appearanceApplier");
     }
 
+    public void configureEditorAbilityCaster(
+            EditorCustomMonster.AssignedAbilityCaster abilityCaster
+    ) {
+        editorAbilityCaster = Objects.requireNonNull(
+                abilityCaster, "abilityCaster");
+    }
+
     public void replaceEditorDefinitions(List<MobDefinition> updated) {
         editorDefinitions.clear();
         for (MobDefinition definition : updated) {
@@ -250,7 +259,7 @@ public final class MonsterManager {
             monster = new EditorCustomMonster(
                     plugin, definition, living, homeLocation, bossBar,
                     crowdControlManager, statusEffectManager,
-                    damageService, appearanceApplier);
+                    damageService, appearanceApplier, editorAbilityCaster);
             monster.initializeEntity();
         } catch (RuntimeException exception) {
             bossBar.removeAll();

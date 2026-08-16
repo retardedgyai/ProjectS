@@ -81,6 +81,14 @@ public final class MobAbilityAssignmentPolicy {
                 : new Resolution(Status.RESOLVED, ability);
     }
 
+    /** Resolves only the first authored slot; later slots are never an implicit fallback. */
+    public Resolution resolveFirst(MobDefinition definition) {
+        if (definition == null || definition.abilityIds().isEmpty()) {
+            return new Resolution(Status.UNASSIGNED, null);
+        }
+        return resolve(definition, definition.abilityIds().getFirst());
+    }
+
     public enum Status {
         MALFORMED,
         UNASSIGNED,

@@ -38,4 +38,6 @@ Kotlin scripting was not adopted: v0.1 requires static Java validation, predicta
 
 ## Current limitations and residual risk
 
-This version supplies only a dev command and no Mob AI rotation, cooldown system, production UI, persistence, area selection, or migration of legacy abilities. Paper scheduling remains the adapter implementation (not Folia). Telegraph timing is deterministic within the registered scheduler ordering, while normal server tick health still governs actual execution timing.
+Editor Mobs now provide the first bounded automatic-cast slice. When at least one Ability is assigned, the first assigned ID uses the existing AI target, attack range, attack-speed-scaled basic attack interval, and attack slot. The assigned Ability replaces that basic attack attempt, so unresolved IDs fail closed instead of silently dealing legacy damage. An active cast is cancelled when the target changes, AI is paused, the Mob returns home, its definition is replaced, or the Mob dies or is removed. Empty assignment lists retain the existing basic attack behavior.
+
+This version has no per-Ability cooldown metadata or Mob rotation policy; only the first assignment automatically casts. It also has no migration of legacy Player skills or Boss abilities and no area target selection beyond the existing action definitions. Paper scheduling remains the adapter implementation (not Folia). Telegraph timing is deterministic within the registered scheduler ordering, while normal server tick health still governs actual execution timing.
