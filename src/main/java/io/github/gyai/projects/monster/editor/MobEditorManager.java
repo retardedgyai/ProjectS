@@ -1,6 +1,8 @@
 package io.github.gyai.projects.monster.editor;
 
 import io.github.gyai.projects.combat.damage.DamageService;
+import io.github.gyai.projects.ability.AbilityRegistry;
+import io.github.gyai.projects.ability.MobAbilityAssignmentPolicy;
 import io.github.gyai.projects.manager.ItemManager;
 import io.github.gyai.projects.manager.MonsterManager;
 import org.bukkit.Location;
@@ -34,6 +36,7 @@ public final class MobEditorManager implements Listener {
     private final MobDefinitionValidator mobValidator;
     private final HeadDefinitionValidator headValidator;
     private final MobDefinitionRepository mobRepository;
+    private final MobAbilityAssignmentPolicy abilityAssignments;
     private final HeadDefinitionRepository headRepository;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Object repositoryIoLock = new Object();
@@ -43,10 +46,12 @@ public final class MobEditorManager implements Listener {
             JavaPlugin plugin,
             MonsterManager monsterManager,
             ItemManager itemManager,
-            DamageService damageService
+            DamageService damageService,
+            AbilityRegistry abilityRegistry
     ) {
         this.plugin = plugin;
         this.monsterManager = monsterManager;
+        this.abilityAssignments = new MobAbilityAssignmentPolicy(abilityRegistry);
         Path data = plugin.getDataFolder().toPath();
         Set<String> itemIds = itemManager.getItems().stream()
                 .map(io.github.gyai.projects.item.CustomItem::getId)
@@ -105,6 +110,7 @@ public final class MobEditorManager implements Listener {
         session.draft = definition;
         session.originalId = definition.id();
         session.baseRevision = definition.revision();
+        session.reloadGeneration++;
         session.draftMutation++;
         session.targetGeneration++;
         return snapshot(player, true, false, "", "", 0);
@@ -125,16 +131,38 @@ public final class MobEditorManager implements Listener {
         session.draft = draft;
         session.originalId = id;
         session.baseRevision = 0;
+        session.reloadGeneration++;
         session.draftMutation++;
         session.targetGeneration++;
         return snapshot(player, true, false, "新規Draftを作成しました", "", 0);
     }
 
     public Snapshot update(Player player, MobDefinition draft) {
+        return update(player, draft, false);
+    }
+
+    /** Strict v2 path; ability IDs are part of the submitted draft. */
+    public Snapshot updateV2(Player player, MobDefinition draft) {
+        return update(player, draft, true);
+    }
+
+    private Snapshot update(Player player, MobDefinition draft, boolean includesAbilities) {
         Session session = activeSession(player);
         if (session == null || session.originalId == null || session.draft == null) {
             return snapshot(player, false, false,
                     "編集セッションが終了しています。Mobを再選択してください", "", 0);
+        }
+        if (includesAbilities) {
+            MobAbilityAssignmentPolicy.Decision decision =
+                    abilityAssignments.decideFromBaseline(session.draft, draft);
+            if (!decision.acceptedRequest()) {
+                return snapshot(player, false, false,
+                        "不明または不正なAbility IDです", "", 0);
+            }
+            draft = decision.requireAccepted();
+        } else {
+            // v1 deliberately has no ability field, so retain the server's IDs.
+            draft = preserveAbilityIds(session.draft, draft);
         }
         if (session.originalId != null && !session.originalId.equals(draft.id())) {
             return snapshot(player, false, false,
@@ -149,11 +177,24 @@ public final class MobEditorManager implements Listener {
             return snapshot(player, false, false,
                     "既存のハードコードMobと内部IDが競合しています", "", 0);
         }
-        session.draft = draft;
-        session.draftMutation++;
         ValidationResult result = mobValidator.validate(draft);
+        // V2 is an all-or-nothing authoring request.  Do not leave an invalid
+        // proposed draft (or newly unknown IDs) in the authoritative session.
+        if (includesAbilities && !result.valid()) {
+            return snapshot(player, false, false, result.message(), "", 0);
+        }
+        session.draft = draft;
+        session.reloadGeneration++;
+        session.draftMutation++;
         return snapshot(player, result.valid(), false,
                 result.message(), "", 0);
+    }
+
+    static MobDefinition preserveAbilityIds(
+            MobDefinition serverDraft,
+            MobDefinition decodedV1Draft
+    ) {
+        return decodedV1Draft.withAbilityIds(serverDraft.abilityIds());
     }
 
     public void saveAsync(Player player, Consumer<Snapshot> callback) {
@@ -189,6 +230,7 @@ public final class MobEditorManager implements Listener {
                                 ? completedResult.definition()
                                 : session.draft.withRevision(session.baseRevision);
                         session.originalId = completedResult.definition().id();
+                        session.reloadGeneration++;
                         session.draftMutation++;
                     }
                     monsterManager.replaceEditorDefinitions(mobRepository.all());
@@ -379,6 +421,10 @@ public final class MobEditorManager implements Listener {
             return;
         }
         reloading = true;
+        Session requestedSession = activeSession(player);
+        long requestedGeneration = requestedSession == null
+                ? -1 : requestedSession.reloadGeneration;
+        String requestedId = requestedSession == null ? null : requestedSession.originalId;
         try {
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                 ReloadOutcome outcome;
@@ -424,6 +470,11 @@ public final class MobEditorManager implements Listener {
                                 : completed.heads().message() + " / "
                                 + completed.mobs().message();
                         try {
+                            if (success
+                                    && sessions.get(player.getUniqueId()) == requestedSession) {
+                                refreshSessionDraft(requestedSession,
+                                        requestedGeneration, requestedId);
+                            }
                             monsterManager.replaceEditorDefinitions(mobRepository.all());
                         } catch (RuntimeException exception) {
                             success = false;
@@ -530,17 +581,44 @@ public final class MobEditorManager implements Listener {
         return player.getLocation().clone().add(direction.normalize().multiply(3));
     }
 
-    private static final class Session {
-        private MobDefinition draft;
-        private String originalId;
-        private HeadDefinition selectedHead;
-        private String mobQuery = "";
-        private int mobPage;
-        private long lastTouched;
-        private long draftMutation;
-        private long headMutation;
-        private long baseRevision;
-        private long targetGeneration;
+    private void refreshSessionDraft(
+            Session session, long requestedGeneration, String requestedId
+    ) {
+        if (session == null || session.reloadGeneration != requestedGeneration
+                || !java.util.Objects.equals(session.originalId, requestedId)) return;
+        MobDefinition refreshed = requestedId == null ? null : mobRepository.get(requestedId);
+        refreshSessionDraft(session, requestedGeneration, requestedId, refreshed);
+    }
+
+    static void refreshSessionDraft(
+            Session session, long requestedGeneration, String requestedId,
+            MobDefinition refreshed
+    ) {
+        if (session == null || session.reloadGeneration != requestedGeneration
+                || !java.util.Objects.equals(session.originalId, requestedId)) return;
+        if (refreshed != null && !java.util.Objects.equals(refreshed.id(), requestedId)) {
+            return;
+        }
+        session.draft = refreshed;
+        session.originalId = refreshed == null ? null : refreshed.id();
+        session.baseRevision = refreshed == null ? 0 : refreshed.revision();
+        session.draftMutation++;
+        session.targetGeneration++;
+        session.reloadGeneration++;
+    }
+
+    static final class Session {
+        MobDefinition draft;
+        String originalId;
+        HeadDefinition selectedHead;
+        String mobQuery = "";
+        int mobPage;
+        long lastTouched;
+        long draftMutation;
+        long headMutation;
+        long baseRevision;
+        long targetGeneration;
+        long reloadGeneration;
 
         void touch() {
             lastTouched = System.currentTimeMillis();

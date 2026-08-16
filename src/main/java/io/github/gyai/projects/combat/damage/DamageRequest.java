@@ -1,5 +1,6 @@
 package io.github.gyai.projects.combat.damage;
 
+import io.github.gyai.projects.combat.stat.StatCalculator;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
@@ -24,6 +25,7 @@ public final class DamageRequest {
     private final double healingReductionPercent;
     private final double pveMultiplier;
     private final double pvpMultiplier;
+    private final double iceDirectDamageMultiplier;
     private final double[] additionalDamageReductions;
     private final DamageOffenseSnapshot offenseSnapshot;
     private final AttackMetadata attackMetadata;
@@ -53,6 +55,8 @@ public final class DamageRequest {
                 builder.healingReductionPercent, "healingReductionPercent");
         pveMultiplier = finite(builder.pveMultiplier, "pveMultiplier");
         pvpMultiplier = finite(builder.pvpMultiplier, "pvpMultiplier");
+        iceDirectDamageMultiplier = boundedMultiplier(
+                builder.iceDirectDamageMultiplier, "iceDirectDamageMultiplier");
         additionalDamageReductions = builder.additionalDamageReductions.clone();
         offenseSnapshot = builder.offenseSnapshot;
         attackMetadata = builder.attackMetadata == null
@@ -84,6 +88,11 @@ public final class DamageRequest {
     public double modeMultiplier() {
         return mode == DamageMode.PVP ? pvpMultiplier : pveMultiplier;
     }
+    /** Explicit pre-mitigation Ice factor; separate from the established mode multiplier. */
+    public double iceDirectDamageMultiplier() { return iceDirectDamageMultiplier; }
+    public double calculationMultiplier() {
+        return StatCalculator.saturatedMultiply(modeMultiplier(), iceDirectDamageMultiplier);
+    }
     public double[] additionalDamageReductions() {
         return additionalDamageReductions.clone();
     }
@@ -95,6 +104,28 @@ public final class DamageRequest {
             throw new IllegalArgumentException(name + " must be finite");
         }
         return value;
+    }
+
+    private static double boundedMultiplier(double value, String name) {
+        finite(value, name);
+        if (value < 1.0 || value > 2.0) {
+            throw new IllegalArgumentException(name + " must be between 1.0 and 2.0");
+        }
+        return value;
+    }
+
+    public Builder toBuilder() {
+        return builder(attacker, target).skillId(skillId).castId(castId)
+                .damageType(damageType).damageKind(damageKind)
+                .fixedDamage(fixedDamage).coefficient(coefficient).mode(mode)
+                .criticalAllowed(criticalAllowed).lifeStealEfficiency(lifeStealEfficiency)
+                .areaDamage(areaDamage).defenseReductionPercent(defenseReductionPercent)
+                .damageTakenIncreasePercent(damageTakenIncreasePercent)
+                .healingReductionPercent(healingReductionPercent)
+                .pveMultiplier(pveMultiplier).pvpMultiplier(pvpMultiplier)
+                .iceDirectDamageMultiplier(iceDirectDamageMultiplier)
+                .additionalDamageReductions(additionalDamageReductions)
+                .offenseSnapshot(offenseSnapshot).attackMetadata(attackMetadata);
     }
 
     public static final class Builder {
@@ -116,6 +147,7 @@ public final class DamageRequest {
         private double healingReductionPercent;
         private double pveMultiplier = 1.0;
         private double pvpMultiplier = 1.0;
+        private double iceDirectDamageMultiplier = 1.0;
         private double[] additionalDamageReductions = new double[0];
         private DamageOffenseSnapshot offenseSnapshot;
         private AttackMetadata attackMetadata = AttackMetadata.EMPTY;
@@ -156,6 +188,9 @@ public final class DamageRequest {
         }
         public Builder pveMultiplier(double value) { pveMultiplier = value; return this; }
         public Builder pvpMultiplier(double value) { pvpMultiplier = value; return this; }
+        public Builder iceDirectDamageMultiplier(double value) {
+            iceDirectDamageMultiplier = value; return this;
+        }
         public Builder additionalDamageReductions(double... values) {
             additionalDamageReductions = values == null ? new double[0] : values.clone();
             return this;

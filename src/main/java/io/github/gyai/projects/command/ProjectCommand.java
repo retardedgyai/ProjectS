@@ -1,5 +1,7 @@
 package io.github.gyai.projects.command;
 
+import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
+import io.github.gyai.projects.ability.DevAbilityService;
 import io.github.gyai.projects.combat.skill.CrowdControlManager;
 import io.github.gyai.projects.combat.skill.HardControlApplicationResult;
 import io.github.gyai.projects.combat.skill.HardControlRemovalReason;
@@ -38,6 +40,8 @@ public class ProjectCommand implements CommandExecutor {
     private final PlayerManager playerManager;
     private final DamageShadowCommandRouter damageShadowCommandRouter;
     private final StarterSwordRouteCommandService damageRouteCommandService;
+    private final BetaRuntimeCommandService betaRuntimeCommandService;
+    private final DevAbilityService devAbilityService;
 
     public ProjectCommand(
             ItemManager itemManager,
@@ -54,7 +58,7 @@ public class ProjectCommand implements CommandExecutor {
         this(itemManager, dummyManager, devMenuManager, enhancementListener,
                 monsterManager, crowdControlManager, statusEffectManager,
                 playerManager, damageShadowCommandService, null,
-                damageRouteCommandService);
+                damageRouteCommandService, null, null);
     }
 
     public ProjectCommand(
@@ -70,6 +74,41 @@ public class ProjectCommand implements CommandExecutor {
             DamageShadowCommandService spinSlashShadowCommandService,
             StarterSwordRouteCommandService damageRouteCommandService
     ) {
+        this(itemManager, dummyManager, devMenuManager, enhancementListener,
+                monsterManager, crowdControlManager, statusEffectManager,
+                playerManager, damageShadowCommandService,
+                spinSlashShadowCommandService, damageRouteCommandService, null, null);
+    }
+
+    public ProjectCommand(
+            ItemManager itemManager,
+            TrainingDummyManager dummyManager,
+            DevMenuManager devMenuManager,
+            EnhancementListener enhancementListener,
+            MonsterManager monsterManager,
+            CrowdControlManager crowdControlManager,
+            StatusEffectManager statusEffectManager,
+            PlayerManager playerManager,
+            DamageShadowCommandService damageShadowCommandService,
+            DamageShadowCommandService spinSlashShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService,
+            BetaRuntimeCommandService betaRuntimeCommandService
+    ) {
+        this(itemManager, dummyManager, devMenuManager, enhancementListener, monsterManager,
+                crowdControlManager, statusEffectManager, playerManager, damageShadowCommandService,
+                spinSlashShadowCommandService, damageRouteCommandService, betaRuntimeCommandService, null);
+    }
+
+    public ProjectCommand(
+            ItemManager itemManager, TrainingDummyManager dummyManager, DevMenuManager devMenuManager,
+            EnhancementListener enhancementListener, MonsterManager monsterManager,
+            CrowdControlManager crowdControlManager, StatusEffectManager statusEffectManager,
+            PlayerManager playerManager, DamageShadowCommandService damageShadowCommandService,
+            DamageShadowCommandService spinSlashShadowCommandService,
+            StarterSwordRouteCommandService damageRouteCommandService,
+            BetaRuntimeCommandService betaRuntimeCommandService,
+            DevAbilityService devAbilityService
+    ) {
         this.itemManager = itemManager;
         this.dummyManager = dummyManager;
         this.devMenuManager = devMenuManager;
@@ -81,6 +120,8 @@ public class ProjectCommand implements CommandExecutor {
         damageShadowCommandRouter = new DamageShadowCommandRouter(
                 damageShadowCommandService, spinSlashShadowCommandService);
         this.damageRouteCommandService = damageRouteCommandService;
+        this.betaRuntimeCommandService = betaRuntimeCommandService;
+        this.devAbilityService = devAbilityService;
     }
 
     @Override
@@ -97,6 +138,12 @@ public class ProjectCommand implements CommandExecutor {
         if (args.length > 0
                 && args[0].equalsIgnoreCase("damage-route")) {
             return handleDamageRouteCommand(sender, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("beta")) {
+            return handleBetaCommand(sender, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("ability")) {
+            return handleAbilityCommand(sender, args);
         }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("このコマンドはゲーム内で実行してください。");
@@ -158,6 +205,20 @@ public class ProjectCommand implements CommandExecutor {
         return true;
     }
 
+    private boolean handleAbilityCommand(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("projects.dev")) { sender.sendMessage("§cこのコマンドを実行する権限がありません。"); return true; }
+        if (!(sender instanceof Player player)) { sender.sendMessage("このコマンドはゲーム内で実行してください。"); return true; }
+        if (devAbilityService == null) { sender.sendMessage("§cAbility runtime is unavailable."); return true; }
+        DevAbilityService.Result result = args.length >= 2 && args[1].equalsIgnoreCase("player")
+                ? devAbilityService.castPlayer(player) : args.length >= 2 && args[1].equalsIgnoreCase("mob")
+                ? devAbilityService.castMob(player)
+                : args.length == 3 && args[1].equalsIgnoreCase("mob-assigned")
+                ? devAbilityService.castMobAssigned(player, args[2])
+                : new DevAbilityService.Result(false,
+                "使用法: /projects ability [player|mob|mob-assigned <ability-id>]");
+        sender.sendMessage((result.success() ? "§a" : "§c") + result.message()); return true;
+    }
+
     private boolean handleDamageShadowCommand(
             CommandSender sender,
             String[] args
@@ -191,6 +252,24 @@ public class ProjectCommand implements CommandExecutor {
         for (String message : response.messages()) {
             sender.sendMessage(color + message);
         }
+        return true;
+    }
+
+    private boolean handleBetaCommand(CommandSender sender, String[] args) {
+        if (betaRuntimeCommandService == null) {
+            sender.sendMessage("§cBeta runtime diagnostics are unavailable.");
+            return true;
+        }
+        BetaRuntimeCommandService.Response response = betaRuntimeCommandService.execute(
+                args.length >= 2
+                        ? java.util.Arrays.asList(args).subList(1, args.length)
+                        : java.util.List.of("status"),
+                new io.github.gyai.projects.beta.activation.BetaOperatorContributorRegistry.Context(
+                        sender instanceof Player player ? player.getUniqueId() : null,
+                        sender instanceof Player player ? player.getWorld().getName() : "console",
+                        sender.hasPermission("projects.dev"), false));
+        String color = response.success() ? "§e" : "§c";
+        for (String message : response.messages()) sender.sendMessage(color + message);
         return true;
     }
 
@@ -352,7 +431,7 @@ public class ProjectCommand implements CommandExecutor {
             return true;
         }
         if (args.length < 2) {
-            player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+            player.sendMessage("§e使用法: /projects boss <spawn|reset|remove>");
             return true;
         }
 
@@ -373,6 +452,13 @@ public class ProjectCommand implements CommandExecutor {
                 }
                 player.sendMessage("§a港喰らいの巨獣 グロームを生成しました。");
             }
+            case "reset" -> {
+                if (monsterManager.resetHarborDevourer()) {
+                    player.sendMessage("§aグロームをリセットしました。");
+                } else {
+                    player.sendMessage("§c稼働中のグロームはいません。");
+                }
+            }
             case "remove" -> {
                 if (monsterManager.removeHarborDevourer()) {
                     player.sendMessage("§aグロームを削除しました。");
@@ -380,7 +466,7 @@ public class ProjectCommand implements CommandExecutor {
                     player.sendMessage("§c稼働中のグロームはいません。");
                 }
             }
-            default -> player.sendMessage("§e使用法: /projects boss <spawn|remove>");
+            default -> player.sendMessage("§e使用法: /projects boss <spawn|reset|remove>");
         }
         return true;
     }

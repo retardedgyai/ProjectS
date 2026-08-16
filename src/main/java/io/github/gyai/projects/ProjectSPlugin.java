@@ -55,6 +55,7 @@ import io.github.gyai.projects.network.MobEditorChannel;
 import io.github.gyai.projects.network.MobEditorStatePacket;
 import io.github.gyai.projects.monster.editor.MobEditorManager;
 import io.github.gyai.projects.network.TelegraphPacket;
+import io.github.gyai.projects.network.AbilityVfxPacket;
 import io.github.gyai.projects.status.StatusEffectManager;
 import io.github.gyai.projects.skill.warrior.WarriorAttackSkills;
 import io.github.gyai.projects.skill.warrior.WarriorDefenseSkills;
@@ -78,8 +79,24 @@ import io.github.gyai.projects.combat.damage.StarterSwordRouteController;
 import io.github.gyai.projects.combat.damage.StarterSwordRouteTracker;
 import io.github.gyai.projects.combat.damage.SpinSlashDamageShadow;
 import io.github.gyai.projects.lifecycle.ShutdownSequence;
+import io.github.gyai.projects.beta.activation.BetaActivationPolicy;
+import io.github.gyai.projects.beta.activation.BetaRuntime;
+import io.github.gyai.projects.beta.activation.BetaRuntimeCommandService;
+import io.github.gyai.projects.beta.activation.BetaActivationWave1CompositionRoot;
+import io.github.gyai.projects.beta.activation.ConfirmedDamageHitObserver;
+import io.github.gyai.projects.beta.activation.PreHitDamageModifier;
+import io.github.gyai.projects.feature.FeatureFlagService;
+import io.github.gyai.projects.feature.FeatureFlagSnapshot;
+import io.github.gyai.projects.ability.BukkitAbilityRuntime;
+import io.github.gyai.projects.ability.DevAbilityService;
+import io.github.gyai.projects.network.SkillVfxEditorChannel;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogProvider;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogService;
+import io.github.gyai.projects.monster.editor.catalog.HeadCatalogSettings;
+import io.github.gyai.projects.monster.editor.catalog.MinecraftHeadsProvider;
 
 import java.time.Clock;
+import java.util.Locale;
 import java.util.logging.Level;
 
 public final class ProjectSPlugin extends JavaPlugin {
@@ -105,16 +122,33 @@ public final class ProjectSPlugin extends JavaPlugin {
     private MonsterManager monsterManager;
     private TelegraphManager telegraphManager;
     private DamageService damageService;
+    private DevAbilityService devAbilityService;
     private StarterSwordDamageShadow starterSwordDamageShadow;
     private SpinSlashDamageShadow spinSlashDamageShadow;
     private MobEditorManager mobEditorManager;
     private MobEditorChannel mobEditorChannel;
+    private SkillVfxEditorChannel skillVfxEditorChannel;
+    /**
+     * The catalog is deliberately constructed as a dormant, fail-closed service.
+     * It is not exposed through a plugin channel or an HTTP route until the
+     * provider contract is verified.
+     */
+    private HeadCatalogService headCatalogService;
     private ShutdownSequence shutdownSequence;
+    private BetaRuntime betaRuntime;
+    private BetaActivationWave1CompositionRoot betaComposition;
+    private BetaActivationPolicy betaActivationPolicy = BetaActivationPolicy.defaults();
+    private FeatureFlagSnapshot betaFeatureFlags = FeatureFlagSnapshot.allDisabled();
+    private ConfirmedDamageHitObserver betaConfirmedHitObserver =
+            ConfirmedDamageHitObserver.NO_OP;
+    private PreHitDamageModifier betaPreHitDamageModifier = PreHitDamageModifier.NO_OP;
 
     @Override
     public void onEnable() {
         shutdownSequence = null;
         saveDefaultConfig();
+        initializeHeadCatalog();
+        snapshotBetaConfiguration();
         playerManager = new PlayerManager();
         crowdControlManager = new CrowdControlManager(this);
         statusEffectManager = new StatusEffectManager(this);
@@ -148,6 +182,10 @@ public final class ProjectSPlugin extends JavaPlugin {
         damageService = new DamageService(
                 playerManager, itemManager, enhancementManager,
                 trainingDummyManager);
+        devAbilityService = new DevAbilityService(
+                new BukkitAbilityRuntime(this, damageService, telegraphManager, monsterManager),
+                monsterManager);
+        initializeBetaComposition();
         Clock damageShadowClock = Clock.systemUTC();
         BukkitDamageShadowRuntimeContextResolver damageShadowContextResolver =
                 new BukkitDamageShadowRuntimeContextResolver(
@@ -222,9 +260,12 @@ public final class ProjectSPlugin extends JavaPlugin {
         StarterSwordRouteCommandService damageRouteCommandService =
                 new StarterSwordRouteCommandService(damageRouteController);
         mobEditorManager = new MobEditorManager(
-                this, monsterManager, itemManager, damageService);
+                this, monsterManager, itemManager, damageService, devAbilityService.registry());
         mobEditorChannel = new MobEditorChannel(
-                this, mobEditorManager, monsterManager);
+                this, mobEditorManager, monsterManager, devAbilityService.registry());
+        mobEditorChannel.registerV2Channels();
+        skillVfxEditorChannel = new SkillVfxEditorChannel(this, devAbilityService.skillVfxEditor());
+        skillVfxEditorChannel.register();
         resourceManager = new ResourceManager(playerManager);
         warriorCombatManager = new WarriorCombatManager(
                 this,
@@ -244,7 +285,7 @@ public final class ProjectSPlugin extends JavaPlugin {
         WarriorSkillSupport warriorSkillSupport = new WarriorSkillSupport(
                 this, trainingDummyManager, enhancementManager,
                 warriorCombatManager, balanceTuningManager,
-                damageShadowDispatcher);
+                damageShadowDispatcher, betaPreHitDamageModifier, betaConfirmedHitObserver);
         warriorEffectManager = new WarriorEffectManager(
                 this, warriorCombatManager, enhancementManager,
                 trainingDummyManager, skillManager, damageService);
@@ -364,6 +405,8 @@ public final class ProjectSPlugin extends JavaPlugin {
                 this, MobEditorStatePacket.CHANNEL);
         getServer().getMessenger().registerOutgoingPluginChannel(
                 this, TelegraphPacket.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(
+                this, AbilityVfxPacket.CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(
                 this,
                 TelegraphPacket.HELLO_CHANNEL,
@@ -380,12 +423,14 @@ public final class ProjectSPlugin extends JavaPlugin {
                 new CombatListener(
                         itemManager, combatInputManager, combatHudManager,
                         trainingDummyManager, enhancementManager,
-                        damageService, starterSwordDamageRouter), this);
+                        damageService, starterSwordDamageRouter,
+                        betaPreHitDamageModifier, betaConfirmedHitObserver), this);
         getServer().getPluginManager().registerEvents(
                 new HardControlTestToolListener(
                         hardControlTestTool,
                         crowdControlManager,
-                        monsterManager), this);
+                        monsterManager,
+                        damageService), this);
         getServer().getPluginManager().registerEvents(
                 new PlayerListener(playerManager, skillManager, combatHudManager, trainingDummyManager,
                         classManager, resourceManager,
@@ -426,7 +471,11 @@ public final class ProjectSPlugin extends JavaPlugin {
                     crowdControlManager, statusEffectManager,
                     playerManager, damageShadowCommandService,
                     spinSlashShadowCommandService,
-                    damageRouteCommandService));
+                    damageRouteCommandService,
+                    betaRuntime == null || betaComposition == null ? null
+                            : new BetaRuntimeCommandService(
+                            betaRuntime, betaComposition.operators()),
+                    devAbilityService));
         }
 
         getLogger().info("ProjectS has started!");
@@ -435,6 +484,100 @@ public final class ProjectSPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         shutdownSequence().run();
+    }
+
+    private void snapshotBetaConfiguration() {
+        try {
+            org.bukkit.configuration.ConfigurationSection featureSection =
+                    getConfig().getConfigurationSection("features");
+            betaFeatureFlags = new FeatureFlagService(
+                    featureSection == null ? java.util.Map.of()
+                            : featureSection.getValues(false)).snapshot();
+            org.bukkit.configuration.ConfigurationSection activationSection =
+                    getConfig().getConfigurationSection("beta.activation");
+            betaActivationPolicy = BetaActivationPolicy.parse(
+                    activationSection == null ? java.util.Map.of()
+                            : activationSection.getValues(false),
+                    message -> getLogger().warning(
+                            "Beta activation config: " + message));
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE,
+                    "Beta configuration snapshot failed; Beta remains disabled",
+                    exception);
+            betaActivationPolicy = BetaActivationPolicy.defaults();
+            betaFeatureFlags = FeatureFlagSnapshot.allDisabled();
+        }
+    }
+
+    private void initializeHeadCatalog() {
+        try {
+            HeadCatalogSettings settings = readHeadCatalogSettings();
+            HeadCatalogProvider provider = new MinecraftHeadsProvider(settings);
+            headCatalogService = new HeadCatalogService(provider, settings);
+            if (!provider.enabled()) {
+                getLogger().info("Head Catalog remains disabled: "
+                        + provider.statusMessage());
+            }
+        } catch (RuntimeException exception) {
+            HeadCatalogSettings disabled = HeadCatalogSettings.disabled();
+            headCatalogService = new HeadCatalogService(
+                    new MinecraftHeadsProvider(disabled), disabled);
+            getLogger().log(Level.WARNING,
+                    "Head Catalog initialization failed; it remains disabled",
+                    exception);
+        }
+    }
+
+    private HeadCatalogSettings readHeadCatalogSettings() {
+        org.bukkit.configuration.ConfigurationSection section =
+                getConfig().getConfigurationSection("head-catalog");
+        if (section == null) return HeadCatalogSettings.disabled();
+        long ttlMinutes = Math.max(1L,
+                section.getLong("cache.ttl-minutes", 60L));
+        long ttlMillis;
+        try {
+            ttlMillis = Math.multiplyExact(ttlMinutes, 60_000L);
+        } catch (ArithmeticException exception) {
+            ttlMillis = Long.MAX_VALUE;
+        }
+        return new HeadCatalogSettings(
+                section.getBoolean("enabled", false),
+                section.getString("provider", "MINECRAFT_HEADS"),
+                section.getString("api-key", ""),
+                section.getString("app-id", ""),
+                section.getString("locale", Locale.JAPAN.toLanguageTag()),
+                ttlMillis,
+                section.getInt("cache.max-entries", 5_000),
+                section.getInt("request.timeout-seconds", 10),
+                section.getInt("request.max-retries", 2));
+    }
+
+    private void initializeBetaComposition() {
+        BetaActivationWave1CompositionRoot partial = null;
+        try {
+            Clock clock = Clock.systemUTC();
+            partial = BetaActivationWave1CompositionRoot.create(
+                    this, betaActivationPolicy, betaFeatureFlags,
+                    playerManager, trainingDummyManager, damageService, clock);
+            BetaRuntime runtime = partial.createRuntime(
+                    betaActivationPolicy, betaFeatureFlags, clock,
+                    (message, exception) -> getLogger().log(
+                            Level.WARNING, "Beta runtime: " + message, exception));
+            runtime.start();
+            betaComposition = partial;
+            betaRuntime = runtime;
+            betaPreHitDamageModifier = partial.preHitDamageModifier();
+            betaConfirmedHitObserver = partial.confirmedHitObserver();
+        } catch (RuntimeException exception) {
+            if (partial != null) partial.close();
+            betaComposition = null;
+            betaRuntime = null;
+            betaPreHitDamageModifier = PreHitDamageModifier.NO_OP;
+            betaConfirmedHitObserver = ConfirmedDamageHitObserver.NO_OP;
+            getLogger().log(Level.SEVERE,
+                    "Beta composition failed safely; legacy startup will continue",
+                    exception);
+        }
     }
 
     private synchronized ShutdownSequence shutdownSequence() {
@@ -447,6 +590,14 @@ public final class ProjectSPlugin extends JavaPlugin {
                         "ProjectS cleanup failed: " + name,
                         exception));
 
+        sequence.addIfPresent("betaRuntime.close",
+                betaRuntime, BetaRuntime::close);
+        sequence.addIfPresent("betaComposition.close",
+                betaComposition, BetaActivationWave1CompositionRoot::close);
+        sequence.addIfPresent("abilityRuntime.close",
+                devAbilityService, DevAbilityService::close);
+        sequence.add("headCatalog.release",
+                () -> headCatalogService = null);
         sequence.add("scheduler.cancelTasks",
                 () -> getServer().getScheduler().cancelTasks(this));
         sequence.addIfPresent("monsterManager.stop",

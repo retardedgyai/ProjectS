@@ -2,6 +2,34 @@ debug:
   enabled: false
   allow-creative-skill-test: true
   painter-skills: false
+features:
+  fire-system: false
+  ice-system: false
+  lightning-system: false
+  equipment-v2: false
+  mod-system: false
+  player-persistence: false
+  passive-tree: false
+  gathering: false
+  refining: false
+  crafting: false
+  tier-promotion: false
+  enhancement-v2: false
+  repair-v2: false
+  party: false
+  quests: false
+  reward-v2: false
+  mob-editor-v2: false
+  client-beta-ui: false
+beta:
+  activation:
+    audience: OFF
+    target-scope: TRAINING_DUMMY_ONLY
+    mutation-policy: READ_ONLY
+    allowlisted-player-uuids: []
+    allowed-worlds: []
+    fail-closed: true
+    require-compatible-client: false
 combat:
   damage-foundation:
     starter-sword-authoritative-enabled: false
@@ -308,3 +336,16 @@ telegraphs:
   tracking-lock-threshold: 0.40
   cancellation-animation-seconds: 0.15
   detonation-animation-seconds: 0.20
+# Mob Editor external head catalog. API keys remain server-side only.
+head-catalog:
+  enabled: false
+  provider: MINECRAFT_HEADS
+  api-key: ""
+  app-id: ""
+  locale: ja
+  cache:
+    ttl-minutes: 60
+    max-entries: 5000
+  request:
+    timeout-seconds: 10
+    max-retries: 2

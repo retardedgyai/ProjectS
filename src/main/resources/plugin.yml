@@ -8,7 +8,7 @@ description: ProjectS MMO Plugin
 commands:
   projects:
     description: ProjectSの動作確認コマンド
-    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|damage-shadow|damage-route|dev|devmenu]
+    usage: /projects [enhance|materials|bow|dummy|boss|cc|status|level|damage-shadow|damage-route|ability|dev|devmenu]
 
 permissions:
   projects.dev:
@@ -26,6 +26,12 @@ permissions:
   projects.mobeditor.head.import:
     description: カスタムヘッドを登録する
     default: op
+  projects.mobeditor.head.catalog:
+    description: 外部Head Catalogを閲覧する
+    default: op
+  projects.mobeditor.head.import.external:
+    description: 外部Head Catalogからローカルへ登録する
+    default: op
   projects.mobeditor.test:
     description: Draftからテスト個体を操作する
     default: op
@@ -34,4 +40,13 @@ permissions:
     default: op
   projects.mobeditor.reload:
     description: Mob Editor定義を再読み込みする
+    default: op
+  projects.skilleditor.open:
+    description: Skill Editorを開く
+    default: op
+  projects.vfxeditor.preview:
+    description: VFX Editorのプレビューを利用する
+    default: op
+  projects.vfxeditor.session.apply:
+    description: VFX Editorのセッション変更を適用する
     default: op

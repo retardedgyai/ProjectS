@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - integration/beta-full-build
 
 permissions:
   contents: read
