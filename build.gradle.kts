@@ -154,6 +154,13 @@ val balanceUnitTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 
+val playerProgressionRepositoryTest by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.gyai.projects.data.PlayerProgressionRepositoryTest")
+    jvmArgs("-ea")
+}
+
 val ccFoundationTest by tasks.registering(JavaExec::class) {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
@@ -213,6 +220,7 @@ val skillVfxMotionFoundationTest by tasks.registering(JavaExec::class) {
     jvmArgs("-ea")
 }
 tasks.named("check") {
+    dependsOn(playerProgressionRepositoryTest)
     dependsOn(skillVfxEditorAuthoringV02ServerTest, skillVfxMotionFoundationTest)
 }
 val javaKotlinAuthoringInteropTest by tasks.registering(JavaExec::class) {
